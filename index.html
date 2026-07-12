@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>애니원(AnyOne) 직원 현황판</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="page-header">
+    <h1>애니원(AnyOne) 직원 현황판</h1>
+    <p>직원 카드는 활동 로그 기반으로 "지금 하는 일"을 자동 표시합니다. 아직 자동화되지 않은 역할만 수동 상태 클릭이 남아 있습니다.</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>직원 현황</h2>
+      <div id="employee-grid"></div>
+    </section>
+
+    <section class="panel">
+      <h2>🟢 지금 하고 있는 일</h2>
+      <p class="refresh-note">5초마다 자동 새로고침 · 활동 발생 시 즉시 갱신</p>
+      <ul id="activity-feed"></ul>
+    </section>
+  </main>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
