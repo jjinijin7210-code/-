@@ -58,10 +58,10 @@ router.post('/shorts/generate', async (req, res) => {
       text: script.captions[idx] || script.hook,
     }))
 
-    // 5. 렌더링
+    // 5. 렌더링 (무료 인스턴스 512MB 메모리 안에서 돌아가도록 해상도/fps를 가볍게 유지)
     const fileName = `${crypto.randomUUID()}.mp4`
     const outputPath = path.join(GENERATED_DIR, fileName)
-    renderVideo({ width: 1080, height: 1920, fps: 30, transitionDuration: 0.5, audio: audioPath, scenes }, outputPath)
+    renderVideo({ width: 540, height: 960, fps: 24, transitionDuration: 0.5, audio: audioPath, scenes }, outputPath)
 
     res.json({ videoUrl: `/generated/${fileName}`, script })
   } catch (err) {

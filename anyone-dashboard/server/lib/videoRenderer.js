@@ -49,8 +49,9 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
   const { width: w, height: h, fps } = cfg
   const duration = scene.duration || cfg.defaultSceneDuration || 4
   const frames = Math.round(duration * fps)
-  const bw = Math.round(w * 1.4)
-  const bh = Math.round(h * 1.4)
+  // 무료 인스턴스(512MB) 메모리 절약을 위해 오버샘플링 배율을 최소한으로만 둠
+  const bw = Math.round(w * 1.2)
+  const bh = Math.round(h * 1.2)
   const zoompan = kenBurnsFilter(scene.motion, frames, fps, w, h)
 
   let filter = `scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh}`
