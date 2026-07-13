@@ -1,0 +1,10 @@
+services:
+  - type: web
+    name: video-maker
+    runtime: docker
+    dockerfilePath: ./video-maker/Dockerfile
+    dockerContext: ./video-maker
+    plan: free
+    envVars:
+      - key: PORT
+        value: 4173
