@@ -1,6 +1,24 @@
 const scenesEl = document.getElementById('scenes');
 const scenes = []; // { imageFile, voiceFile, duration, motion, text, voiceVolume, el }
 
+(async function initUserBar() {
+  try {
+    const res = await fetch('/api/me');
+    const { user } = await res.json();
+    if (!user) return;
+    const bar = document.getElementById('user-bar');
+    document.getElementById('user-avatar').src = user.picture || '';
+    document.getElementById('user-email').textContent = user.email || '';
+    bar.classList.remove('hidden');
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await fetch('/api/auth/logout', { method: 'POST' });
+      window.location.href = '/login.html';
+    });
+  } catch (err) {
+    // 로그인 기능이 꺼져 있으면(구글 클라이언트ID 미설정) /api/me가 user:null을 주므로 무시
+  }
+})();
+
 function addScene() {
   const index = scenes.length;
   const card = document.createElement('div');

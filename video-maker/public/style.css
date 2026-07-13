@@ -141,6 +141,35 @@ input, select {
 .result.hidden { display: none; }
 .result video { width: 100%; border-radius: 10px; background: black; }
 
+.login-main {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.login-panel {
+  text-align: center;
+  max-width: 360px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+}
+.login-panel h1 { margin: 0; font-size: 22px; }
+.text-muted { color: var(--text-muted); font-size: 13px; margin: 0; }
+
+.user-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 32px;
+  margin-bottom: -8px;
+}
+.user-bar img { width: 28px; height: 28px; border-radius: 50%; }
+.user-bar span { font-size: 13px; color: var(--text-muted); flex: 1; }
+.user-bar button { background: transparent; border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 12px; cursor: pointer; color: var(--text); }
+.user-bar.hidden { display: none; }
+
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #0f1115;

@@ -10,8 +10,11 @@ const fs = require('fs');
 const os = require('os');
 const crypto = require('crypto');
 const { spawn } = require('child_process');
+const session = require('express-session');
+const { OAuth2Client } = require('google-auth-library');
 
 const app = express();
+const publicDir = path.join(__dirname, 'public');
 const uploadTmp = path.join(os.tmpdir(), 'video-maker-uploads');
 const jobsRoot = path.join(os.tmpdir(), 'video-maker-jobs');
 fs.mkdirSync(uploadTmp, { recursive: true });
@@ -19,10 +22,65 @@ fs.mkdirSync(jobsRoot, { recursive: true });
 
 const upload = multer({ dest: uploadTmp, limits: { fileSize: 200 * 1024 * 1024 } });
 
-app.use(express.static(path.join(__dirname, 'public')));
-app.use('/jobs', express.static(jobsRoot));
+// 구글 로그인 — GOOGLE_CLIENT_ID 환경변수가 없으면 로그인 기능 자체를 건너뛴다
+// (설정 전에도 도구가 그냥 동작하도록 하기 위함).
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || null;
+const oauthClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
 
-app.post('/api/render', upload.any(), (req, res) => {
+app.use(express.json());
+app.use(session({
+  secret: process.env.SESSION_SECRET || 'video-maker-dev-secret-change-me',
+  resave: false,
+  saveUninitialized: false,
+  cookie: { httpOnly: true, sameSite: 'lax', maxAge: 7 * 24 * 60 * 60 * 1000 },
+}));
+
+function requireAuthPage(req, res, next) {
+  if (!GOOGLE_CLIENT_ID) return next(); // 로그인 미설정 시 그냥 통과
+  if (req.session.user) return next();
+  res.redirect('/login.html');
+}
+
+function requireAuthApi(req, res, next) {
+  if (!GOOGLE_CLIENT_ID) return next();
+  if (req.session.user) return next();
+  res.status(401).json({ error: 'unauthorized' });
+}
+
+app.get('/api/config', (req, res) => {
+  res.json({ googleClientId: GOOGLE_CLIENT_ID });
+});
+
+app.post('/api/auth/google', async (req, res) => {
+  if (!oauthClient) return res.status(400).json({ error: 'google_login_not_configured' });
+  try {
+    const ticket = await oauthClient.verifyIdToken({
+      idToken: req.body.credential,
+      audience: GOOGLE_CLIENT_ID,
+    });
+    const payload = ticket.getPayload();
+    req.session.user = { email: payload.email, name: payload.name, picture: payload.picture };
+    res.json({ ok: true, user: req.session.user });
+  } catch (err) {
+    res.status(401).json({ error: 'invalid_token', detail: String(err.message || err) });
+  }
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  req.session.destroy(() => res.json({ ok: true }));
+});
+
+app.get('/api/me', (req, res) => {
+  res.json({ user: req.session.user || null });
+});
+
+app.get('/', requireAuthPage, (req, res) => {
+  res.sendFile(path.join(publicDir, 'index.html'));
+});
+app.use(express.static(publicDir, { index: false }));
+app.use('/jobs', requireAuthApi, express.static(jobsRoot));
+
+app.post('/api/render', requireAuthApi, upload.any(), (req, res) => {
   let jobDir;
   try {
     const jobId = crypto.randomUUID();
