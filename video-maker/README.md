@@ -22,6 +22,21 @@ node server.js
 보이스/내레이션 파일을 직접 골라서 넣고 "영상 만들기"를 누르면 렌더링 후 바로
 미리보기·다운로드할 수 있습니다.
 
+## 구글 로그인 설정 (선택)
+웹 UI에 "구글 계정으로 로그인"을 켜려면 환경변수 하나만 설정하면 됩니다.
+
+- `GOOGLE_CLIENT_ID` — Google Cloud Console → APIs & Services → Credentials 에서
+  만든 **OAuth 2.0 클라이언트 ID** 값 (`...apps.googleusercontent.com`). 클라이언트
+  보안 비밀(secret)은 필요 없습니다 — 로그인 버튼이 브라우저에서 바로 인증하고
+  서버는 결과만 검증하는 방식이라서요.
+- 이 값을 설정하지 않으면 로그인 기능 자체가 꺼지고 누구나 바로 씁니다 (기본값).
+- Google Cloud Console에서 해당 OAuth 클라이언트의 **"승인된 자바스크립트 원본"**에
+  실제 접속 주소를 추가해야 로그인 버튼이 동작합니다 — 로컬 테스트용
+  `http://localhost:4173`, 배포 후엔 Render에서 받은 주소(예:
+  `https://video-maker-xxxx.onrender.com`) 둘 다 추가해두면 됩니다.
+- 로컬에서 테스트할 땐: `GOOGLE_CLIENT_ID=여기에값 node server.js`
+- Render에 배포할 땐: 대시보드의 Environment 탭에서 `GOOGLE_CLIENT_ID` 추가
+
 ## 설치 (CLI 커맨드로 등록)
 ```bash
 cd video-maker
