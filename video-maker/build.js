@@ -14,6 +14,9 @@ const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
+// 메모리가 작은 환경(예: 무료 호스팅 512MB)에서도 안 죽도록 인코더 부담을 최소화한다.
+const LOW_MEM_ENCODE_ARGS = ['-preset', 'ultrafast', '-threads', '1'];
+
 function run(args) {
   const res = spawnSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', ...args], { stdio: 'inherit' });
   if (res.status !== 0) {
@@ -50,8 +53,10 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
   const { width: w, height: h, fps } = cfg;
   const duration = scene.duration || cfg.defaultSceneDuration || 4;
   const frames = Math.round(duration * fps);
-  const bw = w * 2;
-  const bh = h * 2;
+  // 줌 최대 배율(1.3)보다 살짝 크게만 오버샘플링 — 2배로 하면 메모리를 훨씬 많이 써서
+  // 작은 서버(512MB)에서 죽는 원인이 됐다. 1.4배면 화질 손실 없이 메모리를 크게 아낀다.
+  const bw = Math.round(w * 1.4);
+  const bh = Math.round(h * 1.4);
   const zoompan = kenBurnsFilter(scene.motion, frames, fps, w, h);
 
   let filter = `scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh}`;
@@ -65,7 +70,7 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
   }
 
   const out = path.join(tmpDir, `clip_${idx}.mp4`);
-  run(['-loop', '1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', out]);
+  run(['-loop', '1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out]);
   return { file: out, duration };
 }
 
@@ -82,7 +87,7 @@ function buildVideoClip(scene, idx, cfg, tmpDir) {
   }
 
   const out = path.join(tmpDir, `clip_${idx}.mp4`);
-  run(['-i', scene.src, '-t', String(duration), '-vf', filter, '-an', out]);
+  run(['-i', scene.src, '-t', String(duration), '-vf', filter, '-an', ...LOW_MEM_ENCODE_ARGS, out]);
   return { file: out, duration };
 }
 
@@ -113,7 +118,7 @@ function concatWithCrossfade(clips, transitionDuration, cfg, tmpDir) {
   filterComplex = filterComplex.replace(/;$/, '');
 
   const out = path.join(tmpDir, 'concatenated.mp4');
-  run([...inputArgs, '-filter_complex', filterComplex, '-map', '[vout]', '-r', String(cfg.fps), out]);
+  run([...inputArgs, '-filter_complex', filterComplex, '-map', '[vout]', '-r', String(cfg.fps), ...LOW_MEM_ENCODE_ARGS, out]);
   return { file: out, sceneStarts, totalDuration: cumulative };
 }
 
