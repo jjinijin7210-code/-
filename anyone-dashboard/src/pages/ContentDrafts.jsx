@@ -17,7 +17,7 @@ import {
   isLocalizationChannel,
   isBloggerChannel,
 } from '../lib/contentPreview'
-import { generateDraft, reviewDraftWithAi, getBloggerStatus, publishToBlogger, getGoogleConnectUrl } from '../lib/apiClient'
+import { generateDraft, reviewDraftWithAi, getBloggerStatus, publishToBlogger, getGoogleConnectUrl, generateAiImage } from '../lib/apiClient'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
 
 const STATUS_OPTIONS = ['초안', '검수중', '통과', '반려', '발행완료']
@@ -65,6 +65,36 @@ export default function ContentDrafts() {
   const [aiLoading, setAiLoading] = useState(false)
   const [aiError, setAiError] = useState(null)
   const [reviewResult, setReviewResult] = useState(null) // { result, reasons, checks }
+
+  // AI 이미지 생성 관련 상태 (Luna에게 맡기지 않고 바로 생성)
+  const [aiImagePrompt, setAiImagePrompt] = useState('')
+  const [aiImageLoading, setAiImageLoading] = useState(false)
+  const [aiImageError, setAiImageError] = useState(null)
+
+  const handleGenerateImage = async () => {
+    if (!aiImagePrompt.trim()) return
+    setAiImageLoading(true)
+    setAiImageError(null)
+    try {
+      const { dataUrl } = await generateAiImage({ prompt: aiImagePrompt })
+      const attachment = {
+        id: crypto.randomUUID(),
+        kind: 'image',
+        filename: `ai-${Date.now()}.png`,
+        mime_type: 'image/png',
+        size: dataUrl.length,
+        data_url: dataUrl,
+        note: aiImagePrompt,
+        created_at: new Date().toISOString(),
+      }
+      setForm((f) => ({ ...f, images: [...(f.images || []), attachment] }))
+      setAiImagePrompt('')
+    } catch (err) {
+      setAiImageError(err.message)
+    } finally {
+      setAiImageLoading(false)
+    }
+  }
 
   // Blogger 연동 상태
   const [bloggerConnected, setBloggerConnected] = useState(false)
@@ -337,6 +367,23 @@ export default function ContentDrafts() {
 
           <div className="my-3">
             <p className="mb-2 text-xs font-bold text-ink/70">🖼 이미지</p>
+            <div className="mb-2 flex flex-wrap gap-2">
+              <input
+                className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+                placeholder="AI 이미지 설명 (예: 하얀 접시 위 겨울 담요, 따뜻한 조명, 상품 사진 스타일)"
+                value={aiImagePrompt}
+                onChange={(e) => setAiImagePrompt(e.target.value)}
+              />
+              <button
+                type="button"
+                disabled={aiImageLoading || !aiImagePrompt.trim()}
+                onClick={handleGenerateImage}
+                className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+              >
+                {aiImageLoading ? '생성 중...' : '🎨 AI 이미지 생성'}
+              </button>
+            </div>
+            {aiImageError && <p className="mb-2 text-xs text-stamp-reject">{aiImageError}</p>}
             <AttachmentSection attachments={form.images} kinds={IMAGE_KIND} onChange={(next) => setForm({ ...form, images: next })} />
             {isBloggerChannel(form.platform) && (
               <p className="mt-1 text-[11px] text-ink/40">

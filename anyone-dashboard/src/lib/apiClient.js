@@ -75,3 +75,8 @@ export async function search1688Products({ query, maxProducts, sortType }) {
 export async function generateShorts({ title, imageUrls, note }) {
   return postJson('/api/shorts/generate', { title, imageUrls, note })
 }
+
+// AI 이미지 생성 (Luna 없이 바로 이미지 생성 - data URL로 돌려받아서 첨부에 바로 추가 가능)
+export async function generateAiImage({ prompt, size }) {
+  return postJson('/api/images/generate', { prompt, size })
+}
