@@ -10,5 +10,9 @@
     "node": ">=18"
   },
   "license": "UNLICENSED",
-  "private": true
+  "private": true,
+  "dependencies": {
+    "express": "^5.2.1",
+    "multer": "^2.2.0"
+  }
 }

@@ -87,18 +87,24 @@ function buildVideoClip(scene, idx, cfg, tmpDir) {
 }
 
 function concatWithCrossfade(clips, transitionDuration, cfg, tmpDir) {
-  if (clips.length === 1) return clips[0].file;
+  // 씬별 시작 시각(초)도 함께 계산해서 반환 — 씬별 보이스를 정확한 타이밍에 얹기 위함
+  const sceneStarts = [0];
+  let cumulative = clips[0].duration;
+
+  if (clips.length === 1) {
+    return { file: clips[0].file, sceneStarts, totalDuration: cumulative };
+  }
 
   const inputArgs = [];
   clips.forEach((c) => inputArgs.push('-i', c.file));
 
   let filterComplex = '';
   let prevLabel = '0';
-  let cumulative = clips[0].duration;
 
   for (let i = 1; i < clips.length; i++) {
     const t = Math.min(transitionDuration, clips[i - 1].duration, clips[i].duration);
     const offset = Math.max(cumulative - t, 0);
+    sceneStarts.push(offset);
     const outLabel = i === clips.length - 1 ? 'vout' : `v${i}`;
     filterComplex += `[${prevLabel}][${i}]xfade=transition=fade:duration=${t}:offset=${offset}[${outLabel}];`;
     cumulative = cumulative + clips[i].duration - t;
@@ -108,19 +114,56 @@ function concatWithCrossfade(clips, transitionDuration, cfg, tmpDir) {
 
   const out = path.join(tmpDir, 'concatenated.mp4');
   run([...inputArgs, '-filter_complex', filterComplex, '-map', '[vout]', '-r', String(cfg.fps), out]);
-  return out;
+  return { file: out, sceneStarts, totalDuration: cumulative };
 }
 
-function muxAudio(videoFile, cfg, tmpDir) {
-  if (!cfg.audio) return videoFile;
+// 배경음악(선택) + 씬별 보이스/내레이션(선택, 여러 개 가능)을 하나의 오디오 트랙으로 믹싱한다.
+// 씬별 보이스는 해당 씬이 화면에 나오기 시작하는 시점에 맞춰 자동으로 딜레이된다.
+function buildAudioMix(videoFile, cfg, sceneStarts, totalDuration, tmpDir) {
+  const tracks = [];
+  if (cfg.audio) {
+    tracks.push({ file: cfg.audio, delaySec: 0, volume: cfg.audioVolume || 1, loop: cfg.loopAudio !== false });
+  }
+  cfg.scenes.forEach((scene, i) => {
+    if (scene.voice) {
+      tracks.push({ file: scene.voice, delaySec: sceneStarts[i] || 0, volume: scene.voiceVolume || 1, loop: false });
+    }
+  });
+
+  if (tracks.length === 0) return videoFile;
+
   const out = path.join(tmpDir, 'with_audio.mp4');
   const args = ['-i', videoFile];
-  if (cfg.loopAudio !== false) args.push('-stream_loop', '-1');
-  args.push('-i', cfg.audio, '-shortest', '-map', '0:v', '-map', '1:a');
-  if (cfg.audioVolume && cfg.audioVolume !== 1) {
-    args.push('-af', `volume=${cfg.audioVolume}`);
+
+  tracks.forEach((t) => {
+    if (t.loop) args.push('-stream_loop', '-1', '-t', String(totalDuration));
+    args.push('-i', t.file);
+  });
+
+  const labels = tracks.map((t, i) => {
+    const inputIdx = i + 1; // 0번은 비디오
+    const label = `a${i}`;
+    let chain = `[${inputIdx}:a]volume=${t.volume}`;
+    if (t.delaySec > 0) chain += `,adelay=${Math.round(t.delaySec * 1000)}:all=1`;
+    chain += `[${label}]`;
+    return { chain, label };
+  });
+
+  let filterComplex = labels.map((l) => l.chain).join(';');
+  let audioOutLabel;
+  if (labels.length === 1) {
+    audioOutLabel = labels[0].label;
+  } else {
+    audioOutLabel = 'aout';
+    filterComplex += `;${labels.map((l) => `[${l.label}]`).join('')}amix=inputs=${labels.length}:duration=longest:normalize=0[${audioOutLabel}]`;
   }
-  args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', out);
+
+  args.push(
+    '-filter_complex', filterComplex,
+    '-map', '0:v', '-map', `[${audioOutLabel}]`,
+    '-t', String(totalDuration),
+    '-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', out,
+  );
   run(args);
   return out;
 }
@@ -140,7 +183,10 @@ function main() {
   cfg.transitionDuration = cfg.transitionDuration != null ? cfg.transitionDuration : 0.6;
 
   const resolvePath = (p) => (path.isAbsolute(p) ? p : path.join(baseDir, p));
-  cfg.scenes.forEach((s) => { s.src = resolvePath(s.src); });
+  cfg.scenes.forEach((s) => {
+    s.src = resolvePath(s.src);
+    if (s.voice) s.voice = resolvePath(s.voice);
+  });
   if (cfg.audio) cfg.audio = resolvePath(cfg.audio);
   const outputPath = resolvePath(cfg.output || 'output.mp4');
 
@@ -154,10 +200,10 @@ function main() {
   });
 
   console.log('[video-maker] 씬 이어붙이는 중 (크로스페이드)');
-  const concatenated = concatWithCrossfade(clips, cfg.transitionDuration, cfg, tmpDir);
+  const { file: concatenated, sceneStarts, totalDuration } = concatWithCrossfade(clips, cfg.transitionDuration, cfg, tmpDir);
 
-  console.log('[video-maker] 오디오 합성 중');
-  const withAudio = muxAudio(concatenated, cfg, tmpDir);
+  console.log('[video-maker] 오디오 합성 중 (배경음악/씬별 보이스)');
+  const withAudio = buildAudioMix(concatenated, cfg, sceneStarts, totalDuration, tmpDir);
 
   fs.copyFileSync(withAudio, outputPath);
   fs.rmSync(tmpDir, { recursive: true, force: true });

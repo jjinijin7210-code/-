@@ -1,13 +1,26 @@
 # video-maker
 
-정지 이미지(줌/팬 효과) + 미리 만든 AI 영상 클립을 이어붙여 배경음악과 함께
-하나의 mp4로 렌더링하는 도구입니다. 외부 npm 패키지 없이 시스템에 설치된
-`ffmpeg`만 사용합니다.
+정지 이미지(줌/팬 효과) + 미리 만든 AI 영상 클립을 이어붙여, 배경음악과 씬별
+보이스/내레이션까지 얹어서 하나의 mp4로 렌더링하는 도구입니다. 렌더링 로직(`build.js`)은
+외부 npm 패키지 없이 시스템 `ffmpeg`만 사용합니다.
+
+터미널 없이 쓰고 싶다면 브라우저 웹 UI(`server.js`)도 있습니다 — 씬마다 이미지·자막·
+보이스를 직접 골라서 업로드하고 버튼 하나로 렌더링합니다.
 
 ## 요구 사항
 - `ffmpeg`, `ffprobe` (Ubuntu: `apt-get install ffmpeg`)
 - 한글 자막을 쓰려면 CJK 폰트 필요 (Ubuntu: `apt-get install fonts-noto-cjk`)
 - Node.js 18+
+
+## 웹 UI로 쓰기 (터미널 없이)
+```bash
+cd video-maker
+npm install
+node server.js
+```
+브라우저에서 http://localhost:4173 접속. 씬마다 이미지 업로드, 효과 선택, 자막 입력,
+보이스/내레이션 파일을 직접 골라서 넣고 "영상 만들기"를 누르면 렌더링 후 바로
+미리보기·다운로드할 수 있습니다.
 
 ## 설치 (CLI 커맨드로 등록)
 ```bash
@@ -32,7 +45,7 @@ node build.js example/project.json
   "height": 1920,                // 기본 1080
   "fps": 30,                     // 기본 30
   "transitionDuration": 0.6,     // 씬 사이 크로스페이드 길이(초)
-  "audio": "assets/song.mp3",    // 선택. 배경음악
+  "audio": "assets/song.mp3",    // 선택. 배경음악 (전체 타임라인에 깔림)
   "audioVolume": 0.8,            // 선택. 기본 1.0
   "loopAudio": true,             // 선택. 영상이 더 길면 오디오 반복
   "defaultSceneDuration": 4,     // 선택. scene.duration 생략 시 기본값
@@ -42,7 +55,9 @@ node build.js example/project.json
       "src": "assets/scene1.png",
       "duration": 4,
       "motion": "zoom-in",       // zoom-in | zoom-out | pan-left | pan-right | none
-      "text": "자막/가사 한 줄"   // 선택
+      "text": "자막/가사 한 줄",  // 선택
+      "voice": "assets/voice1.mp3", // 선택. 이 씬이 시작되는 시점에 맞춰 자동 재생
+      "voiceVolume": 1.0            // 선택. 기본 1.0
     },
     {
       "type": "video",           // 미리 만든 영상 클립을 그대로 사용
@@ -53,6 +68,14 @@ node build.js example/project.json
   ]
 }
 ```
+
+## 여러 음성(보이스) 넣기
+배경음악과는 별개로, 씬마다 서로 다른 보이스/내레이션 파일을 골라서 넣을 수 있습니다.
+- 각 씬의 `voice`에 지정한 오디오는 그 씬이 화면에 나오기 시작하는 정확한 시점에
+  맞춰 자동으로 딜레이되어 재생됩니다.
+- 배경음악(`audio`)은 전체 길이에 깔리고, 씬별 보이스는 그 위에 믹싱됩니다.
+- 웹 UI에서는 씬 카드마다 "보이스/내레이션" 파일 선택창이 있어서, 씬마다 원하는
+  음성 파일을 직접 골라 업로드하면 됩니다 (사람마다 다른 목소리, 효과음 등도 가능).
 
 ## AI 영상 생성 연동 지점
 이 도구 자체는 AI로 "움직이는" 영상을 새로 만들지 않습니다 (그건 Kling/Seedance 같은

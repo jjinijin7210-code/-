@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>video-maker</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header class="page-header">
+    <h1>🎬 video-maker</h1>
+    <p>정지 이미지에 줌/팬 효과와 전환, 배경음악을 입혀 뮤직비디오를 만듭니다.</p>
+  </header>
+
+  <main>
+    <section class="panel">
+      <h2>기본 설정</h2>
+      <div class="settings-grid">
+        <label>가로 <input type="number" id="width" value="1080" /></label>
+        <label>세로 <input type="number" id="height" value="1920" /></label>
+        <label>FPS <input type="number" id="fps" value="30" /></label>
+        <label>전환 길이(초) <input type="number" id="transitionDuration" value="0.6" step="0.1" /></label>
+      </div>
+      <div class="settings-grid">
+        <label>배경음악 (선택) <input type="file" id="audio" accept="audio/*" /></label>
+        <label>음량 <input type="number" id="audioVolume" value="1" step="0.1" min="0" max="2" /></label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-header-row">
+        <h2>씬 목록</h2>
+        <button id="add-scene" class="btn btn-primary" type="button">+ 씬 추가</button>
+      </div>
+      <div id="scenes"></div>
+    </section>
+
+    <section class="panel">
+      <button id="render-btn" class="btn btn-render" type="button">영상 만들기</button>
+      <p id="status" class="status-text"></p>
+      <div id="result" class="result hidden">
+        <video id="result-video" controls></video>
+        <a id="download-link" class="btn btn-secondary" download="video.mp4">다운로드</a>
+      </div>
+    </section>
+  </main>
+
+  <script src="app.js"></script>
+</body>
+</html>
