@@ -8,6 +8,7 @@ import draftRoutes from './routes/draft.js'
 import reviewRoutes from './routes/review.js'
 import authRoutes from './routes/auth.js'
 import bloggerRoutes from './routes/blogger.js'
+import youtubeRoutes from './routes/youtube.js'
 
 // 별도로 server/.env를 만들지 않고, 프로젝트 루트의 .env 파일 하나만 읽어요.
 // (이미 프론트엔드용 .env에 ANTHROPIC_API_KEY 등을 추가해두셨다면 그대로 인식됩니다.)
@@ -25,6 +26,7 @@ app.get('/health', (req, res) => res.json({ ok: true }))
 app.use('/api', draftRoutes)
 app.use('/api', reviewRoutes)
 app.use('/api', bloggerRoutes)
+app.use('/api', youtubeRoutes)
 app.use('/auth', authRoutes)
 
 // 배포(프로덕션) 환경에서는 프론트엔드(vite build 결과)까지 이 서버 하나가 같이 서빙한다.
@@ -44,5 +46,8 @@ app.listen(PORT, () => {
   }
   if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
     console.warn('⚠️  GOOGLE_CLIENT_ID/SECRET이 설정되지 않았어요. 구글 Blogger 연동이 동작하지 않아요.')
+  }
+  if (!process.env.YOUTUBE_API_KEY) {
+    console.warn('⚠️  YOUTUBE_API_KEY가 설정되지 않았어요. 벤치마킹 리포트의 유튜브 검색이 동작하지 않아요.')
   }
 })

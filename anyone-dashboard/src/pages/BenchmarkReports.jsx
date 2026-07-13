@@ -6,6 +6,23 @@ import PageHeader from '../components/PageHeader'
 import Modal from '../components/Modal'
 import FormField from '../components/FormField'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
+import { searchYoutubeVideos } from '../lib/apiClient'
+
+const DURATION_OPTIONS = [
+  { value: '', label: '전체 길이' },
+  { value: 'short', label: '쇼츠(4분 미만)' },
+  { value: 'long', label: '롱폼(20분 이상)' },
+]
+const REGION_OPTIONS = [
+  { value: '', label: '전체 지역' },
+  { value: 'US', label: '해외(미국)' },
+  { value: 'KR', label: '국내(한국)' },
+]
+
+function formatCount(n) {
+  if (n >= 10000) return `${(n / 10000).toFixed(1)}만`
+  return String(n)
+}
 
 const PLATFORM_OPTIONS = ['블로그', '스레드', '유튜브']
 const SOURCE_OPTIONS = ['공식 API', '트렌드 도구']
@@ -28,6 +45,42 @@ export default function BenchmarkReports() {
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(emptyForm)
+
+  const [query, setQuery] = useState('')
+  const [duration, setDuration] = useState('')
+  const [region, setRegion] = useState('US')
+  const [searching, setSearching] = useState(false)
+  const [searchError, setSearchError] = useState('')
+  const [results, setResults] = useState(null)
+
+  const runSearch = async (e) => {
+    e.preventDefault()
+    if (!query.trim()) return
+    setSearching(true)
+    setSearchError('')
+    try {
+      const videos = await searchYoutubeVideos({ query, minLikes: 10000, regionCode: region || undefined, videoDuration: duration || undefined })
+      setResults(videos)
+    } catch (err) {
+      setSearchError(err.message)
+      setResults(null)
+    } finally {
+      setSearching(false)
+    }
+  }
+
+  const addVideoToReport = (video) => {
+    setEditing(null)
+    setForm({
+      keyword: video.title,
+      platform: '유튜브',
+      source_type: '공식 API',
+      category: CATEGORY_OPTIONS[0],
+      popularity_score: video.viewCount,
+      note: `채널: ${video.channelTitle} · 조회수 ${formatCount(video.viewCount)} · 좋아요 ${formatCount(video.likeCount)} · ${video.url}`,
+    })
+    setModalOpen(true)
+  }
 
   const openAdd = () => {
     setEditing(null)
@@ -56,6 +109,76 @@ export default function BenchmarkReports() {
         onAddClick={openAdd}
         addLabel="리포트 추가"
       />
+
+      {/* 유튜브 인기 영상 검색 (조회수순, 좋아요 1만 개 이상만) */}
+      <div className="mb-4 rounded-xl bg-paper-card p-4 shadow-card">
+        <h2 className="mb-2 text-sm font-semibold text-ink">🔎 유튜브 인기 영상 검색</h2>
+        <form onSubmit={runSearch} className="flex flex-wrap gap-2">
+          <input
+            className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+            placeholder="검색어 (예: winter home decor)"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+          />
+          <select
+            className="rounded-md border border-ink/15 px-2 py-2 text-sm"
+            value={region}
+            onChange={(e) => setRegion(e.target.value)}
+          >
+            {REGION_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <select
+            className="rounded-md border border-ink/15 px-2 py-2 text-sm"
+            value={duration}
+            onChange={(e) => setDuration(e.target.value)}
+          >
+            {DURATION_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <button
+            type="submit"
+            disabled={searching}
+            className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+          >
+            {searching ? '검색 중...' : '검색'}
+          </button>
+        </form>
+        <p className="mt-2 text-[11px] text-ink/40">좋아요 1만 개 이상인 영상만 조회수 순으로 보여줘요.</p>
+
+        {searchError && <p className="mt-3 text-xs text-stamp-reject">{searchError}</p>}
+
+        {results && results.length === 0 && !searchError && (
+          <p className="mt-3 text-xs text-ink/40">조건에 맞는 영상이 없어요 (좋아요 1만 개 이상 기준).</p>
+        )}
+
+        {results && results.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {results.map((v) => (
+              <div key={v.videoId} className="flex items-center gap-3 rounded-lg border border-ink/10 p-2">
+                {v.thumbnail && <img src={v.thumbnail} alt="" className="h-12 w-20 flex-shrink-0 rounded object-cover" />}
+                <div className="min-w-0 flex-1">
+                  <a href={v.url} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium text-ink hover:underline">
+                    {v.title}
+                  </a>
+                  <p className="truncate text-xs text-ink/50">
+                    {v.channelTitle} · 조회수 {formatCount(v.viewCount)} · 좋아요 {formatCount(v.likeCount)}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => addVideoToReport(v)}
+                  className="flex-shrink-0 rounded-md border border-stamp-amber px-3 py-1.5 text-xs font-semibold text-stamp-amber hover:bg-stamp-amber/10"
+                >
+                  + 리포트에 추가
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {loading && <LoadingView />}
       {error && <ErrorView message={error} />}
