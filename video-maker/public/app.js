@@ -1,6 +1,29 @@
 const scenesEl = document.getElementById('scenes');
 const scenes = []; // { imageFile, voiceFile, duration, motion, text, voiceVolume, el }
 
+// 무료 호스팅(512MB) 메모리 한도에 안전하게 맞춘 프리셋 해상도
+const ASPECT_PRESETS = {
+  '9:16': { width: 720, height: 1280 },
+  '16:9': { width: 1280, height: 720 },
+  '1:1': { width: 720, height: 720 },
+  '4:5': { width: 720, height: 900 },
+};
+
+const aspectSelect = document.getElementById('aspect-preset');
+const customSizeEl = document.getElementById('custom-size');
+aspectSelect.addEventListener('change', () => {
+  customSizeEl.classList.toggle('hidden', aspectSelect.value !== 'custom');
+});
+
+function getSelectedSize() {
+  const preset = ASPECT_PRESETS[aspectSelect.value];
+  if (preset) return preset;
+  return {
+    width: document.getElementById('width').value,
+    height: document.getElementById('height').value,
+  };
+}
+
 (async function initUserBar() {
   try {
     const res = await fetch('/api/me');
@@ -79,9 +102,10 @@ document.getElementById('render-btn').addEventListener('click', async () => {
     return;
   }
 
+  const size = getSelectedSize();
   const formData = new FormData();
-  formData.append('width', document.getElementById('width').value);
-  formData.append('height', document.getElementById('height').value);
+  formData.append('width', size.width);
+  formData.append('height', size.height);
   formData.append('fps', document.getElementById('fps').value);
   formData.append('transitionDuration', document.getElementById('transitionDuration').value);
   formData.append('audioVolume', document.getElementById('audioVolume').value);

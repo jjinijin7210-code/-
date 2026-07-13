@@ -22,10 +22,21 @@
     <section class="panel">
       <h2>기본 설정</h2>
       <div class="settings-grid">
-        <label>가로 <input type="number" id="width" value="720" /></label>
-        <label>세로 <input type="number" id="height" value="1280" /></label>
+        <label>화면 비율
+          <select id="aspect-preset">
+            <option value="9:16">9:16 (세로 · 쇼츠/릴스/틱톡)</option>
+            <option value="16:9">16:9 (가로 · 유튜브)</option>
+            <option value="1:1">1:1 (정사각형 · 인스타 피드)</option>
+            <option value="4:5">4:5 (인스타 세로 피드)</option>
+            <option value="custom">직접 입력</option>
+          </select>
+        </label>
         <label>FPS <input type="number" id="fps" value="24" /></label>
         <label>전환 길이(초) <input type="number" id="transitionDuration" value="0.6" step="0.1" /></label>
+      </div>
+      <div id="custom-size" class="settings-grid hidden">
+        <label>가로 <input type="number" id="width" value="720" /></label>
+        <label>세로 <input type="number" id="height" value="1280" /></label>
       </div>
       <div class="settings-grid">
         <label>배경음악 (선택) <input type="file" id="audio" accept="audio/*" /></label>
