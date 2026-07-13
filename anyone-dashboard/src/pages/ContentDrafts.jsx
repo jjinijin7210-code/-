@@ -197,15 +197,27 @@ export default function ContentDrafts() {
       saved = await insertRow(payload)
     }
 
-    // AI 검수 결과가 있으면 검수 로그에도 기록 (계획서 5장 검수 구조 - 검수자 1차 체크 기록)
+    // AI 검수 결과가 있으면 검수 로그에도 기록 (계획서 5장 검수 구조 - 2중3중 검수 단계별로 각각 기록)
     if (reviewResult && saved) {
-      await insertReviewLog({
-        draft_id: saved.id,
-        reviewer_role: '검수자(AI)',
-        check_type: 'AI 자동검수(팩트체크·과장표현·AI스러운 문체)',
-        result: reviewResult.result,
-        reason: reviewResult.reasons?.join(' / ') || '',
-      })
+      if (reviewResult.stages?.length > 0) {
+        for (const stage of reviewResult.stages) {
+          await insertReviewLog({
+            draft_id: saved.id,
+            reviewer_role: `검수자(AI) - ${stage.stage}`,
+            check_type: stage.stage,
+            result: stage.result,
+            reason: stage.reasons?.join(' / ') || '',
+          })
+        }
+      } else {
+        await insertReviewLog({
+          draft_id: saved.id,
+          reviewer_role: '검수자(AI)',
+          check_type: 'AI 자동검수',
+          result: reviewResult.result,
+          reason: reviewResult.reasons?.join(' / ') || '',
+        })
+      }
     }
 
     setRevisionNote('')

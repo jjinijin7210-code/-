@@ -2,7 +2,15 @@
 // 실행: node scripts/test-review-parser.mjs
 
 import assert from 'node:assert/strict'
-import { buildReviewSystemPrompt, buildReviewUserPrompt, parseReviewResponse } from '../server/lib/reviewParser.js'
+import {
+  buildReviewSystemPrompt,
+  buildReviewUserPrompt,
+  buildReviewMessages,
+  parseReviewResponse,
+  combineStageResults,
+  REVIEW_STAGES,
+  STAGE_CHECK_KEYS,
+} from '../server/lib/reviewParser.js'
 
 let passed = 0
 function check(name, fn) {
@@ -78,6 +86,46 @@ check('checks 필드가 없거나 이상해도 죽지 않고 fail로 채워짐',
   assert.equal(result.checks.fact_check, 'fail')
   assert.equal(result.checks.exaggeration, 'fail')
   assert.equal(result.checks.ai_tone, 'fail')
+})
+
+console.log('=== 4. 2중3중 검수 (다단계 + 교차검수 + 가독성검수) ===')
+check('검수 단계가 정확히 3단계(1차/교차/가독성)임', () => {
+  assert.deepEqual(REVIEW_STAGES, ['1차 검수', '교차 검수', '가독성 검수'])
+})
+check('가독성 검수 프롬프트는 20대 초반 자연스러움에 집중함', () => {
+  const { system } = buildReviewMessages({ title: 't', body: 'b', channel: '스레드', stage: '가독성 검수' })
+  assert.ok(system.includes('20대 초반'))
+  assert.ok(system.includes('자연스럽'))
+})
+check('가독성 검수는 fact_check가 아니라 readability류 체크 항목을 기대함', () => {
+  assert.deepEqual(STAGE_CHECK_KEYS['가독성 검수'], ['readability', 'tone_comfort', 'natural_flow'])
+})
+check('가독성 검수 응답에 readability 체크가 없으면 fail로 채워짐 (fail-safe)', () => {
+  const result = parseReviewResponse('{"result": "통과", "reasons": []}', STAGE_CHECK_KEYS['가독성 검수'])
+  assert.equal(result.checks.readability, 'fail')
+  assert.equal(result.checks.tone_comfort, 'fail')
+  assert.equal(result.checks.natural_flow, 'fail')
+})
+check('3단계 모두 통과해야 전체 통과', () => {
+  const pass = { result: '통과', reasons: [], checks: { fact_check: 'pass' }, parseError: false }
+  const combined = combineStageResults([
+    { stage: '1차 검수', result: pass },
+    { stage: '교차 검수', result: pass },
+    { stage: '가독성 검수', result: pass },
+  ])
+  assert.equal(combined.result, '통과')
+  assert.equal(combined.stages.length, 3)
+})
+check('한 단계라도 반려면 전체 반려 (fail-safe)', () => {
+  const pass = { result: '통과', reasons: [], checks: {}, parseError: false }
+  const fail = { result: '반려', reasons: ['너무 딱딱함'], checks: { readability: 'fail' }, parseError: false }
+  const combined = combineStageResults([
+    { stage: '1차 검수', result: pass },
+    { stage: '교차 검수', result: pass },
+    { stage: '가독성 검수', result: fail },
+  ])
+  assert.equal(combined.result, '반려')
+  assert.ok(combined.reasons.some((r) => r.includes('[가독성 검수]') && r.includes('너무 딱딱함')))
 })
 
 console.log(`\n총 ${passed}개 테스트 통과`)
