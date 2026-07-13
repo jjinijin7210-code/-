@@ -1,0 +1,168 @@
+#!/usr/bin/env node
+// 뮤직비디오 조립기 — 정지 이미지(팬/줌 효과) + 미리 만든 AI 영상 클립을 이어붙여
+// 배경음악과 함께 하나의 mp4로 렌더링한다. 외부 npm 의존성 없이 시스템 ffmpeg만 사용한다.
+//
+// 사용법: node build.js <project.json>
+//
+// project.json 스키마는 README.md 참고.
+// AI 영상 클립 연동: scene.type === 'video' 로 미리 생성된 클립 파일 경로를 넣으면
+// 정지 이미지 대신 그 영상을 타임라인에 그대로 사용한다. Higgsfield 등에서 생성한
+// mp4를 이 자리에 넣기만 하면 되는 구조.
+
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawnSync } = require('child_process');
+
+function run(args) {
+  const res = spawnSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', ...args], { stdio: 'inherit' });
+  if (res.status !== 0) {
+    throw new Error(`ffmpeg exited with code ${res.status}: ffmpeg ${args.join(' ')}`);
+  }
+}
+
+function ffprobeDuration(file) {
+  const res = spawnSync('ffprobe', [
+    '-v', 'error', '-show_entries', 'format=duration',
+    '-of', 'default=noprint_wrappers=1:nokey=1', file,
+  ]);
+  return parseFloat(res.stdout.toString().trim());
+}
+
+function kenBurnsFilter(motion, frames, fps, w, h) {
+  const step = 0.0018;
+  switch (motion) {
+    case 'zoom-out':
+      return `zoompan=z='if(eq(on,0),1.3,max(zoom-${step},1.0))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`;
+    case 'pan-left':
+      return `zoompan=z=1.2:x='if(eq(on,0),iw-iw/1.2,x-2)':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`;
+    case 'pan-right':
+      return `zoompan=z=1.2:x='if(eq(on,0),0,x+2)':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`;
+    case 'none':
+      return null;
+    case 'zoom-in':
+    default:
+      return `zoompan=z='min(zoom+${step},1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`;
+  }
+}
+
+function buildImageClip(scene, idx, cfg, tmpDir) {
+  const { width: w, height: h, fps } = cfg;
+  const duration = scene.duration || cfg.defaultSceneDuration || 4;
+  const frames = Math.round(duration * fps);
+  const bw = w * 2;
+  const bh = h * 2;
+  const zoompan = kenBurnsFilter(scene.motion, frames, fps, w, h);
+
+  let filter = `scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh}`;
+  filter += zoompan ? `,${zoompan}` : `,scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps}`;
+  filter += ',format=yuv420p';
+
+  if (scene.text) {
+    const textFile = path.join(tmpDir, `text_${idx}.txt`);
+    fs.writeFileSync(textFile, scene.text, 'utf8');
+    filter += `,drawtext=font='Noto Sans CJK KR':textfile='${textFile}':fontcolor=white:fontsize=${h * 0.045 | 0}:x=(w-text_w)/2:y=h-h*0.12:box=1:boxcolor=black@0.45:boxborderw=16`;
+  }
+
+  const out = path.join(tmpDir, `clip_${idx}.mp4`);
+  run(['-loop', '1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', out]);
+  return { file: out, duration };
+}
+
+function buildVideoClip(scene, idx, cfg, tmpDir) {
+  const { width: w, height: h, fps } = cfg;
+  const srcDuration = ffprobeDuration(scene.src);
+  const duration = scene.duration ? Math.min(scene.duration, srcDuration) : srcDuration;
+
+  let filter = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps},setsar=1,format=yuv420p`;
+  if (scene.text) {
+    const textFile = path.join(tmpDir, `text_${idx}.txt`);
+    fs.writeFileSync(textFile, scene.text, 'utf8');
+    filter += `,drawtext=font='Noto Sans CJK KR':textfile='${textFile}':fontcolor=white:fontsize=${h * 0.045 | 0}:x=(w-text_w)/2:y=h-h*0.12:box=1:boxcolor=black@0.45:boxborderw=16`;
+  }
+
+  const out = path.join(tmpDir, `clip_${idx}.mp4`);
+  run(['-i', scene.src, '-t', String(duration), '-vf', filter, '-an', out]);
+  return { file: out, duration };
+}
+
+function concatWithCrossfade(clips, transitionDuration, cfg, tmpDir) {
+  if (clips.length === 1) return clips[0].file;
+
+  const inputArgs = [];
+  clips.forEach((c) => inputArgs.push('-i', c.file));
+
+  let filterComplex = '';
+  let prevLabel = '0';
+  let cumulative = clips[0].duration;
+
+  for (let i = 1; i < clips.length; i++) {
+    const t = Math.min(transitionDuration, clips[i - 1].duration, clips[i].duration);
+    const offset = Math.max(cumulative - t, 0);
+    const outLabel = i === clips.length - 1 ? 'vout' : `v${i}`;
+    filterComplex += `[${prevLabel}][${i}]xfade=transition=fade:duration=${t}:offset=${offset}[${outLabel}];`;
+    cumulative = cumulative + clips[i].duration - t;
+    prevLabel = outLabel;
+  }
+  filterComplex = filterComplex.replace(/;$/, '');
+
+  const out = path.join(tmpDir, 'concatenated.mp4');
+  run([...inputArgs, '-filter_complex', filterComplex, '-map', '[vout]', '-r', String(cfg.fps), out]);
+  return out;
+}
+
+function muxAudio(videoFile, cfg, tmpDir) {
+  if (!cfg.audio) return videoFile;
+  const out = path.join(tmpDir, 'with_audio.mp4');
+  const args = ['-i', videoFile];
+  if (cfg.loopAudio !== false) args.push('-stream_loop', '-1');
+  args.push('-i', cfg.audio, '-shortest', '-map', '0:v', '-map', '1:a');
+  if (cfg.audioVolume && cfg.audioVolume !== 1) {
+    args.push('-af', `volume=${cfg.audioVolume}`);
+  }
+  args.push('-c:v', 'copy', '-c:a', 'aac', '-b:a', '192k', out);
+  run(args);
+  return out;
+}
+
+function main() {
+  const projectPath = process.argv[2];
+  if (!projectPath) {
+    console.error('사용법: video-maker <project.json>  (또는 node build.js <project.json>)');
+    process.exit(1);
+  }
+
+  const cfg = JSON.parse(fs.readFileSync(projectPath, 'utf8'));
+  const baseDir = path.dirname(path.resolve(projectPath));
+  cfg.width = cfg.width || 1920;
+  cfg.height = cfg.height || 1080;
+  cfg.fps = cfg.fps || 30;
+  cfg.transitionDuration = cfg.transitionDuration != null ? cfg.transitionDuration : 0.6;
+
+  const resolvePath = (p) => (path.isAbsolute(p) ? p : path.join(baseDir, p));
+  cfg.scenes.forEach((s) => { s.src = resolvePath(s.src); });
+  if (cfg.audio) cfg.audio = resolvePath(cfg.audio);
+  const outputPath = resolvePath(cfg.output || 'output.mp4');
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'video-maker-'));
+  console.log(`[video-maker] 작업 디렉토리: ${tmpDir}`);
+
+  const clips = cfg.scenes.map((scene, idx) => {
+    console.log(`[video-maker] 씬 ${idx + 1}/${cfg.scenes.length} 렌더링 중 (${scene.type || 'image'})`);
+    if (scene.type === 'video') return buildVideoClip(scene, idx, cfg, tmpDir);
+    return buildImageClip(scene, idx, cfg, tmpDir);
+  });
+
+  console.log('[video-maker] 씬 이어붙이는 중 (크로스페이드)');
+  const concatenated = concatWithCrossfade(clips, cfg.transitionDuration, cfg, tmpDir);
+
+  console.log('[video-maker] 오디오 합성 중');
+  const withAudio = muxAudio(concatenated, cfg, tmpDir);
+
+  fs.copyFileSync(withAudio, outputPath);
+  fs.rmSync(tmpDir, { recursive: true, force: true });
+
+  console.log(`[video-maker] 완료: ${outputPath}`);
+}
+
+main();

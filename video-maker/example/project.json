@@ -1,0 +1,14 @@
+{
+  "output": "output.mp4",
+  "width": 1080,
+  "height": 1920,
+  "fps": 30,
+  "transitionDuration": 0.6,
+  "audio": "assets/audio.mp3",
+  "audioVolume": 0.8,
+  "scenes": [
+    { "type": "image", "src": "assets/scene1.png", "duration": 4, "motion": "zoom-in", "text": "여기에 첫 소절 가사" },
+    { "type": "image", "src": "assets/scene2.png", "duration": 4, "motion": "pan-right", "text": "두 번째 소절 가사" },
+    { "type": "image", "src": "assets/scene3.png", "duration": 4, "motion": "zoom-out", "text": "마지막 소절 가사" }
+  ]
+}

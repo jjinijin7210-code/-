@@ -1,0 +1,14 @@
+{
+  "name": "video-maker",
+  "version": "1.0.0",
+  "description": "정지 이미지(줌/팬 효과) + AI 영상 클립을 이어붙여 배경음악과 함께 mp4로 렌더링하는 CLI 도구",
+  "bin": {
+    "video-maker": "./build.js"
+  },
+  "main": "build.js",
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "UNLICENSED",
+  "private": true
+}
