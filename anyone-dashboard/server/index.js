@@ -1,5 +1,6 @@
 import dotenv from 'dotenv'
 import path from 'node:path'
+import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import express from 'express'
 import cors from 'cors'
@@ -25,6 +26,16 @@ app.use('/api', draftRoutes)
 app.use('/api', reviewRoutes)
 app.use('/api', bloggerRoutes)
 app.use('/auth', authRoutes)
+
+// 배포(프로덕션) 환경에서는 프론트엔드(vite build 결과)까지 이 서버 하나가 같이 서빙한다.
+// 로컬 개발(npm run dev:all)에서는 vite dev 서버가 따로 5173번에서 떠서 이 블록은 그냥 건너뛴다.
+const distPath = path.join(__dirname, '..', 'dist')
+if (fs.existsSync(distPath)) {
+  app.use(express.static(distPath))
+  app.get(/^(?!\/api|\/auth).*/, (req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'))
+  })
+}
 
 app.listen(PORT, () => {
   console.log(`[애니원 백엔드] http://localhost:${PORT} 에서 실행 중`)

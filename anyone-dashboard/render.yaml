@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: anyone-dashboard
+    runtime: docker
+    dockerfilePath: ./anyone-dashboard/Dockerfile
+    dockerContext: ./anyone-dashboard
+    plan: free
+    envVars:
+      - key: PORT
+        value: 4000
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: GOOGLE_REDIRECT_URI
+        sync: false
+      - key: BLOGGER_BLOG_ID
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
