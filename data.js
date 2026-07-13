@@ -1,15 +1,19 @@
 // AnyOne 직원 현황판 — 직원 명단 및 업무 프리셋
-// 기획서 "2. 전체 구조 — AI 직원 팀 구성" 기준
+// 기획서 "2. 전체 구조 — AI 직원 팀 구성" + "13. Luna Creative Studio 연동" 기준
 //
+// team: 'anyone' -> AnyOne 자체 팀 (14명)
+// team: 'luna'   -> 외부 크리에이티브 파트너 Luna Creative Studio (18명)
 // automated: true  -> 활동 로그 기반 자동 상태 표시 (지금 하는 일)
 // automated: false -> 아직 자동화되지 않은 역할, 기존 수동 클릭(대기→검토중→통과) 유지
 
 const EMPLOYEES = [
+  // ---- AnyOne 팀 ----
   {
     id: 'researcher',
     name: '리서처',
     emoji: '🔍',
     dept: '리서치',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '인기 키워드·게시물 벤치마킹 중',
@@ -21,6 +25,7 @@ const EMPLOYEES = [
     name: '작성자 A',
     emoji: '✍️',
     dept: '블로그 · 인테리어/생활',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '겨울 이불빨래 꿀팁 초안 작성 중',
@@ -32,6 +37,7 @@ const EMPLOYEES = [
     name: '작성자 B',
     emoji: '✍️',
     dept: '블로그 · 푸드',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '푸드 카테고리 초안 작성 중 (식품표시광고법 체크 포함)',
@@ -42,6 +48,7 @@ const EMPLOYEES = [
     name: '작성자 C',
     emoji: '✍️',
     dept: '스레드',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '스레드용 캐주얼 톤 초안 작성 중',
@@ -52,6 +59,7 @@ const EMPLOYEES = [
     name: '번역/현지화 담당 (한국어)',
     emoji: '🌐',
     dept: '현지화',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '해외 소재 한국어 현지화 재구성 중',
@@ -62,6 +70,7 @@ const EMPLOYEES = [
     name: '번역/현지화 담당 (영어)',
     emoji: '🌐',
     dept: '현지화',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '소재 영어 현지화 재구성 중',
@@ -72,6 +81,7 @@ const EMPLOYEES = [
     name: '번역/현지화 담당 (일본어)',
     emoji: '🌐',
     dept: '현지화',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '소재 일본어 현지화 재구성 중',
@@ -82,6 +92,7 @@ const EMPLOYEES = [
     name: '검수자 (팩트체커)',
     emoji: '✅',
     dept: '1차 검수',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '사실관계·출처 검증 중',
@@ -93,6 +104,7 @@ const EMPLOYEES = [
     name: '최종 매니저',
     emoji: '🧑‍💼',
     dept: '2차 검수',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '톤·일관성·정책 준수 종합 점검 중',
@@ -103,6 +115,7 @@ const EMPLOYEES = [
     name: '데이터 분석/방향성 담당',
     emoji: '📊',
     dept: '성과 분석',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '채널별 성과 지표 수집·분석 중',
@@ -114,6 +127,7 @@ const EMPLOYEES = [
     name: '성과 부진 원인 파악 담당',
     emoji: '🩺',
     dept: '성과 진단',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '저조 콘텐츠 원인 진단 중',
@@ -124,6 +138,7 @@ const EMPLOYEES = [
     name: '발행 담당',
     emoji: '📤',
     dept: '발행',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '발행 전 체크리스트 확인 중',
@@ -135,6 +150,7 @@ const EMPLOYEES = [
     name: 'CS 응대 담당',
     emoji: '📤',
     dept: 'CS',
+    team: 'anyone',
     automated: true,
     taskPresets: [
       '댓글 키워드 트리거 감지·응대 중',
@@ -146,28 +162,178 @@ const EMPLOYEES = [
     name: '영상 제작 담당',
     emoji: '🎬',
     dept: '숏폼 (3단계 예정)',
+    team: 'anyone',
     automated: false, // 아직 자동화 전 — 수동 상태 클릭 유지
   },
+
+  // ---- Luna Creative Studio (외부 크리에이티브 파트너, 18명) ----
   {
-    id: 'lunaImage',
-    name: '루나 (이미지 담당)',
-    emoji: '🎨',
-    dept: 'Luna Creative Studio',
+    id: 'lunaDirector',
+    name: '루나 (Creative Director)',
+    emoji: '👑',
+    dept: 'Luna Studio · 총괄',
+    team: 'luna',
     automated: true,
     taskPresets: [
-      '루나에게 이미지 요청 발송 중',
-      '이미지 생성/원칙 체크(실존인물·저작권) 중',
+      '전체 크리에이티브 디렉션 검토 중',
+      '브랜드·QA 결과 최종 승인 중',
     ],
   },
   {
-    id: 'lunaCrossCheck',
-    name: '루나 (교차 검수)',
-    emoji: '✅',
-    dept: '3차 교차검수',
+    id: 'artDirector',
+    name: '아트 디렉터',
+    emoji: '🎨',
+    dept: 'Luna Studio · 아트본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['비주얼 컨셉 디렉션 중'],
+  },
+  {
+    id: 'characterDesigner',
+    name: '캐릭터 디자이너',
+    emoji: '🧑‍🎨',
+    dept: 'Luna Studio · 아트본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['가상 캐릭터(예: june) 디자인 중 (실존인물 미사용 확인)'],
+  },
+  {
+    id: 'imageDesigner',
+    name: '이미지 디자이너',
+    emoji: '🖼️',
+    dept: 'Luna Studio · 아트본부',
+    team: 'luna',
     automated: true,
     taskPresets: [
-      '3차 교차검수 중',
+      '블로그/인스타/틱톡용 이미지 생성 중',
+      '이미지 원칙(실존인물·저작권) 체크 중',
     ],
+  },
+  {
+    id: 'thumbnailDesigner',
+    name: '썸네일 디자이너',
+    emoji: '🖼️',
+    dept: 'Luna Studio · 아트본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['썸네일 디자인 중'],
+  },
+  {
+    id: 'videoDirector',
+    name: '영상 감독',
+    emoji: '🎬',
+    dept: 'Luna Studio · 영상본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['영상 연출/디렉션 중'],
+  },
+  {
+    id: 'storyboardDesigner',
+    name: '스토리보드 디자이너',
+    emoji: '🎞️',
+    dept: 'Luna Studio · 영상본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['스토리보드 작업 중'],
+  },
+  {
+    id: 'promptEngineer',
+    name: '프롬프트 엔지니어',
+    emoji: '🧑‍💻',
+    dept: 'Luna Studio · 영상본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['영상 생성 프롬프트 작성 중'],
+  },
+  {
+    id: 'copywriter',
+    name: '카피라이터',
+    emoji: '✍️',
+    dept: 'Luna Studio · 콘텐츠본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['캡션/카피 작성 중'],
+  },
+  {
+    id: 'snsContentDesigner',
+    name: 'SNS 콘텐츠 디자이너',
+    emoji: '📱',
+    dept: 'Luna Studio · 콘텐츠본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['SNS용 콘텐츠 디자인 중'],
+  },
+  {
+    id: 'localizationSpecialist',
+    name: '현지화 전문가 (비주얼/톤)',
+    emoji: '🌏',
+    dept: 'Luna Studio · 콘텐츠본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['이미지/영상 비주얼 톤 현지화 중'],
+  },
+  {
+    id: 'brandManager',
+    name: '브랜드 매니저',
+    emoji: '🏷️',
+    dept: 'Luna Studio · 브랜드본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['브랜드 가이드라인 검토 중'],
+  },
+  {
+    id: 'assetManager',
+    name: '에셋 관리자',
+    emoji: '🗂️',
+    dept: 'Luna Studio · 브랜드본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['에셋(이미지/영상 소스) 정리·관리 중'],
+  },
+  {
+    id: 'qaLead',
+    name: '품질관리 책임자',
+    emoji: '✅',
+    dept: 'Luna Studio · QA본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['QA 총괄 검수 중'],
+  },
+  {
+    id: 'promptQA',
+    name: '프롬프트 QA',
+    emoji: '✅',
+    dept: 'Luna Studio · QA본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['프롬프트 품질 검수 중'],
+  },
+  {
+    id: 'designQA',
+    name: '디자인 QA',
+    emoji: '✅',
+    dept: 'Luna Studio · QA본부',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['디자인 결과물 검수 중 (실존인물·저작권 체크 포함)'],
+  },
+  {
+    id: 'trendResearcher',
+    name: '트렌드 연구원',
+    emoji: '📈',
+    dept: 'Luna Studio · 연구소',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['디자인·비주얼 트렌드 리서치 중'],
+  },
+  {
+    id: 'ideaResearcher',
+    name: '아이디어 연구원',
+    emoji: '💡',
+    dept: 'Luna Studio · 연구소',
+    team: 'luna',
+    automated: true,
+    taskPresets: ['신규 아이디어 리서치 중'],
   },
 ];
 

@@ -43,7 +43,7 @@ function seedState() {
     { id: genId(), employeeId: 'researcher', taskLabel: '인기 키워드·게시물 벤치마킹 중', startedAt: now - 18 * 60 * 1000, completedAt: now - 4 * 60 * 1000, status: 'completed' },
     { id: genId(), employeeId: 'writerA', taskLabel: '겨울 이불빨래 꿀팁 초안 작성 중', startedAt: now - 2 * 60 * 1000, completedAt: null, status: 'in_progress' },
     { id: genId(), employeeId: 'reviewer', taskLabel: '사실관계·출처 검증 중', startedAt: now - 45 * 1000, completedAt: null, status: 'in_progress' },
-    { id: genId(), employeeId: 'lunaImage', taskLabel: '루나에게 이미지 요청 발송 중', startedAt: now - 5 * 60 * 1000, completedAt: now - 60 * 1000, status: 'completed' },
+    { id: genId(), employeeId: 'imageDesigner', taskLabel: '블로그/인스타/틱톡용 이미지 생성 중', startedAt: now - 5 * 60 * 1000, completedAt: now - 60 * 1000, status: 'completed' },
   ];
   manualStatus = { videoTeam: MANUAL_STATUS_CYCLE[0] };
   saveState();
@@ -122,10 +122,19 @@ function render() {
 }
 
 function renderEmployeeCards() {
-  const grid = document.getElementById('employee-grid');
-  grid.innerHTML = '';
+  const anyoneGrid = document.getElementById('employee-grid-anyone');
+  const lunaGrid = document.getElementById('employee-grid-luna');
+  anyoneGrid.innerHTML = '';
+  lunaGrid.innerHTML = '';
 
   EMPLOYEES.forEach((employee) => {
+    const card = buildEmployeeCard(employee);
+    const grid = employee.team === 'luna' ? lunaGrid : anyoneGrid;
+    grid.appendChild(card);
+  });
+}
+
+function buildEmployeeCard(employee) {
     const card = document.createElement('div');
     card.className = 'employee-card';
 
@@ -191,8 +200,7 @@ function renderEmployeeCards() {
       card.appendChild(manualBtn);
     }
 
-    grid.appendChild(card);
-  });
+    return card;
 }
 
 function renderActivityFeed() {

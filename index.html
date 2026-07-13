@@ -13,12 +13,19 @@
   </header>
 
   <main>
-    <section class="panel">
-      <h2>직원 현황</h2>
-      <div id="employee-grid"></div>
-    </section>
+    <div class="main-left">
+      <section class="panel">
+        <h2>직원 현황 — AnyOne 팀</h2>
+        <div id="employee-grid-anyone" class="employee-grid"></div>
+      </section>
 
-    <section class="panel">
+      <section class="panel">
+        <h2>직원 현황 — Luna Creative Studio (외부 파트너)</h2>
+        <div id="employee-grid-luna" class="employee-grid"></div>
+      </section>
+    </div>
+
+    <section class="panel main-right">
       <h2>🟢 지금 하고 있는 일</h2>
       <p class="refresh-note">5초마다 자동 새로고침 · 활동 발생 시 즉시 갱신</p>
       <ul id="activity-feed"></ul>
