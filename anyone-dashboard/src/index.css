@@ -1,0 +1,27 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html, body, #root {
+  height: 100%;
+}
+
+body {
+  @apply bg-paper text-ink font-sans antialiased;
+}
+
+/* 결재 도장 배지 - 살짝 회전된 스탬프 느낌 */
+.stamp-badge {
+  @apply inline-flex items-center gap-1 rounded-full border-2 px-3 py-0.5 text-xs font-bold tracking-wide;
+  transform: rotate(-2deg);
+}
+
+/* 스크롤바를 조금 더 차분하게 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-thumb {
+  background-color: #C7C4BA;
+  border-radius: 999px;
+}
