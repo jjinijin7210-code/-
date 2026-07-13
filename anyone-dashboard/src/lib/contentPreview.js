@@ -6,12 +6,16 @@
 // ============================================================
 
 // 콘텐츠 관리 화면의 "채널" 선택지 (요청사항 반영: 네이버 블로그 카테고리별 분리 + 구글 블로그 신규 + 인스타/틱톡 통합)
+// 인스타/틱톡은 번역/현지화 담당(한국어·영어·일본어, 계획서 2장 조직도) 3명이 각자 맡을 수 있게
+// 언어별로 채널을 분리해뒀음 - 일본/영어 채널 확장(해외 벤치마킹 → 현지화) 대비.
 export const PREVIEW_PLATFORMS = [
   '블로그(네이버)-인테리어/생활',
   '블로그(네이버)-푸드',
   '블로그(구글 Blogger)',
   '스레드',
   '인스타/틱톡',
+  '인스타/틱톡(영어)',
+  '인스타/틱톡(일본어)',
 ]
 
 // 플랫폼별 미리보기 스타일 힌트 (본문 길이 제한, 비율 등 - 실제 각 서비스 사양의 대략적인 참고값)
@@ -21,6 +25,8 @@ export const PLATFORM_PREVIEW_SPECS = {
   '블로그(구글 Blogger)': { bodyMaxLen: 400, aspect: 'article', showHashtagsInline: false },
   스레드: { bodyMaxLen: 120, aspect: 'square', showHashtagsInline: true },
   '인스타/틱톡': { bodyMaxLen: 100, aspect: 'vertical', showHashtagsInline: true },
+  '인스타/틱톡(영어)': { bodyMaxLen: 100, aspect: 'vertical', showHashtagsInline: true },
+  '인스타/틱톡(일본어)': { bodyMaxLen: 100, aspect: 'vertical', showHashtagsInline: true },
 }
 
 // 채널별로 어떤 카테고리(기존 CS링크/벤치마킹 등에서 쓰는 인테리어·생활 / 푸드쇼핑 구분)에 해당하는지
@@ -29,14 +35,14 @@ export function getCategoryForChannel(channel) {
   return '인테리어/생활용품'
 }
 
-// "AI로 초안 생성" 버튼을 보여줄 채널인지 (이번 작업 범위: 스레드·인스타/틱톡의 텍스트 자동화만)
+// "AI로 초안 생성" 버튼을 보여줄 채널인지 (이번 작업 범위: 스레드·인스타/틱톡(전 언어)의 텍스트 자동화만)
 export function isAiDraftChannel(channel) {
-  return channel === '스레드' || channel === '인스타/틱톡'
+  return channel === '스레드' || channel.startsWith('인스타/틱톡')
 }
 
 // 해외 트렌드 소재 재구성 원칙(원문 그대로 번역 금지)이 적용되는 채널인지
 export function isLocalizationChannel(channel) {
-  return channel === '인스타/틱톡'
+  return channel.startsWith('인스타/틱톡')
 }
 
 // 구글 Blogger로 실제 발행 가능한 채널인지

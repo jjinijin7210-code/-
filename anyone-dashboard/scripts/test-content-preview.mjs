@@ -28,15 +28,24 @@ function check(name, fn) {
   }
 }
 
-console.log('=== 1. 채널 목록 (요청하신 5종) ===')
-check('네이버 블로그 2종(인테리어/생활, 푸드) + 구글 Blogger + 스레드 + 인스타/틱톡', () => {
+console.log('=== 1. 채널 목록 (요청하신 5종 + 인스타/틱톡 언어별 현지화 2종) ===')
+check('네이버 블로그 2종(인테리어/생활, 푸드) + 구글 Blogger + 스레드 + 인스타/틱톡(한/영/일)', () => {
   assert.deepEqual(PREVIEW_PLATFORMS, [
     '블로그(네이버)-인테리어/생활',
     '블로그(네이버)-푸드',
     '블로그(구글 Blogger)',
     '스레드',
     '인스타/틱톡',
+    '인스타/틱톡(영어)',
+    '인스타/틱톡(일본어)',
   ])
+})
+
+check('인스타/틱톡 언어별 채널도 AI 초안 생성 + 현지화 원칙 대상', () => {
+  assert.equal(isAiDraftChannel('인스타/틱톡(영어)'), true)
+  assert.equal(isAiDraftChannel('인스타/틱톡(일본어)'), true)
+  assert.equal(isLocalizationChannel('인스타/틱톡(영어)'), true)
+  assert.equal(isLocalizationChannel('인스타/틱톡(일본어)'), true)
 })
 
 console.log('=== 2. 채널별 분류 헬퍼 ===')

@@ -15,13 +15,21 @@ const COMMON_TONE_RULES = `타겟 독자는 20대 초반이야. AI가 쓴 티 �
 
 const CHANNEL_TONE = {
   스레드: '스레드용 톤: 블로그보다 훨씬 캐주얼하게, 짧고 리듬감 있게 써줘.',
-  '인스타/틱톡': '인스타/틱톡용 톤: 캐주얼하고 임팩트 있게, 짧은 문장 위주로 써줘.',
 }
+// 인스타/틱톡은 번역/현지화 담당(한국어·영어·일본어)이 언어별로 분리되어 있어서 접두 매칭으로 처리
+const INSTA_TIKTOK_TONE = '인스타/틱톡용 톤: 캐주얼하고 임팩트 있게, 짧은 문장 위주로 써줘.'
 
 const LOCALIZATION_RULES = `[반드시 지킬 것 - 해외 트렌드 소재 재구성 원칙]
 - 참고로 준 해외 트렌드 설명(원문)을 그대로 번역하지 마 — 2차적저작물 저작권 문제가 생길 수 있어
 - "왜 인기 있는지, 어떤 포인트가 공감받았는지"만 참고해서 완전히 새로운 문장으로 다시 써줘
-- 20대 초반이 이해하기 쉽게, 배경지식이 필요한 부분은 설명을 더해줘`
+- 그 나라 언어권 20대 초반이 이해하기 쉽게, 배경지식이 필요한 부분은 설명을 더해줘`
+
+// 채널 이름에서 대상 언어를 뽑아낸다 ('인스타/틱톡(일본어)' -> '일본어', 그 외는 '한국어')
+function getTargetLanguage(channel) {
+  if (channel.includes('영어')) return '영어'
+  if (channel.includes('일본어')) return '일본어'
+  return '한국어'
+}
 
 /**
  * 초안 생성 요청의 system prompt를 만듭니다.
@@ -33,7 +41,12 @@ export function buildDraftSystemPrompt(channel) {
     COMMON_TONE_RULES,
   ]
   if (CHANNEL_TONE[channel]) parts.push(CHANNEL_TONE[channel])
-  if (channel === '인스타/틱톡') parts.push(LOCALIZATION_RULES)
+  if (channel.startsWith('인스타/틱톡')) {
+    parts.push(INSTA_TIKTOK_TONE)
+    parts.push(LOCALIZATION_RULES)
+    const lang = getTargetLanguage(channel)
+    parts.push(`[언어] title/body/hashtags 전부 반드시 ${lang}로만 작성해. 다른 언어를 섞지 마.`)
+  }
   parts.push(
     '반드시 아래 JSON 형식으로만 응답해 (다른 설명 없이 JSON만): {"title": "제목", "body": "본문", "hashtags": "해시태그 공백으로 구분"}'
   )

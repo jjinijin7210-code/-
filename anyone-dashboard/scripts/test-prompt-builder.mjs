@@ -41,6 +41,16 @@ check('스레드에는 현지화 원칙 문구가 들어가지 않음 (해당 �
   const prompt = buildDraftSystemPrompt('스레드')
   assert.ok(!prompt.includes('그대로 번역하지'))
 })
+check('인스타/틱톡(영어)는 영어로만 쓰라는 지시 + 현지화 원칙 포함', () => {
+  const prompt = buildDraftSystemPrompt('인스타/틱톡(영어)')
+  assert.ok(prompt.includes('반드시 영어로만 작성해'))
+  assert.ok(prompt.includes('그대로 번역하지'))
+})
+check('인스타/틱톡(일본어)는 일본어로만 쓰라는 지시 + 현지화 원칙 포함', () => {
+  const prompt = buildDraftSystemPrompt('인스타/틱톡(일본어)')
+  assert.ok(prompt.includes('반드시 일본어로만 작성해'))
+  assert.ok(prompt.includes('그대로 번역하지'))
+})
 check('응답 형식을 JSON으로 강제하는 지시가 포함됨', () => {
   const prompt = buildDraftSystemPrompt('스레드')
   assert.ok(prompt.includes('JSON'))
