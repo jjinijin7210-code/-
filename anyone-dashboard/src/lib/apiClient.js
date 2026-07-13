@@ -57,3 +57,16 @@ export async function searchYoutubeVideos({ query, minLikes = 10000, regionCode,
   }
   return data.videos || []
 }
+
+// 1688 상품 소싱 검색 (베스트셀러순 기본)
+export async function search1688Products({ query, maxProducts, sortType }) {
+  const params = new URLSearchParams({ q: query })
+  if (maxProducts) params.set('maxProducts', String(maxProducts))
+  if (sortType) params.set('sortType', sortType)
+  const res = await fetch(`${API_BASE}/api/sourcing/1688?${params.toString()}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `1688 상품 검색이 실패했어요 (${res.status})`)
+  }
+  return data.products || []
+}

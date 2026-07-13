@@ -6,7 +6,7 @@ import PageHeader from '../components/PageHeader'
 import Modal from '../components/Modal'
 import FormField from '../components/FormField'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
-import { searchYoutubeVideos } from '../lib/apiClient'
+import { searchYoutubeVideos, search1688Products } from '../lib/apiClient'
 
 const DURATION_OPTIONS = [
   { value: '', label: '전체 길이' },
@@ -24,7 +24,7 @@ function formatCount(n) {
   return String(n)
 }
 
-const PLATFORM_OPTIONS = ['블로그', '스레드', '유튜브']
+const PLATFORM_OPTIONS = ['블로그', '스레드', '유튜브', '상품소싱']
 const SOURCE_OPTIONS = ['공식 API', '트렌드 도구']
 const CATEGORY_OPTIONS = ['인테리어/생활용품', '푸드쇼핑']
 
@@ -67,6 +67,40 @@ export default function BenchmarkReports() {
     } finally {
       setSearching(false)
     }
+  }
+
+  const [sourcingQuery, setSourcingQuery] = useState('')
+  const [sourcingSearching, setSourcingSearching] = useState(false)
+  const [sourcingError, setSourcingError] = useState('')
+  const [sourcingResults, setSourcingResults] = useState(null)
+
+  const runSourcingSearch = async (e) => {
+    e.preventDefault()
+    if (!sourcingQuery.trim()) return
+    setSourcingSearching(true)
+    setSourcingError('')
+    try {
+      const products = await search1688Products({ query: sourcingQuery })
+      setSourcingResults(products)
+    } catch (err) {
+      setSourcingError(err.message)
+      setSourcingResults(null)
+    } finally {
+      setSourcingSearching(false)
+    }
+  }
+
+  const addProductToReport = (product) => {
+    setEditing(null)
+    setForm({
+      keyword: product.title,
+      platform: '상품소싱',
+      source_type: '트렌드 도구',
+      category: CATEGORY_OPTIONS[0],
+      popularity_score: '',
+      note: `가격: ${product.price || '-'} · 주문수: ${product.orderCount || '-'} · 판매자: ${product.shopName || '-'} · ${product.detailUrl || ''}`,
+    })
+    setModalOpen(true)
   }
 
   const addVideoToReport = (video) => {
@@ -170,6 +204,58 @@ export default function BenchmarkReports() {
                 <button
                   type="button"
                   onClick={() => addVideoToReport(v)}
+                  className="flex-shrink-0 rounded-md border border-stamp-amber px-3 py-1.5 text-xs font-semibold text-stamp-amber hover:bg-stamp-amber/10"
+                >
+                  + 리포트에 추가
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* 1688 상품 소싱 검색 (베스트셀러순) */}
+      <div className="mb-4 rounded-xl bg-paper-card p-4 shadow-card">
+        <h2 className="mb-2 text-sm font-semibold text-ink">📦 1688 상품 소싱 검색</h2>
+        <form onSubmit={runSourcingSearch} className="flex flex-wrap gap-2">
+          <input
+            className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+            placeholder="검색어 (예: 겨울 담요, 주방 정리용품)"
+            value={sourcingQuery}
+            onChange={(e) => setSourcingQuery(e.target.value)}
+          />
+          <button
+            type="submit"
+            disabled={sourcingSearching}
+            className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+          >
+            {sourcingSearching ? '검색 중...' : '검색'}
+          </button>
+        </form>
+        <p className="mt-2 text-[11px] text-ink/40">주문량(수요) 기준 베스트셀러 순으로 보여줘요.</p>
+
+        {sourcingError && <p className="mt-3 text-xs text-stamp-reject">{sourcingError}</p>}
+
+        {sourcingResults && sourcingResults.length === 0 && !sourcingError && (
+          <p className="mt-3 text-xs text-ink/40">조건에 맞는 상품이 없어요.</p>
+        )}
+
+        {sourcingResults && sourcingResults.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {sourcingResults.map((p, i) => (
+              <div key={p.detailUrl || i} className="flex items-center gap-3 rounded-lg border border-ink/10 p-2">
+                {p.imageUrl && <img src={p.imageUrl} alt="" className="h-16 w-16 flex-shrink-0 rounded object-cover" />}
+                <div className="min-w-0 flex-1">
+                  <a href={p.detailUrl} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium text-ink hover:underline">
+                    {p.title}
+                  </a>
+                  <p className="truncate text-xs text-ink/50">
+                    {p.price} · 주문 {p.orderCount || 0}건 · 재구매율 {p.repurchaseRate || '-'} · {p.shopName}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => addProductToReport(p)}
                   className="flex-shrink-0 rounded-md border border-stamp-amber px-3 py-1.5 text-xs font-semibold text-stamp-amber hover:bg-stamp-amber/10"
                 >
                   + 리포트에 추가
