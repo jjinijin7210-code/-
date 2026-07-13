@@ -70,3 +70,8 @@ export async function search1688Products({ query, maxProducts, sortType }) {
   }
   return data.products || []
 }
+
+// 쇼츠 자동 제작 (상품 이미지 + 스크립트/내레이션 자동 생성 → mp4 렌더링)
+export async function generateShorts({ title, imageUrls, note }) {
+  return postJson('/api/shorts/generate', { title, imageUrls, note })
+}

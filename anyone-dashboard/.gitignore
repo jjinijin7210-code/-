@@ -7,3 +7,4 @@ dist
 server/.env
 server/.data
 server/node_modules
+generated/

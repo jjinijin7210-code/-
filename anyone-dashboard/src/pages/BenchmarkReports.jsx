@@ -6,7 +6,7 @@ import PageHeader from '../components/PageHeader'
 import Modal from '../components/Modal'
 import FormField from '../components/FormField'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
-import { searchYoutubeVideos, search1688Products } from '../lib/apiClient'
+import { searchYoutubeVideos, search1688Products, generateShorts } from '../lib/apiClient'
 
 const DURATION_OPTIONS = [
   { value: '', label: '전체 길이' },
@@ -87,6 +87,23 @@ export default function BenchmarkReports() {
       setSourcingResults(null)
     } finally {
       setSourcingSearching(false)
+    }
+  }
+
+  const [shortsState, setShortsState] = useState({}) // key(detailUrl) -> { loading, error, videoUrl }
+
+  const makeShorts = async (product, key) => {
+    setShortsState((prev) => ({ ...prev, [key]: { loading: true } }))
+    try {
+      const note = `가격: ${product.price || '-'} · 주문수: ${product.orderCount || '-'} · 재구매율: ${product.repurchaseRate || '-'}`
+      const { videoUrl } = await generateShorts({
+        title: product.title,
+        imageUrls: [product.imageUrl].filter(Boolean),
+        note,
+      })
+      setShortsState((prev) => ({ ...prev, [key]: { loading: false, videoUrl } }))
+    } catch (err) {
+      setShortsState((prev) => ({ ...prev, [key]: { loading: false, error: err.message } }))
     }
   }
 
@@ -242,26 +259,44 @@ export default function BenchmarkReports() {
 
         {sourcingResults && sourcingResults.length > 0 && (
           <div className="mt-3 space-y-2">
-            {sourcingResults.map((p, i) => (
-              <div key={p.detailUrl || i} className="flex items-center gap-3 rounded-lg border border-ink/10 p-2">
-                {p.imageUrl && <img src={p.imageUrl} alt="" className="h-16 w-16 flex-shrink-0 rounded object-cover" />}
-                <div className="min-w-0 flex-1">
-                  <a href={p.detailUrl} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium text-ink hover:underline">
-                    {p.title}
-                  </a>
-                  <p className="truncate text-xs text-ink/50">
-                    {p.price} · 주문 {p.orderCount || 0}건 · 재구매율 {p.repurchaseRate || '-'} · {p.shopName}
-                  </p>
+            {sourcingResults.map((p, i) => {
+              const key = p.detailUrl || String(i)
+              const shorts = shortsState[key]
+              return (
+                <div key={key} className="rounded-lg border border-ink/10 p-2">
+                  <div className="flex items-center gap-3">
+                    {p.imageUrl && <img src={p.imageUrl} alt="" className="h-16 w-16 flex-shrink-0 rounded object-cover" />}
+                    <div className="min-w-0 flex-1">
+                      <a href={p.detailUrl} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium text-ink hover:underline">
+                        {p.title}
+                      </a>
+                      <p className="truncate text-xs text-ink/50">
+                        {p.price} · 주문 {p.orderCount || 0}건 · 재구매율 {p.repurchaseRate || '-'} · {p.shopName}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => addProductToReport(p)}
+                      className="flex-shrink-0 rounded-md border border-stamp-amber px-3 py-1.5 text-xs font-semibold text-stamp-amber hover:bg-stamp-amber/10"
+                    >
+                      + 리포트에 추가
+                    </button>
+                    <button
+                      type="button"
+                      disabled={shorts?.loading}
+                      onClick={() => makeShorts(p, key)}
+                      className="flex-shrink-0 rounded-md bg-ink px-3 py-1.5 text-xs font-semibold text-white hover:bg-ink/80 disabled:opacity-50"
+                    >
+                      {shorts?.loading ? '제작 중...' : '🎬 쇼츠 만들기'}
+                    </button>
+                  </div>
+                  {shorts?.error && <p className="mt-2 text-xs text-stamp-reject">{shorts.error}</p>}
+                  {shorts?.videoUrl && (
+                    <video src={shorts.videoUrl} controls className="mt-2 max-h-80 rounded-lg" />
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => addProductToReport(p)}
-                  className="flex-shrink-0 rounded-md border border-stamp-amber px-3 py-1.5 text-xs font-semibold text-stamp-amber hover:bg-stamp-amber/10"
-                >
-                  + 리포트에 추가
-                </button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>
