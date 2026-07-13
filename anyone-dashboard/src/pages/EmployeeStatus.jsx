@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
 import { useConfirm } from '../components/ConfirmDialog'
 import SaveStatusIndicator from '../components/SaveStatusIndicator'
@@ -6,21 +6,44 @@ import PageHeader from '../components/PageHeader'
 import Modal from '../components/Modal'
 import FormField from '../components/FormField'
 import StatusBadge from '../components/StatusBadge'
-import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
+import { LoadingView, ErrorView } from '../components/StateViews'
+import { DEFAULT_ANYONE_ROSTER, ANYONE_DEPARTMENT_ORDER } from '../data/anyoneRoster'
 
 const STATUS_OPTIONS = ['대기', '작업중', '완료', '이슈발생']
-const ROLE_PRESETS = ['리서처', '작성자', '검수자', '발행 담당', '모니터링 담당', '최종 매니저']
 
-const emptyForm = { role_name: ROLE_PRESETS[0], role_emoji: '🤖', status: '대기', current_task: '', note: '' }
+const emptyForm = { department: '콘텐츠 제작', role_name: '', role_emoji: '🤖', status: '대기', current_task: '', note: '' }
 
 export default function EmployeeStatus() {
   const { rows, loading, error, saveStatus, insertRow, updateRow, deleteRow } = useSupabaseTable('employee_status', {
     orderBy: 'updated_at',
   })
   const confirm = useConfirm()
+  const [openDepartments, setOpenDepartments] = useState(() => new Set(ANYONE_DEPARTMENT_ORDER))
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(emptyForm)
+  const seededRef = useRef(false)
+
+  // 테이블이 비어있으면(=처음 사용) 계획서 기준 14명을 자동으로 채워넣음 (한 번만 실행)
+  useEffect(() => {
+    if (loading || seededRef.current || rows.length > 0) return
+    seededRef.current = true
+    ;(async () => {
+      for (const person of DEFAULT_ANYONE_ROSTER) {
+        await insertRow({ ...person, status: '대기', current_task: '', note: '' })
+      }
+    })()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, rows.length])
+
+  const toggleDepartment = (dept) => {
+    setOpenDepartments((prev) => {
+      const next = new Set(prev)
+      if (next.has(dept)) next.delete(dept)
+      else next.add(dept)
+      return next
+    })
+  }
 
   const openAdd = () => {
     setEditing(null)
@@ -43,46 +66,120 @@ export default function EmployeeStatus() {
     setModalOpen(false)
   }
 
+  const handleDelete = async () => {
+    const ok = await confirm('이 직원 정보를 삭제할까요? 휴지통으로 이동해요.')
+    if (!ok) return
+    await deleteRow(editing.id)
+    setModalOpen(false)
+  }
+
+  // 기본 14명 부서 순서 + 그 외 직접 추가한 역할은 "기타"로 묶어서 마지막에 표시
+  const knownDepartments = new Set(ANYONE_DEPARTMENT_ORDER)
+  const extraDepartments = [...new Set(rows.map((r) => r.department).filter((d) => d && !knownDepartments.has(d)))]
+  const departmentOrder = [...ANYONE_DEPARTMENT_ORDER, ...extraDepartments]
+
+  const grouped = departmentOrder
+    .map((dept) => ({ department: dept, members: rows.filter((r) => (r.department || '기타') === dept) }))
+    .filter((g) => g.members.length > 0)
+  const uncategorized = rows.filter((r) => !r.department)
+
   return (
     <div>
       <PageHeader
-        title="직원 현황"
+        title="직원 현황 — AnyOne 팀"
         emoji="🧑‍💼"
-        description="리서처·작성자·검수자·발행 담당·모니터링 담당·최종 매니저의 현재 작업 상태"
+        description="부서별로 담당 업무가 다른 14개 역할의 현재 작업 상태 (리서치·콘텐츠 제작·현지화·검수·성과 분석·발행/CS)"
         onAddClick={openAdd}
         addLabel="직원 추가"
       />
 
       {loading && <LoadingView />}
       {error && <ErrorView message={error} />}
-      {!loading && !error && rows.length === 0 && <EmptyView />}
 
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {rows.map((row) => (
-          <button
-            key={row.id}
-            onClick={() => openEdit(row)}
-            className="rounded-xl bg-paper-card p-4 text-left shadow-card transition hover:shadow-md"
-          >
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-2 font-semibold">
-                <span aria-hidden>{row.role_emoji}</span>
-                {row.role_name}
-              </span>
-              <StatusBadge status={row.status} />
+      {!loading && !error && (
+        <div className="space-y-4">
+          {grouped.map(({ department, members }) => {
+            const isOpen = openDepartments.has(department)
+            return (
+              <div key={department} className="rounded-xl bg-paper-card shadow-card">
+                <button
+                  onClick={() => toggleDepartment(department)}
+                  className="flex w-full items-center justify-between px-4 py-3 text-left"
+                >
+                  <span className="font-semibold text-ink">
+                    {department} <span className="ml-1 text-xs font-normal text-ink/40">({members.length})</span>
+                  </span>
+                  <span className="text-ink/40">{isOpen ? '▾' : '▸'}</span>
+                </button>
+                {isOpen && (
+                  <div className="grid grid-cols-1 gap-2 border-t border-ink/5 p-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {members.map((row) => (
+                      <button
+                        key={row.id}
+                        onClick={() => openEdit(row)}
+                        className="rounded-lg border border-ink/10 p-3 text-left hover:bg-ink/[0.03]"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="flex items-center gap-1.5 text-sm font-medium">
+                            <span aria-hidden>{row.role_emoji}</span>
+                            {row.role_name}
+                          </span>
+                          <StatusBadge status={row.status} />
+                        </div>
+                        {row.current_task && <p className="mt-1 truncate text-xs text-ink/50">{row.current_task}</p>}
+                        {row.note && <p className="mt-1 truncate text-xs text-ink/30">{row.note}</p>}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+
+          {uncategorized.length > 0 && (
+            <div className="rounded-xl bg-paper-card shadow-card">
+              <div className="px-4 py-3 font-semibold text-ink">기타 ({uncategorized.length})</div>
+              <div className="grid grid-cols-1 gap-2 border-t border-ink/5 p-3 sm:grid-cols-2 lg:grid-cols-3">
+                {uncategorized.map((row) => (
+                  <button
+                    key={row.id}
+                    onClick={() => openEdit(row)}
+                    className="rounded-lg border border-ink/10 p-3 text-left hover:bg-ink/[0.03]"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="flex items-center gap-1.5 text-sm font-medium">
+                        <span aria-hidden>{row.role_emoji}</span>
+                        {row.role_name}
+                      </span>
+                      <StatusBadge status={row.status} />
+                    </div>
+                    {row.current_task && <p className="mt-1 truncate text-xs text-ink/50">{row.current_task}</p>}
+                  </button>
+                ))}
+              </div>
             </div>
-            {row.current_task && <p className="mt-2 text-xs text-ink/60">{row.current_task}</p>}
-            {row.note && <p className="mt-1 text-xs text-ink/40">{row.note}</p>}
-          </button>
-        ))}
-      </div>
+          )}
+
+          {grouped.length === 0 && uncategorized.length === 0 && (
+            <p className="rounded-lg border border-dashed border-ink/15 py-8 text-center text-sm text-ink/40">
+              직원 목록을 불러오는 중이에요...
+            </p>
+          )}
+        </div>
+      )}
 
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? '직원 정보 수정' : '직원 추가'}>
         <form onSubmit={handleSave}>
           <FormField
-            label="역할"
+            label="부서"
             type="select"
-            options={ROLE_PRESETS}
+            options={ANYONE_DEPARTMENT_ORDER}
+            value={form.department}
+            onChange={(v) => setForm({ ...form, department: v })}
+          />
+          <FormField
+            label="역할 이름"
+            required
             value={form.role_name}
             onChange={(v) => setForm({ ...form, role_name: v })}
           />
@@ -108,16 +205,7 @@ export default function EmployeeStatus() {
 
           <div className="mt-4 flex items-center justify-between">
             {editing && (
-              <button
-                type="button"
-                onClick={async () => {
-                  const ok = await confirm('이 직원 정보를 삭제할까요? 휴지통으로 이동해요.')
-                  if (!ok) return
-                  await deleteRow(editing.id)
-                  setModalOpen(false)
-                }}
-                className="text-sm text-stamp-reject hover:underline"
-              >
+              <button type="button" onClick={handleDelete} className="text-sm text-stamp-reject hover:underline">
                 삭제
               </button>
             )}

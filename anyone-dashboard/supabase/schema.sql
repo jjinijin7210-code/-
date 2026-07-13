@@ -20,7 +20,8 @@ $$ language plpgsql;
 create table employee_status (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
-  role_name text not null,              -- 예: 리서처, 작성자, 검수자, 발행 담당, 모니터링 담당, 최종 매니저
+  department text,                       -- 예: 리서치, 콘텐츠 제작, 현지화, 검수, 성과 분석, 발행·CS
+  role_name text not null,              -- 예: 리서처, 작성자 A (블로그·인테리어/생활), 검수자 (팩트체커·1차)
   role_emoji text default '🤖',
   status text not null default '대기',   -- 대기 / 작업중 / 완료 / 이슈발생
   current_task text,                     -- 지금 하고 있는 작업 설명
