@@ -6,7 +6,8 @@
 const APIFY_BASE_URL = 'https://api.apify.com/v2'
 
 // Actor 실행은 몇 초~몇 분 걸릴 수 있어서 넉넉하게 타임아웃을 둔다.
-const RUN_TIMEOUT_MS = 120_000
+// (쿠팡 액터가 프록시 대기 등으로 2분을 종종 넘겨서 4분으로 늘림)
+const RUN_TIMEOUT_MS = 240_000
 
 export async function runApifyActor(actorId, input) {
   const token = process.env.APIFY_TOKEN
@@ -32,7 +33,7 @@ export async function runApifyActor(actorId, input) {
     return res.json()
   } catch (err) {
     if (err.name === 'AbortError') {
-      throw new Error('Apify Actor 실행이 시간 초과되었어요 (2분).')
+      throw new Error('Apify Actor 실행이 시간 초과되었어요 (4분).')
     }
     throw err
   } finally {
