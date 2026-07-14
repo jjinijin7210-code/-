@@ -13,7 +13,7 @@ export default function Login() {
     setSubmitting(true)
     setError(null)
     const { error: err } = await signIn(email, password)
-    if (err) setError('로그인에 실패했어요. 이메일/비밀번호를 확인해주세요.')
+    if (err) setError(`로그인에 실패했어요: ${err.message || '이메일/비밀번호를 확인해주세요.'}`)
     setSubmitting(false)
   }
 
