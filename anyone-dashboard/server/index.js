@@ -13,6 +13,7 @@ import sourcingRoutes from './routes/sourcing.js'
 import shortsRoutes, { GENERATED_DIR } from './routes/shorts.js'
 import imagesRoutes from './routes/images.js'
 import pexelsRoutes from './routes/pexels.js'
+import autoRoutes from './routes/auto.js'
 
 // 별도로 server/.env를 만들지 않고, 프로젝트 루트의 .env 파일 하나만 읽어요.
 // (이미 프론트엔드용 .env에 ANTHROPIC_API_KEY 등을 추가해두셨다면 그대로 인식됩니다.)
@@ -35,6 +36,7 @@ app.use('/api', sourcingRoutes)
 app.use('/api', shortsRoutes)
 app.use('/api', imagesRoutes)
 app.use('/api', pexelsRoutes)
+app.use('/api', autoRoutes)
 app.use('/auth', authRoutes)
 
 // 쇼츠 렌더링 결과(mp4)를 바로 재생/다운로드할 수 있게 정적으로 서빙
@@ -73,5 +75,8 @@ app.listen(PORT, () => {
   }
   if (!process.env.PEXELS_API_KEY) {
     console.warn('⚠️  PEXELS_API_KEY가 설정되지 않았어요. 무료 스톡 사진 검색이 동작하지 않아요.')
+  }
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.AUTO_RUN_SECRET || !process.env.AUTO_TARGET_USER_ID) {
+    console.warn('⚠️  SUPABASE_SERVICE_ROLE_KEY/AUTO_RUN_SECRET/AUTO_TARGET_USER_ID가 설정되지 않았어요. 자동 파이프라인(/api/auto/run)이 동작하지 않아요.')
   }
 })
