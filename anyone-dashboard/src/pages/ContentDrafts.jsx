@@ -24,7 +24,10 @@ const STATUS_OPTIONS = ['초안', '검수중', '통과', '반려', '발행완료
 const PLATFORM_OPTIONS = PREVIEW_PLATFORMS
 // 발행/통과로 넘어가려면 반드시 안전 원칙 체크가 되어 있어야 함
 const PASS_LIKE_STATUSES = ['통과', '발행완료']
-const IMAGE_KIND = [{ key: 'image', label: '이미지' }]
+const IMAGE_KIND = [
+  { key: 'image', label: '이미지' },
+  { key: 'video', label: '영상 (자동 합성)' },
+]
 
 const emptyForm = {
   title: '',

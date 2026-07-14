@@ -12,6 +12,9 @@ import {
 } from '../lib/reviewParser.js'
 import { fetchImageAsDataUrl } from '../lib/fetchImageAsDataUrl.js'
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js'
+import { generateShortsVideo } from '../lib/shortsGenerator.js'
+
+const SOURCE_PRODUCT_COUNT = 4 // 특정 한 상품 소재를 그대로 쓰지 않도록 비슷한 상품 여러 개를 모아 영상으로 합성
 
 const router = Router()
 
@@ -36,13 +39,15 @@ router.post('/auto/run', async (req, res) => {
   const targetChannel = channel || '인스타/틱톡'
 
   try {
-    // 1) 상품 소싱 (1688) - Apify 액터가 maxProducts 20 미만을 허용하지 않아 20으로 호출하고,
-    // 실제로는 가장 점수 높은 1개만 사용해 이후 단계(초안/검수) 비용을 최소화
+    // 1) 상품 소싱 (1688) - Apify 액터가 maxProducts 20 미만을 허용하지 않아 20으로 호출.
+    // 특정 한 상품의 사진/영상을 그대로 가져다 쓰지 않기 위해, 비슷한 상품 여러 개를 모아
+    // 나중에 영상으로 합성한다 (원본 그대로 재사용 금지 원칙).
     const products = await search1688Products({ query: keyword, maxProducts: 20 })
     const product = products[0]
     if (!product) {
       return res.status(404).json({ error: `'${keyword}' 검색 결과 상품이 없어요.` })
     }
+    const sourceProducts = products.filter((p) => p.imageUrl).slice(0, SOURCE_PRODUCT_COUNT)
 
     // 2) AI 초안 생성
     const topic = `상품명: ${product.title} (가격대: ${product.price || '정보 없음'})`
@@ -65,23 +70,42 @@ router.post('/auto/run', async (req, res) => {
     const review = combineStageResults(stageResults)
     const passed = review.result === '통과'
 
-    // 4) 상품 이미지 첨부 (실패해도 초안 저장 자체는 계속 진행)
+    // 4) 비슷한 상품 여러 장을 모아 팬/줌 영상으로 합성 (실패하면 상품 사진 1장으로 대체)
     const images = []
-    if (product.imageUrl) {
-      try {
-        const dataUrl = await fetchImageAsDataUrl(product.imageUrl)
-        images.push({
-          id: crypto.randomUUID(),
-          kind: 'image',
-          filename: `sourced-${Date.now()}.jpg`,
-          mime_type: 'image/jpeg',
-          size: dataUrl.length,
-          data_url: dataUrl,
-          note: `1688 소싱 이미지${product.shopName ? ` (${product.shopName})` : ''}`,
-          created_at: new Date().toISOString(),
-        })
-      } catch {
-        // 이미지 첨부 실패는 무시하고 텍스트 초안만이라도 저장
+    try {
+      const { fileName } = await generateShortsVideo({
+        title: draft.title,
+        imageUrls: sourceProducts.map((p) => p.imageUrl),
+        note: `${keyword} 카테고리 소개 영상`,
+      })
+      const videoUrl = `${req.protocol}://${req.get('host')}/generated/${fileName}`
+      images.push({
+        id: crypto.randomUUID(),
+        kind: 'video',
+        filename: fileName,
+        mime_type: 'video/mp4',
+        data_url: videoUrl,
+        note: `1688 유사 상품 ${sourceProducts.length}개를 합성한 자동 생성 영상`,
+        created_at: new Date().toISOString(),
+      })
+    } catch (videoErr) {
+      console.error('[auto/run] 영상 합성 실패, 사진 1장으로 대체:', videoErr.message)
+      if (product.imageUrl) {
+        try {
+          const dataUrl = await fetchImageAsDataUrl(product.imageUrl)
+          images.push({
+            id: crypto.randomUUID(),
+            kind: 'image',
+            filename: `sourced-${Date.now()}.jpg`,
+            mime_type: 'image/jpeg',
+            size: dataUrl.length,
+            data_url: dataUrl,
+            note: `1688 소싱 이미지${product.shopName ? ` (${product.shopName})` : ''} (영상 합성 실패로 대체)`,
+            created_at: new Date().toISOString(),
+          })
+        } catch {
+          // 이미지 첨부까지 실패해도 텍스트 초안만이라도 저장
+        }
       }
     }
 
