@@ -16,10 +16,12 @@ import { getSupabaseAdmin } from '../lib/supabaseAdmin.js'
 const router = Router()
 
 // 무인 자동 파이프라인 진입점: 1688 상품 소싱 → AI 초안 생성 → 2중3중 검수 → content_drafts 저장.
-// 외부 무료 스케줄러(cron-job.org 등)가 이 URL을 정해진 시간마다 호출하는 방식으로 쓴다.
+// GitHub Actions 스케줄이 이 주소를 정해진 시간마다 호출하는 방식으로 쓴다.
 // 로그인 세션이 없는 요청이라 AUTO_RUN_SECRET 토큰으로 아무나 못 부르게 막는다.
-router.get('/auto/run', async (req, res) => {
-  const { token, keyword, channel } = req.query
+// GET 쿼리스트링 대신 POST 본문(JSON)을 쓰는 이유: 한글 키워드가 URL 쿼리스트링으로 오면
+// 중간 프록시 레이어에서 인코딩이 깨지는 문제가 있었음 - JSON 본문은 이 문제가 없다.
+router.post('/auto/run', async (req, res) => {
+  const { token, keyword, channel } = req.body || {}
 
   if (!process.env.AUTO_RUN_SECRET || token !== process.env.AUTO_RUN_SECRET) {
     return res.status(401).json({ error: '인증 토큰이 올바르지 않아요.' })
