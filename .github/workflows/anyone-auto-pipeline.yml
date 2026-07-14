@@ -25,24 +25,26 @@ jobs:
         id: pick
         run: |
           case "${{ github.event.schedule }}" in
-            '0 0 * * *') KEYWORD='收纳' ;;
-            '0 3 * * *') KEYWORD='厨房用品' ;;
-            '0 6 * * *') KEYWORD='浴室用品' ;;
-            '0 9 * * *') KEYWORD='家居摆件' ;;
-            '0 12 * * *') KEYWORD='灯具' ;;
+            '0 0 * * *') KEYWORD='收纳'; KEYWORD_KO='수납정리' ;;
+            '0 3 * * *') KEYWORD='厨房用品'; KEYWORD_KO='주방용품' ;;
+            '0 6 * * *') KEYWORD='浴室用品'; KEYWORD_KO='욕실용품' ;;
+            '0 9 * * *') KEYWORD='家居摆件'; KEYWORD_KO='인테리어 소품' ;;
+            '0 12 * * *') KEYWORD='灯具'; KEYWORD_KO='조명' ;;
             *)
               KEYWORD="${{ github.event.inputs.keyword }}"
               if [ -z "$KEYWORD" ]; then KEYWORD='收纳'; fi
+              KEYWORD_KO='수납정리'
               ;;
           esac
           echo "keyword=$KEYWORD" >> "$GITHUB_OUTPUT"
+          echo "keyword_ko=$KEYWORD_KO" >> "$GITHUB_OUTPUT"
 
       - name: 소싱→초안→검수 파이프라인 호출
         run: |
           set -e
           RESPONSE=$(curl -sS -X POST "https://anyone-dashboard-p3an.onrender.com/api/auto/run" \
             -H "Content-Type: application/json" \
-            -d "{\"token\":\"${{ secrets.AUTO_RUN_SECRET }}\",\"keyword\":\"${{ steps.pick.outputs.keyword }}\",\"channel\":\"인스타/틱톡\"}")
+            -d "{\"token\":\"${{ secrets.AUTO_RUN_SECRET }}\",\"keyword\":\"${{ steps.pick.outputs.keyword }}\",\"keywordKo\":\"${{ steps.pick.outputs.keyword_ko }}\",\"channel\":\"인스타/틱톡\"}")
           echo "$RESPONSE"
           echo "## 실행 결과 (키워드: ${{ steps.pick.outputs.keyword }})" >> "$GITHUB_STEP_SUMMARY"
           echo '```json' >> "$GITHUB_STEP_SUMMARY"

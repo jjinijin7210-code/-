@@ -13,6 +13,7 @@ import {
 import { fetchImageAsDataUrl } from '../lib/fetchImageAsDataUrl.js'
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js'
 import { generateShortsVideo } from '../lib/shortsGenerator.js'
+import { searchCoupangProducts } from '../lib/coupangClient.js'
 
 const SOURCE_PRODUCT_COUNT = 4 // 특정 한 상품 소재를 그대로 쓰지 않도록 비슷한 상품 여러 개를 모아 영상으로 합성
 
@@ -48,7 +49,7 @@ const router = Router()
 // GET 쿼리스트링 대신 POST 본문(JSON)을 쓰는 이유: 한글 키워드가 URL 쿼리스트링으로 오면
 // 중간 프록시 레이어에서 인코딩이 깨지는 문제가 있었음 - JSON 본문은 이 문제가 없다.
 router.post('/auto/run', async (req, res) => {
-  const { token, keyword, channel } = req.body || {}
+  const { token, keyword, keywordKo, channel } = req.body || {}
 
   if (!process.env.AUTO_RUN_SECRET || token !== process.env.AUTO_RUN_SECRET) {
     return res.status(401).json({ error: '인증 토큰이 올바르지 않아요.' })
@@ -60,10 +61,21 @@ router.post('/auto/run', async (req, res) => {
   if (!keyword || !String(keyword).trim()) {
     return res.status(400).json({ error: '검색 키워드(keyword)는 필수예요.' })
   }
+  if (!keywordKo || !String(keywordKo).trim()) {
+    return res.status(400).json({ error: '쿠팡 확인용 한글 키워드(keywordKo)는 필수예요.' })
+  }
   const targetChannel = channel || '인스타/틱톡'
 
   try {
-    // 1) 상품 소싱 (1688) - Apify 액터가 maxProducts 20 미만을 허용하지 않아 20으로 호출.
+    // 1) 쿠팡에 실제로 파는 상품인지부터 확인 - 없으면 애초에 초안을 만들지 않는다
+    // (인포크 링크는 사람이 직접 만들어서 넣는 구조라, 쿠팡에 없는 상품은 게시해도 연결할 링크가 없음)
+    const coupangProducts = await searchCoupangProducts({ query: keywordKo })
+    const coupangMatch = coupangProducts[0]
+    if (!coupangMatch) {
+      return res.status(200).json({ ok: true, skipped: true, reason: `쿠팡에서 '${keywordKo}' 검색 결과가 없어요.` })
+    }
+
+    // 2) 상품 소싱 (1688) - Apify 액터가 maxProducts 20 미만을 허용하지 않아 20으로 호출.
     // 특정 한 상품의 사진/영상을 그대로 가져다 쓰지 않기 위해, 비슷한 상품 여러 개를 모아
     // 나중에 영상으로 합성한다 (원본 그대로 재사용 금지 원칙).
     const products = await search1688Products({ query: keyword, maxProducts: 20 })
@@ -73,7 +85,7 @@ router.post('/auto/run', async (req, res) => {
     }
     const sourceProducts = products.filter((p) => p.imageUrl).slice(0, SOURCE_PRODUCT_COUNT)
 
-    // 2) AI 초안 생성 - 댓글 트리거 유도 문구를 반드시 자연스럽게 포함시키도록 지시
+    // 3) AI 초안 생성 - 댓글 트리거 유도 문구를 반드시 자연스럽게 포함시키도록 지시
     const topic = `상품명: ${product.title} (가격대: ${product.price || '정보 없음'})
 
 [필수 지시사항] 게시물 마지막 부분에 "댓글에 '${CS_TRIGGER_KEYWORD}'라고 남겨주시면 구매 링크 보내드릴게요!" 같은
@@ -82,7 +94,7 @@ router.post('/auto/run', async (req, res) => {
     const draftText = await callClaude({ system: draftSystem, messages: draftMessages, maxTokens: 1024 })
     const draft = parseDraftResponse(draftText)
 
-    // 3) 2중3중 검수 - 하나라도 반려면 전체 반려 (fail-safe)
+    // 4) 2중3중 검수 - 하나라도 반려면 전체 반려 (fail-safe)
     const stageResults = []
     for (const stage of REVIEW_STAGES) {
       const { system, messages } = buildReviewMessages({
@@ -97,7 +109,7 @@ router.post('/auto/run', async (req, res) => {
     const review = combineStageResults(stageResults)
     const passed = review.result === '통과'
 
-    // 4) 비슷한 상품 여러 장을 모아 팬/줌 영상으로 합성 (실패하면 상품 사진 1장으로 대체)
+    // 5) 비슷한 상품 여러 장을 모아 팬/줌 영상으로 합성 (실패하면 상품 사진 1장으로 대체)
     const images = []
     try {
       const { fileName } = await generateShortsVideo({
@@ -136,7 +148,8 @@ router.post('/auto/run', async (req, res) => {
       }
     }
 
-    // 5) content_drafts에 저장 - 통과면 사람이 마지막 발행 버튼만 누르면 되는 상태로, 반려면 반려 사유와 함께 남김
+    // 6) content_drafts에 저장 - 통과면 사람이 마지막 발행 버튼만 누르면 되는 상태로, 반려면 반려 사유와 함께 남김
+    // source에 쿠팡 매칭 상품 링크를 남겨서, 회원님이 인포크에 넣을 파트너스 링크를 쉽게 찾을 수 있게 함
     const supabase = getSupabaseAdmin()
     const csLinkId = await ensureCsLink(supabase, targetUserId)
     const { data: savedDraft, error: insertError } = await supabase
@@ -148,7 +161,7 @@ router.post('/auto/run', async (req, res) => {
         body: draft.body,
         images,
         hashtags: draft.hashtags,
-        source: `자동소싱: 1688 "${keyword}"`,
+        source: `자동소싱: 1688 "${keyword}" / 쿠팡 매칭 상품: ${coupangMatch.title} (${coupangMatch.productUrl})`,
         status: passed ? '통과' : '반려',
         review_opinion: review.reasons.join(' / '),
         reject_reason: passed ? null : review.reasons.join(' / '),
@@ -162,7 +175,7 @@ router.post('/auto/run', async (req, res) => {
 
     if (insertError) throw new Error(`초안 저장 실패: ${insertError.message}`)
 
-    // 6) 검수 로그 - 3단계 각각 별도 행으로 기록 (수동 검수 흐름과 동일한 컨벤션)
+    // 7) 검수 로그 - 3단계 각각 별도 행으로 기록 (수동 검수 흐름과 동일한 컨벤션)
     for (const stage of review.stages) {
       const { error: logError } = await supabase.from('review_log').insert({
         user_id: targetUserId,
@@ -175,7 +188,13 @@ router.post('/auto/run', async (req, res) => {
       if (logError) console.error('[auto/run] review_log 저장 실패:', logError.message)
     }
 
-    res.json({ ok: true, draftId: savedDraft.id, status: savedDraft.status, review })
+    res.json({
+      ok: true,
+      draftId: savedDraft.id,
+      status: savedDraft.status,
+      review,
+      coupangMatch: { title: coupangMatch.title, productUrl: coupangMatch.productUrl },
+    })
   } catch (err) {
     res.status(502).json({ error: err.message })
   }
