@@ -11,6 +11,8 @@
 // (테스트: scripts/test-review-parser.mjs)
 // ============================================================
 
+import { tryParseJsonLoose } from './jsonRepair.js'
+
 export const REVIEW_STAGES = ['1차 검수', '교차 검수', '가독성 검수']
 
 function buildStage1SystemPrompt() {
@@ -114,12 +116,9 @@ export function parseReviewResponse(text, expectedCheckKeys = DEFAULT_CHECK_KEYS
     .replace(/```\s*$/, '')
     .trim()
 
-  let parsed
-  try {
-    parsed = JSON.parse(cleaned)
-  } catch {
-    return fallback
-  }
+  // 앞뒤 설명 문구나 이스케이프 안 된 줄바꿈 때문에 순수 JSON.parse가 깨지는 경우를 보정
+  const parsed = tryParseJsonLoose(cleaned)
+  if (!parsed) return fallback
 
   if (!VALID_RESULTS.includes(parsed.result)) return fallback
 

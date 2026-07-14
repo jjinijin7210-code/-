@@ -6,6 +6,8 @@
 // (테스트: scripts/test-prompt-builder.mjs)
 // ============================================================
 
+import { tryParseJsonLoose } from './jsonRepair.js'
+
 const COMMON_TONE_RULES = `타겟 독자는 20대 초반이야. AI가 쓴 티 나는 딱딱한 문체는 절대 금지야.
 - 친근한 구어체 위주로 쓰고, 어려운 전문용어는 쉬운 말로 풀어써
 - 문장은 짧고 리듬감 있게, 한 문단에 한 가지 얘기만
@@ -92,10 +94,9 @@ export function parseDraftResponse(text) {
     .replace(/```\s*$/, '')
     .trim()
 
-  let parsed
-  try {
-    parsed = JSON.parse(cleaned)
-  } catch {
+  // 앞뒤 설명 문구나 본문 안 이스케이프 안 된 줄바꿈 때문에 순수 JSON.parse가 깨지는 경우를 보정
+  const parsed = tryParseJsonLoose(cleaned)
+  if (!parsed) {
     throw new Error('AI 응답을 JSON으로 해석하지 못했어요. 원문을 확인하고 다시 시도해주세요.')
   }
 
