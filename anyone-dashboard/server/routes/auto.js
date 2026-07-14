@@ -34,8 +34,9 @@ router.get('/auto/run', async (req, res) => {
   const targetChannel = channel || '인스타/틱톡'
 
   try {
-    // 1) 상품 소싱 (1688) - 가장 점수 높은 1개만 사용해 요청 하나당 API 비용을 최소화
-    const products = await search1688Products({ query: keyword, maxProducts: 5 })
+    // 1) 상품 소싱 (1688) - Apify 액터가 maxProducts 20 미만을 허용하지 않아 20으로 호출하고,
+    // 실제로는 가장 점수 높은 1개만 사용해 이후 단계(초안/검수) 비용을 최소화
+    const products = await search1688Products({ query: keyword, maxProducts: 20 })
     const product = products[0]
     if (!product) {
       return res.status(404).json({ error: `'${keyword}' 검색 결과 상품이 없어요.` })
