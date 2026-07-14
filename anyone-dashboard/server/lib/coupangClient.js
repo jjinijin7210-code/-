@@ -5,7 +5,7 @@
 
 import { runApifyActor } from './apifyClient.js'
 
-const ACTOR_COUPANG = 'amit123/coupang-products-crawler'
+const ACTOR_COUPANG = 'amit123~coupang-products-crawler'
 
 export async function searchCoupangProducts({ query, maxPagesPerQuery = 1 }) {
   if (!query) {
