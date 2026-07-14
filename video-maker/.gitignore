@@ -2,3 +2,4 @@ node_modules/
 example/output.mp4
 *.mp4
 !example/assets/*.mp4
+.env

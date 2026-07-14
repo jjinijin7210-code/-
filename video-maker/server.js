@@ -13,6 +13,15 @@ const { spawn } = require('child_process');
 const session = require('express-session');
 const { OAuth2Client } = require('google-auth-library');
 
+// 로컬 개발용 .env 로더 — Render 배포 환경은 대시보드에서 직접 환경변수를 설정하므로 불필요.
+const envPath = path.join(__dirname, '.env');
+if (fs.existsSync(envPath)) {
+  fs.readFileSync(envPath, 'utf8').split('\n').forEach((line) => {
+    const m = line.match(/^\s*([\w.-]+)\s*=\s*(.*)\s*$/);
+    if (m && !process.env[m[1]]) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+  });
+}
+
 const app = express();
 const publicDir = path.join(__dirname, 'public');
 const uploadTmp = path.join(os.tmpdir(), 'video-maker-uploads');
@@ -26,6 +35,9 @@ const upload = multer({ dest: uploadTmp, limits: { fileSize: 200 * 1024 * 1024 }
 // (설정 전에도 도구가 그냥 동작하도록 하기 위함).
 const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID || null;
 const oauthClient = GOOGLE_CLIENT_ID ? new OAuth2Client(GOOGLE_CLIENT_ID) : null;
+
+// Pexels 무료 스톡 사진 검색 — PEXELS_API_KEY 환경변수가 없으면 검색 기능만 비활성화된다.
+const PEXELS_API_KEY = process.env.PEXELS_API_KEY || null;
 
 app.use(express.json());
 app.use(session({
@@ -48,7 +60,45 @@ function requireAuthApi(req, res, next) {
 }
 
 app.get('/api/config', (req, res) => {
-  res.json({ googleClientId: GOOGLE_CLIENT_ID });
+  res.json({ googleClientId: GOOGLE_CLIENT_ID, pexelsEnabled: Boolean(PEXELS_API_KEY) });
+});
+
+app.get('/api/pexels/search', requireAuthApi, async (req, res) => {
+  if (!PEXELS_API_KEY) return res.status(400).json({ error: 'pexels_not_configured' });
+  const query = String(req.query.q || '').trim();
+  if (!query) return res.status(400).json({ error: 'missing_query' });
+  const page = Math.max(1, Number(req.query.page) || 1);
+  try {
+    const upstream = await fetch(
+      `https://api.pexels.com/v1/search?query=${encodeURIComponent(query)}&per_page=15&page=${page}`,
+      { headers: { Authorization: PEXELS_API_KEY } },
+    );
+    if (!upstream.ok) throw new Error(`pexels_status_${upstream.status}`);
+    const data = await upstream.json();
+    const photos = (data.photos || []).map((p) => ({
+      id: p.id,
+      thumb: p.src.medium,
+      full: p.src.large2x || p.src.original,
+      photographer: p.photographer,
+    }));
+    res.json({ photos });
+  } catch (err) {
+    res.status(502).json({ error: 'pexels_request_failed', detail: String(err.message || err) });
+  }
+});
+
+// 클라이언트가 images.pexels.com에서 직접 fetch()하면 CORS로 막힐 수 있어 서버가 대신 받아 전달한다.
+app.get('/api/pexels/image', requireAuthApi, async (req, res) => {
+  const url = String(req.query.url || '');
+  if (!/^https:\/\/images\.pexels\.com\//.test(url)) return res.status(400).json({ error: 'invalid_url' });
+  try {
+    const upstream = await fetch(url);
+    if (!upstream.ok) throw new Error(`fetch_status_${upstream.status}`);
+    res.setHeader('Content-Type', upstream.headers.get('content-type') || 'image/jpeg');
+    res.send(Buffer.from(await upstream.arrayBuffer()));
+  } catch (err) {
+    res.status(502).json({ error: 'pexels_image_failed', detail: String(err.message || err) });
+  }
 });
 
 app.post('/api/auth/google', async (req, res) => {

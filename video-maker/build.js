@@ -70,7 +70,10 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
   }
 
   const out = path.join(tmpDir, `clip_${idx}.mp4`);
-  run(['-loop', '1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out]);
+  // 입력 프레임레이트를 씬 길이 전체에 1장으로 낮춰서 이미지를 딱 1개의 입력 프레임으로만 공급한다.
+  // 기본값(25fps)으로 두면 zoompan이 매 입력 프레임마다 줌/팬을 초기값으로 리셋해서
+  // 초당 25번씩 화면이 튀는 깜빡임(스트로브) 현상이 생긴다.
+  run(['-framerate', `1/${duration}`, '-loop', '1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out]);
   return { file: out, duration };
 }
 
