@@ -17,7 +17,7 @@ import {
   isLocalizationChannel,
   isBloggerChannel,
 } from '../lib/contentPreview'
-import { generateDraft, reviewDraftWithAi, getBloggerStatus, publishToBlogger, getGoogleConnectUrl, generateAiImage } from '../lib/apiClient'
+import { generateDraft, reviewDraftWithAi, getBloggerStatus, publishToBlogger, getGoogleConnectUrl, generateAiImage, searchPexelsPhotos, fetchPexelsImage } from '../lib/apiClient'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
 
 const STATUS_OPTIONS = ['초안', '검수중', '통과', '반려', '발행완료']
@@ -93,6 +93,50 @@ export default function ContentDrafts() {
       setAiImageError(err.message)
     } finally {
       setAiImageLoading(false)
+    }
+  }
+
+  // 무료 스톡 사진(Pexels) 검색 관련 상태
+  const [stockQuery, setStockQuery] = useState('')
+  const [stockLoading, setStockLoading] = useState(false)
+  const [stockError, setStockError] = useState(null)
+  const [stockResults, setStockResults] = useState([])
+  const [stockPickingId, setStockPickingId] = useState(null)
+
+  const handleStockSearch = async () => {
+    if (!stockQuery.trim()) return
+    setStockLoading(true)
+    setStockError(null)
+    try {
+      const photos = await searchPexelsPhotos({ query: stockQuery })
+      setStockResults(photos)
+    } catch (err) {
+      setStockError(err.message)
+    } finally {
+      setStockLoading(false)
+    }
+  }
+
+  const handlePickStockPhoto = async (photo) => {
+    setStockPickingId(photo.id)
+    setStockError(null)
+    try {
+      const dataUrl = await fetchPexelsImage(photo.full)
+      const attachment = {
+        id: crypto.randomUUID(),
+        kind: 'image',
+        filename: `pexels-${photo.id}.jpg`,
+        mime_type: 'image/jpeg',
+        size: dataUrl.length,
+        data_url: dataUrl,
+        note: `무료 스톡 사진 (Pexels · ${photo.photographer})`,
+        created_at: new Date().toISOString(),
+      }
+      setForm((f) => ({ ...f, images: [...(f.images || []), attachment] }))
+    } catch (err) {
+      setStockError(err.message)
+    } finally {
+      setStockPickingId(null)
     }
   }
 
@@ -384,6 +428,52 @@ export default function ContentDrafts() {
               </button>
             </div>
             {aiImageError && <p className="mb-2 text-xs text-stamp-reject">{aiImageError}</p>}
+
+            <div className="mb-2 flex flex-wrap gap-2">
+              <input
+                className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+                placeholder="무료 스톡 사진 검색 (예: 바다, 도시 야경)"
+                value={stockQuery}
+                onChange={(e) => setStockQuery(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    handleStockSearch()
+                  }
+                }}
+              />
+              <button
+                type="button"
+                disabled={stockLoading || !stockQuery.trim()}
+                onClick={handleStockSearch}
+                className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+              >
+                {stockLoading ? '검색 중...' : '🔍 스톡 사진 검색'}
+              </button>
+            </div>
+            {stockError && <p className="mb-2 text-xs text-stamp-reject">{stockError}</p>}
+            {stockResults.length > 0 && (
+              <div className="mb-2 grid grid-cols-5 gap-2 sm:grid-cols-6">
+                {stockResults.map((p) => (
+                  <button
+                    key={p.id}
+                    type="button"
+                    onClick={() => handlePickStockPhoto(p)}
+                    disabled={stockPickingId === p.id}
+                    title={`사진: ${p.photographer}`}
+                    className="group relative overflow-hidden rounded-md border border-ink/10 disabled:opacity-50"
+                  >
+                    <img src={p.thumb} alt="" className="h-16 w-full object-cover" />
+                    {stockPickingId === p.id && (
+                      <span className="absolute inset-0 flex items-center justify-center bg-black/40 text-[10px] text-white">
+                        추가 중...
+                      </span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <AttachmentSection attachments={form.images} kinds={IMAGE_KIND} onChange={(next) => setForm({ ...form, images: next })} />
             {isBloggerChannel(form.platform) && (
               <p className="mt-1 text-[11px] text-ink/40">

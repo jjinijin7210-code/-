@@ -80,3 +80,26 @@ export async function generateShorts({ title, imageUrls, note }) {
 export async function generateAiImage({ prompt, size }) {
   return postJson('/api/images/generate', { prompt, size })
 }
+
+// 무료 스톡 사진(Pexels) 검색
+export async function searchPexelsPhotos({ query, page }) {
+  const params = new URLSearchParams({ q: query })
+  if (page) params.set('page', String(page))
+  const res = await fetch(`${API_BASE}/api/pexels/search?${params.toString()}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `스톡 사진 검색이 실패했어요 (${res.status})`)
+  }
+  return data.photos || []
+}
+
+// 선택한 스톡 사진을 data URL로 가져오기 (첨부 이미지로 바로 추가 가능)
+export async function fetchPexelsImage(url) {
+  const params = new URLSearchParams({ url })
+  const res = await fetch(`${API_BASE}/api/pexels/fetch?${params.toString()}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `이미지를 불러오지 못했어요 (${res.status})`)
+  }
+  return data.dataUrl
+}
