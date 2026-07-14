@@ -16,6 +16,30 @@ import { generateShortsVideo } from '../lib/shortsGenerator.js'
 
 const SOURCE_PRODUCT_COUNT = 4 // 특정 한 상품 소재를 그대로 쓰지 않도록 비슷한 상품 여러 개를 모아 영상으로 합성
 
+// CS 트리거 키워드 - 게시물 댓글에 이 단어가 달리면 인포크 링크를 자동으로 안내하는 구조.
+// (계획서 원칙: 모든 자동 게시물은 반드시 이 유도 문구를 포함해야 함)
+const CS_TRIGGER_KEYWORD = '정보'
+const CS_TARGET_URL = 'https://link.inpock.co.kr/jena10'
+
+// user_id + trigger_keyword로 기존 cs_links 행을 찾고, 없으면 새로 만든다.
+async function ensureCsLink(supabase, targetUserId) {
+  const { data: existing } = await supabase
+    .from('cs_links')
+    .select('id')
+    .eq('user_id', targetUserId)
+    .eq('trigger_keyword', CS_TRIGGER_KEYWORD)
+    .maybeSingle()
+  if (existing) return existing.id
+
+  const { data: created, error } = await supabase
+    .from('cs_links')
+    .insert({ user_id: targetUserId, trigger_keyword: CS_TRIGGER_KEYWORD, target_url: CS_TARGET_URL })
+    .select('id')
+    .single()
+  if (error) throw new Error(`CS 링크 생성 실패: ${error.message}`)
+  return created.id
+}
+
 const router = Router()
 
 // 무인 자동 파이프라인 진입점: 1688 상품 소싱 → AI 초안 생성 → 2중3중 검수 → content_drafts 저장.
@@ -49,8 +73,11 @@ router.post('/auto/run', async (req, res) => {
     }
     const sourceProducts = products.filter((p) => p.imageUrl).slice(0, SOURCE_PRODUCT_COUNT)
 
-    // 2) AI 초안 생성
-    const topic = `상품명: ${product.title} (가격대: ${product.price || '정보 없음'})`
+    // 2) AI 초안 생성 - 댓글 트리거 유도 문구를 반드시 자연스럽게 포함시키도록 지시
+    const topic = `상품명: ${product.title} (가격대: ${product.price || '정보 없음'})
+
+[필수 지시사항] 게시물 마지막 부분에 "댓글에 '${CS_TRIGGER_KEYWORD}'라고 남겨주시면 구매 링크 보내드릴게요!" 같은
+자연스러운 유도 문구를 반드시 포함해서 작성해줘. 이게 없으면 안 돼.`
     const { system: draftSystem, messages: draftMessages } = buildDraftMessages({ channel: targetChannel, topic })
     const draftText = await callClaude({ system: draftSystem, messages: draftMessages, maxTokens: 1024 })
     const draft = parseDraftResponse(draftText)
@@ -111,6 +138,7 @@ router.post('/auto/run', async (req, res) => {
 
     // 5) content_drafts에 저장 - 통과면 사람이 마지막 발행 버튼만 누르면 되는 상태로, 반려면 반려 사유와 함께 남김
     const supabase = getSupabaseAdmin()
+    const csLinkId = await ensureCsLink(supabase, targetUserId)
     const { data: savedDraft, error: insertError } = await supabase
       .from('content_drafts')
       .insert({
@@ -126,6 +154,8 @@ router.post('/auto/run', async (req, res) => {
         reject_reason: passed ? null : review.reasons.join(' / '),
         checked_no_real_person_image: true,
         checked_no_overseas_reuse: true,
+        trigger_keyword: CS_TRIGGER_KEYWORD,
+        cs_link_id: csLinkId,
       })
       .select()
       .single()
