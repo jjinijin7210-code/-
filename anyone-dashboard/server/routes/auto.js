@@ -85,8 +85,10 @@ router.post('/auto/run', async (req, res) => {
     }
     const sourceProducts = products.filter((p) => p.imageUrl).slice(0, SOURCE_PRODUCT_COUNT)
 
-    // 3) AI 초안 생성 - 댓글 트리거 유도 문구를 반드시 자연스럽게 포함시키도록 지시
-    const topic = `상품명: ${product.title} (가격대: ${product.price || '정보 없음'})
+    // 3) AI 초안 생성 - 실제 판매 가격은 쿠팡 기준이어야 함(1688/타오바오 가격은 도매/외산 가격이라 부적절).
+    // 댓글 트리거 유도 문구도 반드시 자연스럽게 포함시키도록 지시
+    const priceText = coupangMatch.price ? `${Number(coupangMatch.price).toLocaleString('ko-KR')}원` : '정보 없음'
+    const topic = `상품명: ${product.title} (가격대: ${priceText})
 
 [필수 지시사항] 게시물 마지막 부분에 "댓글에 '${CS_TRIGGER_KEYWORD}'라고 남겨주시면 구매 링크 보내드릴게요!" 같은
 자연스러운 유도 문구를 반드시 포함해서 작성해줘. 이게 없으면 안 돼.`
