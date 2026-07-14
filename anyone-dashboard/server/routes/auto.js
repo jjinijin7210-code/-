@@ -105,7 +105,8 @@ router.post('/auto/run', async (req, res) => {
         channel: targetChannel,
         stage,
       })
-      const text = await callClaude({ system, messages, maxTokens: 512 })
+      // 512로는 반려 사유가 길게 나올 때 응답이 중간에 잘려 JSON 파싱이 깨지는 경우가 있어 여유있게 올림
+      const text = await callClaude({ system, messages, maxTokens: 1024 })
       stageResults.push({ stage, result: parseReviewResponse(text, STAGE_CHECK_KEYS[stage]) })
     }
     const review = combineStageResults(stageResults)
