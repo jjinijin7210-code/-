@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
+import { useConfirm } from '../components/ConfirmDialog'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
@@ -8,8 +9,10 @@ import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
 // content_drafts.images 배열 안에 kind:'video'로 저장된 항목들을 전부 모아서
 // 초안 하나하나를 열어보지 않아도 만든 영상을 한 화면에서 다 볼 수 있게 해요.
 export default function VideoVault() {
-  const { rows: drafts, loading, error } = useSupabaseTable('content_drafts')
+  const { rows: drafts, loading, error, updateRow } = useSupabaseTable('content_drafts')
+  const confirm = useConfirm()
   const [filterPlatform, setFilterPlatform] = useState('전체')
+  const [deletingId, setDeletingId] = useState(null)
 
   const videos = useMemo(() => {
     const list = []
@@ -34,6 +37,22 @@ export default function VideoVault() {
 
   const platforms = useMemo(() => ['전체', ...new Set(videos.map((v) => v.platform).filter(Boolean))], [videos])
   const filtered = filterPlatform === '전체' ? videos : videos.filter((v) => v.platform === filterPlatform)
+
+  const handleDelete = async (video) => {
+    const ok = await confirm('이 영상을 삭제할까요? 되돌릴 수 없어요.')
+    if (!ok) return
+    const draft = drafts.find((d) => d.id === video.draftId)
+    if (!draft) return
+    setDeletingId(video.id)
+    try {
+      const nextImages = (draft.images || []).filter(
+        (img) => (img.id || `${draft.id}-${img.data_url}`) !== video.id
+      )
+      await updateRow(draft.id, { images: nextImages })
+    } finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <div>
@@ -89,13 +108,23 @@ export default function VideoVault() {
                   </>
                 )}
               </div>
-              <a
-                href={v.url}
-                download={v.filename}
-                className="mt-2 inline-block text-[11px] text-ink/60 underline decoration-dotted hover:text-stamp-amber"
-              >
-                다운로드
-              </a>
+              <div className="mt-2 flex items-center gap-3">
+                <a
+                  href={v.url}
+                  download={v.filename}
+                  className="text-[11px] text-ink/60 underline decoration-dotted hover:text-stamp-amber"
+                >
+                  다운로드
+                </a>
+                <button
+                  type="button"
+                  onClick={() => handleDelete(v)}
+                  disabled={deletingId === v.id}
+                  className="text-[11px] text-stamp-reject underline decoration-dotted hover:opacity-70 disabled:opacity-40"
+                >
+                  {deletingId === v.id ? '삭제 중...' : '삭제'}
+                </button>
+              </div>
             </div>
           </div>
         ))}

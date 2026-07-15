@@ -28,15 +28,21 @@ export function ffprobeDuration(file) {
   return parseFloat(res.stdout.toString().trim())
 }
 
-function kenBurnsFilter(motion, frames, fps, w, h) {
+function kenBurnsFilter(motion, frames, fps, w, h, bw) {
   const step = 0.0018
+  // pan 씬은 프레임마다 고정 2px씩 이동했는데, 씬 길이(프레임 수)가 길어질수록 실제
+  // 이동 가능 범위(iw - iw/1.2)를 넘어서서 화면 끝에서 미세하게 떨리는 현상이 있었다.
+  // 전체 이동 거리를 씬 길이에 맞춰 나눠서 마지막 프레임에 정확히 끝에 도달하도록 하고,
+  // 혹시 모를 반올림 오차는 clamp(max/min)로 막는다.
+  const panRange = bw - bw / 1.2
+  const panStep = panRange / Math.max(frames - 1, 1)
   switch (motion) {
     case 'zoom-out':
       return `zoompan=z='if(eq(on,0),1.3,max(zoom-${step},1.0))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
     case 'pan-left':
-      return `zoompan=z=1.2:x='if(eq(on,0),iw-iw/1.2,x-2)':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
+      return `zoompan=z=1.2:x='if(eq(on,0),iw-iw/1.2,max(x-${panStep},0))':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
     case 'pan-right':
-      return `zoompan=z=1.2:x='if(eq(on,0),0,x+2)':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
+      return `zoompan=z=1.2:x='if(eq(on,0),0,min(x+${panStep},iw-iw/1.2))':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
     case 'none':
       return null
     case 'zoom-in':
@@ -52,7 +58,7 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
   // 무료 인스턴스(512MB) 메모리 절약을 위해 오버샘플링 배율을 최소한으로만 둠
   const bw = Math.round(w * 1.2)
   const bh = Math.round(h * 1.2)
-  const zoompan = kenBurnsFilter(scene.motion, frames, fps, w, h)
+  const zoompan = kenBurnsFilter(scene.motion, frames, fps, w, h, bw)
 
   let filter = `scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh}`
   filter += zoompan ? `,${zoompan}` : `,scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps}`
