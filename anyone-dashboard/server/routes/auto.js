@@ -14,34 +14,15 @@ import { fetchImageAsDataUrl } from '../lib/fetchImageAsDataUrl.js'
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js'
 import { generateShortsVideo } from '../lib/shortsGenerator.js'
 import { searchCoupangProducts } from '../lib/coupangClient.js'
+import { ensureCsLink, CS_TRIGGER_KEYWORD } from '../lib/csLink.js'
 
 const SOURCE_PRODUCT_COUNT = 4 // 특정 한 상품 소재를 그대로 쓰지 않도록 비슷한 상품 여러 개를 모아 영상으로 합성
 
-// CS 트리거 키워드 - 게시물 댓글에 이 단어가 달리면 인포크 링크를 자동으로 안내하는 구조.
-// (계획서 원칙: 모든 자동 게시물은 반드시 이 유도 문구를 포함해야 함)
-const CS_TRIGGER_KEYWORD = '정보'
-const CS_TARGET_URL = 'https://link.inpock.co.kr/jena10'
-
-// user_id + trigger_keyword로 기존 cs_links 행을 찾고, 없으면 새로 만든다.
-async function ensureCsLink(supabase, targetUserId) {
-  const { data: existing } = await supabase
-    .from('cs_links')
-    .select('id')
-    .eq('user_id', targetUserId)
-    .eq('trigger_keyword', CS_TRIGGER_KEYWORD)
-    .maybeSingle()
-  if (existing) return existing.id
-
-  const { data: created, error } = await supabase
-    .from('cs_links')
-    .insert({ user_id: targetUserId, trigger_keyword: CS_TRIGGER_KEYWORD, target_url: CS_TARGET_URL })
-    .select('id')
-    .single()
-  if (error) throw new Error(`CS 링크 생성 실패: ${error.message}`)
-  return created.id
-}
-
 const router = Router()
+
+// 참고: 이 라우트(1688 상품소싱 기반)는 2026-07-15부로 스케줄에서 제외되고
+// benchmark.js(일본 벤치마킹 기반)가 하루 5회 자리를 대신 쓰고 있다. 코드는 그대로 남겨둬서
+// 나중에 다시 켜고 싶으면 GitHub Actions에서 /api/auto/run을 다시 호출하도록만 바꾸면 된다.
 
 // 무인 자동 파이프라인 진입점: 1688 상품 소싱 → AI 초안 생성 → 2중3중 검수 → content_drafts 저장.
 // GitHub Actions 스케줄이 이 주소를 정해진 시간마다 호출하는 방식으로 쓴다.

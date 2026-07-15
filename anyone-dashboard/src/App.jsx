@@ -21,6 +21,7 @@ import VideoVault from './pages/VideoVault'
 import VideoStudio from './pages/VideoStudio'
 import MorningBriefing from './pages/MorningBriefing'
 import Settings from './pages/Settings'
+import AutomationLog from './pages/AutomationLog'
 
 // 로그인하지 않으면 대시보드 내부로 못 들어가게 막는 래퍼
 function RequireAuth({ children }) {
@@ -62,6 +63,7 @@ function AppRoutes() {
         <Route path="video-studio" element={<VideoStudio />} />
         <Route path="morning-briefing" element={<MorningBriefing />} />
         <Route path="settings" element={<Settings />} />
+        <Route path="automation-log" element={<AutomationLog />} />
       </Route>
     </Routes>
   )

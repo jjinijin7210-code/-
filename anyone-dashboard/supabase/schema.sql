@@ -297,6 +297,21 @@ create table briefings (
   created_at timestamptz not null default now()
 );
 
+-- ------------------------------------------------------------
+-- 14. 자동화 실행 로그 (automation_runs)
+-- 크론으로 도는 무인 파이프라인(벤치마킹 수집/콘텐츠 생성)이 언제, 성공/실패했는지 기록
+-- ------------------------------------------------------------
+create table automation_runs (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  run_type text not null,       -- 예: 일본 벤치마킹 수집 / 콘텐츠 생성 (카테고리명)
+  status text not null default '진행중', -- 진행중 / 완료 / 이슈발생
+  summary text,
+  error_message text,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+
 -- ============================================================
 -- RLS (Row Level Security) 설정
 -- 개인 도구지만, 계정 단위로 데이터를 분리해두어 안전하게 사용
@@ -315,6 +330,7 @@ alter table june_character enable row level security;
 alter table brands enable row level security;
 alter table assets enable row level security;
 alter table briefings enable row level security;
+alter table automation_runs enable row level security;
 
 -- 각 테이블에 대해 "본인 데이터만 조회/수정" 정책 적용
 do $$
@@ -323,7 +339,7 @@ declare
   tables text[] := array[
     'employee_status', 'content_drafts', 'review_log', 'benchmark_reports',
     'cs_links', 'analytics_data', 'qa_pipeline', 'qa_review_steps',
-    'luna_requests', 'luna_staff', 'june_character', 'brands', 'assets', 'briefings'
+    'luna_requests', 'luna_staff', 'june_character', 'brands', 'assets', 'briefings', 'automation_runs'
   ];
 begin
   foreach t in array tables loop

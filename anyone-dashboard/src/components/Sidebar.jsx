@@ -11,6 +11,7 @@ const NAV_ITEMS = [
   { to: '/drafts', label: '콘텐츠 관리', emoji: '✍️' },
   { to: '/reviews', label: '검수 로그', emoji: '✅' },
   { to: '/benchmark', label: '벤치마킹 리포트', emoji: '🔍' },
+  { to: '/automation-log', label: '자동화 실행 로그', emoji: '🤖' },
   { to: '/cs-links', label: 'CS 링크 관리', emoji: '💬' },
   { to: '/analytics', label: '성과 데이터', emoji: '📊' },
   { to: '/luna-studio', label: 'Luna 스튜디오', emoji: '🌙' },

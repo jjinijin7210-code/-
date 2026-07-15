@@ -1,52 +1,74 @@
-name: 애니원 자동 파이프라인 (소싱→초안→검수)
+name: 애니원 자동 파이프라인 (일본 벤치마킹→초안→검수)
 
-# 하루 5번, 서로 다른 생활용품 카테고리로 anyone-dashboard의 /api/auto/run을 호출해서
-# 사람 개입 없이 상품 소싱 → AI 초안 생성 → 2중3중 검수까지 자동으로 돌린다.
+# 하루 5번, 일본 인스타/틱톡 트렌드 카테고리를 순환하며 anyone-dashboard의
+# /api/benchmark/content-run을 호출해서 사람 개입 없이 벤치마킹→AI 초안 생성→2중3중 검수까지
+# 자동으로 돌린다. 첫 실행(하루 1번, KST 09:00) 때는 그날의 벤치마킹 데이터부터 새로 수집한다.
 # Render 무료 서버는 요청이 없으면 잠들기 때문에, 이 스케줄이 매번 서버를 깨우는 역할도 겸한다.
+#
+# 참고: 이전에는 1688 상품 소싱 기반(/api/auto/run)이었으나, 2026-07-15부로 일본 벤치마킹
+# 기반으로 교체했다. 1688 파이프라인 코드는 그대로 남아있어 필요하면 다시 전환 가능.
 on:
   schedule:
-    - cron: '0 0 * * *'  # 매일 UTC 00:00 = 한국시간(KST) 오전 9시 - 수납정리
-    - cron: '0 3 * * *'  # 매일 UTC 03:00 = 한국시간(KST) 낮 12시 - 주방용품
-    - cron: '0 6 * * *'  # 매일 UTC 06:00 = 한국시간(KST) 오후 3시 - 욕실용품
-    - cron: '0 9 * * *'  # 매일 UTC 09:00 = 한국시간(KST) 오후 6시 - 인테리어 소품
-    - cron: '0 12 * * *' # 매일 UTC 12:00 = 한국시간(KST) 오후 9시 - 조명
+    - cron: '0 0 * * *'  # 매일 UTC 00:00 = 한국시간(KST) 오전 9시 - 벤치마킹 수집 + 일상공감·개그
+    - cron: '0 3 * * *'  # 매일 UTC 03:00 = 한국시간(KST) 낮 12시 - 브이로그·힐링
+    - cron: '0 6 * * *'  # 매일 UTC 06:00 = 한국시간(KST) 오후 3시 - 패션뷰티소품
+    - cron: '0 9 * * *'  # 매일 UTC 09:00 = 한국시간(KST) 오후 6시 - 일상공감·개그
+    - cron: '0 12 * * *' # 매일 UTC 12:00 = 한국시간(KST) 오후 9시 - 브이로그·힐링
   workflow_dispatch:
     inputs:
-      keyword:
-        description: '소싱 키워드 (중국어, 비워두면 收纳 사용)'
+      category:
+        description: '벤치마킹 카테고리 (비워두면 일상공감·개그 사용)'
         required: false
-        default: '收纳'
+        default: '일상공감·개그'
+      collect:
+        description: '벤치마킹부터 새로 수집할지 (true/false)'
+        required: false
+        default: 'true'
 
 jobs:
-  run-auto-pipeline:
+  run-pipeline:
     runs-on: ubuntu-latest
     steps:
-      - name: 실행 시각에 맞는 카테고리 키워드 결정
+      - name: 실행 시각에 맞는 카테고리 결정 (+ 최초 실행 시 벤치마킹 수집 여부)
         id: pick
         run: |
+          COLLECT=false
           case "${{ github.event.schedule }}" in
-            '0 0 * * *') KEYWORD='收纳'; KEYWORD_KO='수납정리' ;;
-            '0 3 * * *') KEYWORD='厨房用品'; KEYWORD_KO='주방용품' ;;
-            '0 6 * * *') KEYWORD='浴室用品'; KEYWORD_KO='욕실용품' ;;
-            '0 9 * * *') KEYWORD='家居摆件'; KEYWORD_KO='인테리어 소품' ;;
-            '0 12 * * *') KEYWORD='灯具'; KEYWORD_KO='조명' ;;
+            '0 0 * * *') CATEGORY='일상공감·개그'; COLLECT=true ;;
+            '0 3 * * *') CATEGORY='브이로그·힐링' ;;
+            '0 6 * * *') CATEGORY='패션뷰티소품' ;;
+            '0 9 * * *') CATEGORY='일상공감·개그' ;;
+            '0 12 * * *') CATEGORY='브이로그·힐링' ;;
             *)
-              KEYWORD="${{ github.event.inputs.keyword }}"
-              if [ -z "$KEYWORD" ]; then KEYWORD='收纳'; fi
-              KEYWORD_KO='수납정리'
+              CATEGORY="${{ github.event.inputs.category }}"
+              if [ -z "$CATEGORY" ]; then CATEGORY='일상공감·개그'; fi
+              COLLECT="${{ github.event.inputs.collect }}"
+              if [ -z "$COLLECT" ]; then COLLECT=true; fi
               ;;
           esac
-          echo "keyword=$KEYWORD" >> "$GITHUB_OUTPUT"
-          echo "keyword_ko=$KEYWORD_KO" >> "$GITHUB_OUTPUT"
+          echo "category=$CATEGORY" >> "$GITHUB_OUTPUT"
+          echo "collect=$COLLECT" >> "$GITHUB_OUTPUT"
 
-      - name: 소싱→초안→검수 파이프라인 호출
+      - name: 일본 벤치마킹 수집 (하루 1번, 첫 실행 때만)
+        if: steps.pick.outputs.collect == 'true'
+        run: |
+          RESPONSE=$(curl -sS -X POST "https://anyone-dashboard-p3an.onrender.com/api/benchmark/collect" \
+            -H "Content-Type: application/json" \
+            -d "{\"token\":\"${{ secrets.AUTO_RUN_SECRET }}\"}")
+          echo "$RESPONSE"
+          echo "## 벤치마킹 수집 결과" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESPONSE" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+      - name: 벤치마킹 기반 콘텐츠 초안 생성
         run: |
           set -e
-          RESPONSE=$(curl -sS -X POST "https://anyone-dashboard-p3an.onrender.com/api/auto/run" \
+          RESPONSE=$(curl -sS -X POST "https://anyone-dashboard-p3an.onrender.com/api/benchmark/content-run" \
             -H "Content-Type: application/json" \
-            -d "{\"token\":\"${{ secrets.AUTO_RUN_SECRET }}\",\"keyword\":\"${{ steps.pick.outputs.keyword }}\",\"keywordKo\":\"${{ steps.pick.outputs.keyword_ko }}\",\"channel\":\"인스타/틱톡\"}")
+            -d "{\"token\":\"${{ secrets.AUTO_RUN_SECRET }}\",\"category\":\"${{ steps.pick.outputs.category }}\",\"channel\":\"인스타/틱톡\"}")
           echo "$RESPONSE"
-          echo "## 실행 결과 (키워드: ${{ steps.pick.outputs.keyword }})" >> "$GITHUB_STEP_SUMMARY"
+          echo "## 콘텐츠 생성 결과 (카테고리: ${{ steps.pick.outputs.category }})" >> "$GITHUB_STEP_SUMMARY"
           echo '```json' >> "$GITHUB_STEP_SUMMARY"
           echo "$RESPONSE" >> "$GITHUB_STEP_SUMMARY"
           echo '```' >> "$GITHUB_STEP_SUMMARY"
