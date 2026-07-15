@@ -17,6 +17,7 @@ import LunaRequests from './pages/LunaRequests'
 import JuneCharacter from './pages/JuneCharacter'
 import BrandCenter from './pages/BrandCenter'
 import AssetVault from './pages/AssetVault'
+import VideoVault from './pages/VideoVault'
 import MorningBriefing from './pages/MorningBriefing'
 import Settings from './pages/Settings'
 
@@ -56,6 +57,7 @@ function AppRoutes() {
         <Route path="june-character" element={<JuneCharacter />} />
         <Route path="brand-center" element={<BrandCenter />} />
         <Route path="asset-vault" element={<AssetVault />} />
+        <Route path="video-vault" element={<VideoVault />} />
         <Route path="morning-briefing" element={<MorningBriefing />} />
         <Route path="settings" element={<Settings />} />
       </Route>

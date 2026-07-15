@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { ATTACHMENT_KINDS as DEFAULT_KINDS, fileToAttachment } from '../lib/attachments'
 
 function formatSize(bytes) {
+  if (typeof bytes !== 'number') return null
   if (bytes < 1024) return `${bytes}B`
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`
   return `${(bytes / (1024 * 1024)).toFixed(1)}MB`
@@ -48,23 +49,29 @@ export default function AttachmentSection({ attachments = [], onChange, kinds = 
             {items.length === 0 ? (
               <p className="text-[11px] text-ink/30">아직 첨부된 파일이 없어요.</p>
             ) : (
-              <ul className="space-y-1">
+              <ul className="space-y-2">
                 {items.map((a) => (
-                  <li key={a.id} className="flex items-center justify-between gap-2 text-[11px]">
-                    <a
-                      href={a.data_url}
-                      download={a.filename}
-                      className="truncate text-ink/70 underline decoration-dotted hover:text-stamp-amber"
-                    >
-                      {a.filename} ({formatSize(a.size)})
-                    </a>
-                    <button
-                      type="button"
-                      onClick={() => handleRemove(a.id)}
-                      className="shrink-0 text-stamp-reject hover:underline"
-                    >
-                      제거
-                    </button>
+                  <li key={a.id} className="space-y-1 text-[11px]">
+                    {a.kind === 'video' && (
+                      <video src={a.data_url} controls className="max-h-48 w-full rounded-md bg-black" />
+                    )}
+                    <div className="flex items-center justify-between gap-2">
+                      <a
+                        href={a.data_url}
+                        download={a.filename}
+                        className="truncate text-ink/70 underline decoration-dotted hover:text-stamp-amber"
+                      >
+                        {a.filename}
+                        {formatSize(a.size) && ` (${formatSize(a.size)})`}
+                      </a>
+                      <button
+                        type="button"
+                        onClick={() => handleRemove(a.id)}
+                        className="shrink-0 text-stamp-reject hover:underline"
+                      >
+                        제거
+                      </button>
+                    </div>
                   </li>
                 ))}
               </ul>

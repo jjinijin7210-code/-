@@ -19,6 +19,7 @@ const NAV_ITEMS = [
   { to: '/june-character', label: 'June 캐릭터', emoji: '🧸' },
   { to: '/brand-center', label: '브랜드 센터', emoji: '🏷️' },
   { to: '/asset-vault', label: '에셋 보관함', emoji: '🗂️' },
+  { to: '/video-vault', label: '영상 보관함', emoji: '🎬' },
   { to: '/settings', label: '설정 · 백업', emoji: '⚙️' },
 ]
 
