@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
 import { useConfirm } from '../components/ConfirmDialog'
 import SaveStatusIndicator from '../components/SaveStatusIndicator'
@@ -56,6 +57,7 @@ export default function ContentDrafts() {
   const { rows: csLinks } = useSupabaseTable('cs_links')
   const { insertRow: insertReviewLog } = useSupabaseTable('review_log')
   const confirm = useConfirm()
+  const [searchParams, setSearchParams] = useSearchParams()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(emptyForm)
@@ -179,6 +181,18 @@ export default function ContentDrafts() {
     resetAiState()
     setModalOpen(true)
   }
+
+  // 홈/아침 브리핑에서 "?id=..."로 들어오면 해당 초안을 바로 열어줌 (일일이 목록에서 찾을 필요 없게)
+  useEffect(() => {
+    const id = searchParams.get('id')
+    if (!id) return
+    const row = rows.find((r) => r.id === id)
+    if (row) {
+      openEdit(row)
+      setSearchParams({}, { replace: true })
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows, searchParams])
 
   const handlePlatformChange = (platform) => {
     setForm({ ...form, platform, category: getCategoryForChannel(platform) })

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
 import PageHeader from '../components/PageHeader'
 import SaveStatusIndicator from '../components/SaveStatusIndicator'
@@ -65,6 +65,14 @@ export default function MorningBriefing() {
     await insertLunaRequest(request)
     setLunaMessage('루나 요청서를 만들었어요. "루나 요청" 탭에서 확인할 수 있어요.')
   }
+
+  // 오늘 아직 아무도 "생성" 버튼을 안 눌렀어도, 탭을 열자마자 바로 보이도록 자동 생성
+  useEffect(() => {
+    if (!loading && !existingToday && draftText === null) {
+      handleGenerate()
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, existingToday])
 
   const shownText = draftText ?? existingToday?.content
 

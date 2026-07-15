@@ -1,10 +1,21 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
 import { LoadingView, ErrorView } from '../components/StateViews'
 import StatusBadge from '../components/StatusBadge'
 import PrincipleChecklist from '../components/PrincipleChecklist'
 import { generateAiImage, generateDraft } from '../lib/apiClient'
 import { getCategoryForChannel } from '../lib/contentPreview'
+
+// 지금 사용자가 직접 확인·결정해야 하는 상태만 골라서, 무엇을 해야 하는지 문구까지 붙여줌
+// (초안=아직 안 건드려도 됨, 발행완료=이미 끝남 → 둘 다 "확인 필요" 목록에서는 제외)
+const ACTION_ORDER = { 반려: 0, 통과: 1, 검수중: 2 }
+function nextActionFor(draft) {
+  if (draft.status === '반려') return `반려 사유 확인: ${draft.reject_reason || '사유 미기재'}`
+  if (draft.status === '통과') return '발행해주세요'
+  if (draft.status === '검수중') return '검수 대기 중'
+  return null
+}
 
 // 빠른 요청에서 고를 수 있는 글 채널 (AI 초안 생성이 되는 채널만)
 const QUICK_TEXT_CHANNELS = ['스레드', '인스타/틱톡', '인스타/틱톡(영어)', '인스타/틱톡(일본어)']
@@ -89,6 +100,11 @@ export default function Home() {
     return acc
   }, {})
 
+  // 오늘 만들어진 것만이 아니라, 자동 파이프라인이 만들어 놓고 아직 사용자 확인을 못 받은 것 전부
+  const needsAction = drafts.rows
+    .filter((d) => nextActionFor(d) !== null)
+    .sort((a, b) => (ACTION_ORDER[a.status] ?? 9) - (ACTION_ORDER[b.status] ?? 9))
+
   return (
     <div className="space-y-6">
       <div>
@@ -100,6 +116,35 @@ export default function Home() {
 
       {/* 안전 원칙 - 전체 버전으로 홈 화면 상단에 크게 노출 */}
       <PrincipleChecklist />
+
+      {/* 지금 확인이 필요한 것 - 자동 파이프라인이 만든 초안 중 사용자 확인/발행이 필요한 것만 상품별로 나열 */}
+      <section>
+        <h2 className="mb-3 text-sm font-bold text-ink/70">🔔 지금 확인이 필요해요 ({needsAction.length})</h2>
+        {needsAction.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-ink/15 py-6 text-center text-sm text-ink/40">
+            지금 확인이 필요한 항목이 없어요.
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {needsAction.map((d) => (
+              <Link
+                key={d.id}
+                to={`/drafts?id=${d.id}`}
+                className="block rounded-xl bg-paper-card p-3 shadow-card transition hover:shadow-md"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-semibold text-ink">{d.title || '(제목 없음)'}</span>
+                  <StatusBadge status={d.status} />
+                </div>
+                <div className="mt-1 flex flex-wrap gap-2 text-xs text-ink/50">
+                  <span>{d.platform}</span>
+                </div>
+                <p className="mt-1 text-xs font-semibold text-stamp-amber">{nextActionFor(d)}</p>
+              </Link>
+            ))}
+          </div>
+        )}
+      </section>
 
       {/* 빠른 요청 - 상품이 아니어도(동물 게시물, 음악 영상용 이미지 등) 자유롭게 요청하면 바로 만들어줌 */}
       <section className="rounded-xl bg-paper-card p-4 shadow-card">

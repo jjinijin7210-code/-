@@ -40,8 +40,30 @@ export function buildBriefingText({ referenceDate = new Date(), drafts = [], rev
   const passedReviews = todayReviews.filter((r) => r.result === '통과')
   const rejectedReviews = todayReviews.filter((r) => r.result === '반려')
 
+  // 오늘 만들어진 것만이 아니라, 자동 파이프라인이 만들어 놓고 아직 사용자 확인을 못 받은 것 전부
+  // (검수중/통과/반려) - "무슨 상품을 어떻게 처리 중인지" 한눈에 보여주는 게 이 섹션의 목적
+  const actionable = (drafts || []).filter((d) => ['통과', '반려', '검수중'].includes(d.status))
+  const actionOrder = { 반려: 0, 통과: 1, 검수중: 2 }
+  actionable.sort((a, b) => actionOrder[a.status] - actionOrder[b.status])
+
   const lines = []
   lines.push(`📋 애니원 아침 브리핑 - ${formatDateKo(referenceDate)}`)
+  lines.push('')
+
+  lines.push('■ 지금 확인이 필요해요')
+  if (actionable.length === 0) {
+    lines.push('- 지금 확인이 필요한 항목이 없어요.')
+  } else {
+    for (const d of actionable) {
+      const hint =
+        d.status === '반려'
+          ? `반려 사유: ${d.reject_reason || '사유 미기재'}`
+          : d.status === '통과'
+            ? '발행해주세요'
+            : '검수 대기 중'
+      lines.push(`- [${d.status}] ${d.title || '(제목 없음)'} (${d.platform || '채널 미기재'}) - ${hint}`)
+    }
+  }
   lines.push('')
 
   lines.push('■ 오늘 콘텐츠 현황')
