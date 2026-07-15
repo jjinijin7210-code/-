@@ -47,10 +47,34 @@ export function validateFile(file) {
   return { ok: true }
 }
 
+// 사진(폰/카메라 원본은 보통 3~8MB)을 큰 변화 없이 화면에서 보기엔 충분한 크기로 줄여서
+// 대부분 3MB 제한에 안 걸리게 함 - 사용자가 직접 파일을 줄여올 필요 없게 하는 게 목적.
+async function compressImageFile(file, { maxDimension = 1600, quality = 0.82 } = {}) {
+  if (!file.type.startsWith('image/') || file.type === 'image/svg+xml') return file
+  try {
+    const bitmap = await createImageBitmap(file)
+    const scale = Math.min(1, maxDimension / Math.max(bitmap.width, bitmap.height))
+    const w = Math.round(bitmap.width * scale)
+    const h = Math.round(bitmap.height * scale)
+    const canvas = document.createElement('canvas')
+    canvas.width = w
+    canvas.height = h
+    canvas.getContext('2d').drawImage(bitmap, 0, 0, w, h)
+    const blob = await new Promise((resolve) => canvas.toBlob(resolve, 'image/jpeg', quality))
+    if (!blob || blob.size >= file.size) return file // 압축이 오히려 더 크면 원본 그대로 사용
+    const newName = file.name.replace(/\.[^.]+$/, '') + '.jpg'
+    return new File([blob], newName, { type: 'image/jpeg' })
+  } catch {
+    return file // 압축 실패해도 원본으로 계속 진행 (아래 크기 체크에서 걸릴 수는 있음)
+  }
+}
+
 // 실제 File 객체를 localStorage/DB에 저장 가능한 첨부 레코드로 변환
 export async function fileToAttachment(file, kind, note = '') {
-  const check = validateFile(file)
+  const target = await compressImageFile(file)
+  const check = validateFile(target)
   if (!check.ok) throw new Error(check.error)
+  file = target
 
   const buffer = await file.arrayBuffer()
   const base64 = arrayBufferToBase64(buffer)
