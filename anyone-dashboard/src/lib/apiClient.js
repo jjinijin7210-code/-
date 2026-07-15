@@ -81,6 +81,16 @@ export async function generateAiImage({ prompt, size }) {
   return postJson('/api/images/generate', { prompt, size })
 }
 
+// 영상 제작실 - 씬(이미지+모션+자막+보이스) + 배경음악을 직접 구성해서 mp4로 렌더링
+export async function renderVideoStudio(formData) {
+  const res = await fetch(`${API_BASE}/api/video-studio/render`, { method: 'POST', body: formData })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `영상 렌더링이 실패했어요 (${res.status})`)
+  }
+  return data
+}
+
 // 무료 스톡 사진(Pexels) 검색
 export async function searchPexelsPhotos({ query, page }) {
   const params = new URLSearchParams({ q: query })
