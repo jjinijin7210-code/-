@@ -12,12 +12,11 @@ const TABLE_LABELS = {
   analytics_data: '성과 데이터',
   qa_pipeline: 'QA 파이프라인',
   qa_review_steps: 'QA 검수 이력',
-  luna_requests: '루나 요청',
-  luna_staff: 'Luna 스튜디오 직원',
   june_character: 'June 캐릭터',
   brands: '브랜드 센터',
   assets: '에셋 보관함',
   briefings: '아침 브리핑',
+  automation_runs: '자동화 실행 로그',
 }
 
 function getStore() {

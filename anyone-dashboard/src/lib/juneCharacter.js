@@ -42,51 +42,9 @@ export function setActiveVersion(versions, targetId) {
   return versions.map((v) => ({ ...v, is_active: v.id === targetId }))
 }
 
-// 화면/요청서에 보여줄 한 줄 요약 (얼굴/헤어/의상/표정/포즈/색상을 이어붙임)
+// 화면에 보여줄 한 줄 요약 (얼굴/헤어/의상/표정/포즈/색상을 이어붙임)
 export function buildJuneSummary(character) {
   if (!character) return ''
   const parts = [character.face, character.hair, character.outfit, character.expression, character.pose, character.color]
   return parts.filter(Boolean).join(' · ')
-}
-
-/**
- * "June 공식 캐릭터 기준 포함" 체크 시 요청서에 자동으로 반영하는 핵심 로직.
- * - details.character가 있는 필드 구조(이미지 요청)라면 요약을 채워넣음 (기존 값이 있으면 덮어쓰지 않고 뒤에 이어붙임)
- * - details.forbidden_elements가 있다면 캐릭터의 금지 요소를 함께 반영 (중복 방지)
- * - 어떤 요청 종류든 june_reference에 그 시점의 공식 기준 스냅샷을 남겨서, 나중에 기준이
- *   바뀌어도 "그때 적용된 기준"을 추적할 수 있게 함
- *
- * @param {object} request - { details: {...} } 형태의 루나 요청 폼 객체
- * @param {object} activeCharacter - getActiveVersion()으로 찾은 활성 버전
- * @returns {object} 갱신된 request 객체 (원본은 변경하지 않음)
- */
-export function applyJuneReferenceToRequest(request, activeCharacter) {
-  if (!activeCharacter) {
-    throw new Error('현재 활성화된 June 공식 캐릭터 버전이 없어요. 먼저 June 캐릭터 관리실에서 버전을 활성화해주세요.')
-  }
-
-  const summary = buildJuneSummary(activeCharacter)
-  const details = { ...(request.details || {}) }
-
-  if ('character' in details) {
-    details.character = details.character ? `${details.character} / June: ${summary}` : summary
-  }
-  if ('forbidden_elements' in details && activeCharacter.forbidden_elements) {
-    const already = details.forbidden_elements || ''
-    details.forbidden_elements = already.includes(activeCharacter.forbidden_elements)
-      ? already
-      : [already, activeCharacter.forbidden_elements].filter(Boolean).join(' / ')
-  }
-
-  return {
-    ...request,
-    details,
-    june_reference: {
-      version: activeCharacter.version,
-      summary,
-      base_prompt: activeCharacter.base_prompt || '',
-      forbidden_elements: activeCharacter.forbidden_elements || '',
-      applied_at: new Date().toISOString(),
-    },
-  }
 }

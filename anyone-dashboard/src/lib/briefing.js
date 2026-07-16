@@ -100,14 +100,3 @@ export function buildBriefingText({ referenceDate = new Date(), drafts = [], rev
 
   return lines.join('\n')
 }
-
-// 브리핑 내용을 바탕으로 루나 요청서 초안을 빠르게 만들 때 쓰는 기본값
-export function buildLunaRequestFromBriefing(briefingText, referenceDate = new Date()) {
-  const dateLabel = new Date(referenceDate).toLocaleDateString('ko-KR')
-  return {
-    request_title: `${dateLabel} 브리핑 기반 요청`,
-    department: '아트본부',
-    status: '요청 작성',
-    note: briefingText,
-  }
-}

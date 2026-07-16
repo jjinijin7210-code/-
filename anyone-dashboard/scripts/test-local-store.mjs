@@ -102,7 +102,7 @@ console.log('=== 3. 전체 백업(export) / 복원(import) / 초기화(reset) ==
 {
   const store = createLocalStore(makeFakeStorage())
   store.insert('employee_status', { role_name: '리서처', status: '작업중' })
-  store.insert('luna_requests', { request_title: '캐릭터 이미지 요청' })
+  store.insert('assets', { brand: 'AnyOne', category: '이미지' })
 
   let backup
   check('exportAll이 모든 테이블을 포함한 JSON을 반환', () => {
@@ -112,14 +112,14 @@ console.log('=== 3. 전체 백업(export) / 복원(import) / 초기화(reset) ==
       assert.ok(Array.isArray(backup.data[t]), `${t} 배열이 있어야 함`)
     }
     assert.equal(backup.data.employee_status.length, 1)
-    assert.equal(backup.data.luna_requests.length, 1)
+    assert.equal(backup.data.assets.length, 1)
   })
 
   check('resetAll 이후 데이터가 모두 비워짐', () => {
     const res = store.resetAll()
     assert.equal(res.ok, true)
     assert.equal(store.getAll('employee_status').length, 0)
-    assert.equal(store.getAll('luna_requests').length, 0)
+    assert.equal(store.getAll('assets').length, 0)
   })
 
   check('importAll(backup)으로 데이터가 복원됨', () => {
@@ -127,7 +127,7 @@ console.log('=== 3. 전체 백업(export) / 복원(import) / 초기화(reset) ==
     assert.equal(res.ok, true)
     assert.equal(store.getAll('employee_status').length, 1)
     assert.equal(store.getAll('employee_status')[0].role_name, '리서처')
-    assert.equal(store.getAll('luna_requests').length, 1)
+    assert.equal(store.getAll('assets').length, 1)
   })
 
   check('importAll에 잘못된 형식을 주면 ok:false', () => {

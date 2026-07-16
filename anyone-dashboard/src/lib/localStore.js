@@ -17,12 +17,11 @@ export const ANYONE_TABLES = [
   'analytics_data',
   'qa_pipeline',
   'qa_review_steps',
-  'luna_requests',
-  'luna_staff',
   'june_character',
   'brands',
   'assets',
   'briefings',
+  'automation_runs',
 ]
 
 const KEY_PREFIX = 'anyone'

@@ -12,8 +12,6 @@ import BenchmarkReports from './pages/BenchmarkReports'
 import CsLinks from './pages/CsLinks'
 import AnalyticsData from './pages/AnalyticsData'
 import QaPipeline from './pages/QaPipeline'
-import LunaStudio from './pages/LunaStudio'
-import LunaRequests from './pages/LunaRequests'
 import JuneCharacter from './pages/JuneCharacter'
 import BrandCenter from './pages/BrandCenter'
 import AssetVault from './pages/AssetVault'
@@ -54,8 +52,6 @@ function AppRoutes() {
         <Route path="cs-links" element={<CsLinks />} />
         <Route path="analytics" element={<AnalyticsData />} />
         <Route path="qa-pipeline" element={<QaPipeline />} />
-        <Route path="luna-studio" element={<LunaStudio />} />
-        <Route path="luna-requests" element={<LunaRequests />} />
         <Route path="june-character" element={<JuneCharacter />} />
         <Route path="brand-center" element={<BrandCenter />} />
         <Route path="asset-vault" element={<AssetVault />} />

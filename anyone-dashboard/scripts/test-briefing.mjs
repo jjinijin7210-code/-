@@ -2,7 +2,7 @@
 // 실행: node scripts/test-briefing.mjs
 
 import assert from 'node:assert/strict'
-import { isSameDay, filterToday, buildBriefingText, buildLunaRequestFromBriefing } from '../src/lib/briefing.js'
+import { isSameDay, filterToday, buildBriefingText } from '../src/lib/briefing.js'
 
 let passed = 0
 function check(name, fn) {
@@ -88,14 +88,5 @@ console.log('=== 3. 브리핑 텍스트 생성 ===')
     assert.ok(emptyText.includes('없어요'))
   })
 }
-
-console.log('=== 4. 브리핑 기반 루나 요청서 생성 ===')
-check('브리핑 텍스트가 note에 그대로 들어가고, 상태는 "요청 작성"', () => {
-  const briefingText = '테스트 브리핑 내용'
-  const request = buildLunaRequestFromBriefing(briefingText, TODAY)
-  assert.equal(request.note, briefingText)
-  assert.equal(request.status, '요청 작성')
-  assert.ok(request.request_title.includes('브리핑'))
-})
 
 console.log(`\n총 ${passed}개 테스트 통과`)

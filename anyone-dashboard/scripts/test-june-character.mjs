@@ -9,9 +9,7 @@ import {
   getActiveVersion,
   setActiveVersion,
   buildJuneSummary,
-  applyJuneReferenceToRequest,
 } from '../src/lib/juneCharacter.js'
-import { getEmptyDetails } from '../src/data/lunaRequestFields.js'
 
 let passed = 0
 function check(name, fn) {
@@ -73,80 +71,5 @@ check('얼굴/헤어/의상/표정/포즈/색상을 이어붙여서 요약 생�
   const summary = buildJuneSummary(character)
   assert.equal(summary, '동그란 얼굴 · 단발 · 노란 원피스 · 미소 · 파스텔톤')
 })
-
-console.log('=== 4. 요청서에 June 공식 기준 자동 반영 ===')
-{
-  const juneV1 = {
-    id: 'v1',
-    version: 'v1.0',
-    is_active: true,
-    face: '동그란 얼굴',
-    hair: '단발머리',
-    outfit: '노란 원피스',
-    expression: '밝은 미소',
-    pose: '',
-    color: '파스텔톤',
-    forbidden_elements: '실존 인물과 닮은 얼굴 금지',
-    base_prompt: 'a cute chibi character named June, round face, yellow dress',
-  }
-
-  check('활성 버전이 없으면 에러', () => {
-    let threw = false
-    try {
-      applyJuneReferenceToRequest({ details: getEmptyDetails('이미지') }, null)
-    } catch (e) {
-      threw = true
-      assert.ok(e.message.includes('활성화된 June'))
-    }
-    assert.ok(threw)
-  })
-
-  check('이미지 요청에 적용하면 details.character에 요약이 채워짐', () => {
-    const request = { request_type: '이미지', details: getEmptyDetails('이미지') }
-    const updated = applyJuneReferenceToRequest(request, juneV1)
-    assert.ok(updated.details.character.includes('단발머리'))
-    assert.ok(updated.details.character.includes('노란 원피스'))
-  })
-
-  check('기존 character 값이 있으면 지우지 않고 뒤에 이어붙임', () => {
-    const request = { request_type: '이미지', details: { ...getEmptyDetails('이미지'), character: '기존 설명' } }
-    const updated = applyJuneReferenceToRequest(request, juneV1)
-    assert.ok(updated.details.character.startsWith('기존 설명'))
-    assert.ok(updated.details.character.includes('June:'))
-  })
-
-  check('금지 요소가 기존 값과 중복 없이 합쳐짐', () => {
-    const request = { request_type: '이미지', details: getEmptyDetails('이미지') }
-    const updated = applyJuneReferenceToRequest(request, juneV1)
-    assert.ok(updated.details.forbidden_elements.includes('실존 인물과 닮은 얼굴 금지'))
-
-    // 두 번 적용해도 문구가 중복되지 않아야 함
-    const updatedAgain = applyJuneReferenceToRequest(updated, juneV1)
-    const occurrences = updatedAgain.details.forbidden_elements.split('실존 인물과 닮은 얼굴 금지').length - 1
-    assert.equal(occurrences, 1)
-  })
-
-  check('june_reference 스냅샷이 버전/기준프롬프트/적용시각과 함께 저장됨', () => {
-    const request = { request_type: '이미지', details: getEmptyDetails('이미지') }
-    const updated = applyJuneReferenceToRequest(request, juneV1)
-    assert.equal(updated.june_reference.version, 'v1.0')
-    assert.equal(updated.june_reference.base_prompt, juneV1.base_prompt)
-    assert.ok(updated.june_reference.applied_at)
-  })
-
-  check('영상 요청처럼 details에 character 필드가 없으면 details는 그대로, june_reference만 추가됨', () => {
-    const request = { request_type: '영상', details: getEmptyDetails('영상') }
-    const updated = applyJuneReferenceToRequest(request, juneV1)
-    assert.ok(!('character' in updated.details))
-    assert.equal(updated.june_reference.version, 'v1.0')
-  })
-
-  check('원본 request 객체는 변경되지 않음 (불변성 유지)', () => {
-    const request = { request_type: '이미지', details: getEmptyDetails('이미지') }
-    const before = JSON.stringify(request)
-    applyJuneReferenceToRequest(request, juneV1)
-    assert.equal(JSON.stringify(request), before)
-  })
-}
 
 console.log(`\n총 ${passed}개 테스트 통과`)

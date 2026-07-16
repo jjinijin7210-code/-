@@ -3,7 +3,7 @@ import { useSupabaseTable } from '../hooks/useSupabaseTable'
 import PageHeader from '../components/PageHeader'
 import SaveStatusIndicator from '../components/SaveStatusIndicator'
 import { LoadingView, ErrorView } from '../components/StateViews'
-import { buildBriefingText, buildLunaRequestFromBriefing } from '../lib/briefing'
+import { buildBriefingText } from '../lib/briefing'
 
 function todayKey(date = new Date()) {
   return date.toISOString().slice(0, 10) // YYYY-MM-DD
@@ -21,11 +21,9 @@ export default function MorningBriefing() {
     insertRow: insertBriefing,
     updateRow: updateBriefing,
   } = useSupabaseTable('briefings', { orderBy: 'briefing_date' })
-  const { insertRow: insertLunaRequest, saveStatus: lunaSaveStatus } = useSupabaseTable('luna_requests')
 
   const [draftText, setDraftText] = useState(null)
   const [copyMessage, setCopyMessage] = useState(null)
-  const [lunaMessage, setLunaMessage] = useState(null)
 
   const loading = l1 || l2 || l3 || l4
   const today = new Date()
@@ -35,7 +33,6 @@ export default function MorningBriefing() {
     const text = buildBriefingText({ referenceDate: today, drafts, reviews, benchmarks })
     setDraftText(text)
     setCopyMessage(null)
-    setLunaMessage(null)
   }
 
   const handleSave = async () => {
@@ -56,14 +53,6 @@ export default function MorningBriefing() {
     } catch {
       setCopyMessage('복사에 실패했어요. 브라우저 권한을 확인해주세요.')
     }
-  }
-
-  const handleCreateLunaRequest = async () => {
-    const text = draftText ?? existingToday?.content
-    if (!text) return
-    const request = buildLunaRequestFromBriefing(text, today)
-    await insertLunaRequest(request)
-    setLunaMessage('루나 요청서를 만들었어요. "루나 요청" 탭에서 확인할 수 있어요.')
   }
 
   // 오늘 아직 아무도 "생성" 버튼을 안 눌렀어도, 탭을 열자마자 바로 보이도록 자동 생성
@@ -112,18 +101,10 @@ export default function MorningBriefing() {
             >
               📋 브리핑 복사
             </button>
-            <button
-              onClick={handleCreateLunaRequest}
-              disabled={!shownText}
-              className="rounded-md border border-ink/15 px-4 py-2 text-sm font-semibold text-ink hover:bg-ink/5 disabled:opacity-40"
-            >
-              🌙 루나 요청서 생성
-            </button>
-            <SaveStatusIndicator status={saveStatus === 'idle' ? lunaSaveStatus : saveStatus} />
+            <SaveStatusIndicator status={saveStatus} />
           </div>
 
           {copyMessage && <p className="mb-2 text-xs text-stamp-pass">{copyMessage}</p>}
-          {lunaMessage && <p className="mb-2 text-xs text-stamp-pass">{lunaMessage}</p>}
 
           {shownText ? (
             <pre className="whitespace-pre-wrap rounded-xl bg-paper-card p-4 text-xs leading-relaxed text-ink/80 shadow-card">
