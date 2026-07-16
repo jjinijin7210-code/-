@@ -9,13 +9,7 @@ import { startAutomationRun, finishAutomationRun } from '../lib/automationLog.js
 import { ensureCsLink, CS_TRIGGER_KEYWORD } from '../lib/csLink.js'
 import { callClaude } from '../lib/anthropicClient.js'
 import { buildDraftMessages, parseDraftResponse } from '../lib/promptBuilder.js'
-import {
-  buildReviewMessages,
-  parseReviewResponse,
-  combineStageResults,
-  REVIEW_STAGES,
-  STAGE_CHECK_KEYS,
-} from '../lib/reviewParser.js'
+import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { generateImage } from '../lib/imageClient.js'
 
 const TOP_PER_HASHTAG = 3 // 해시태그마다 상위 몇 개만 저장할지 (Apify 사용량/비용 절감)
@@ -161,18 +155,26 @@ router.post('/benchmark/content-run', async (req, res) => {
 
     await setEmployeeStatus(supabase, targetUserId, WRITER_ROLE, '완료', `"${draft.title}" 초안 작성 완료`)
 
-    // 3) 2중3중 검수 - 하나라도 반려면 전체 반려 (fail-safe)
-    const stageResults = []
-    for (const stage of REVIEW_STAGES) {
-      const { system, messages } = buildReviewMessages({ title: draft.title, body: draft.body, channel: targetChannel, stage })
-      const text = await callClaude({ system, messages, maxTokens: 1024 })
-      stageResults.push({ stage, result: parseReviewResponse(text, STAGE_CHECK_KEYS[stage]) })
-    }
-    const review = combineStageResults(stageResults)
+    // 3) 2중3중 검수 - 반려되면 반려 사유를 보고 AI가 스스로 고쳐서 최대 2번까지 자동 재시도
+    // (사람 개입 없는 자동 파이프라인이라, 여기서 포기하면 그 슬롯은 그냥 날아가버림 - 되도록 살려봄)
+    const initialReview = await runReviewStages({ title: draft.title, body: draft.body, channel: targetChannel })
+    const {
+      title: finalTitle,
+      body: finalBody,
+      review,
+      attempts,
+    } = await reviseUntilPassOrGiveUp({ title: draft.title, body: draft.body, channel: targetChannel, initialReview })
+    draft.title = finalTitle
+    draft.body = finalBody
     const passed = review.result === '통과'
 
     for (const roleName of REVIEWER_ROLES) {
-      await setEmployeeStatus(supabase, targetUserId, roleName, passed ? '완료' : '이슈발생', passed ? '검수 통과' : review.reasons[0] || '반려')
+      const task = passed
+        ? attempts > 0
+          ? `검수 통과 (AI 자동 수정 ${attempts}회 후)`
+          : '검수 통과'
+        : review.reasons[0] || '반려'
+      await setEmployeeStatus(supabase, targetUserId, roleName, passed ? '완료' : '이슈발생', task)
     }
 
     // 4) 실제 스크래핑한 원본 사진을 그대로 쓰지 않기 위해, 주제에 맞는 완전히 새로운 이미지를 AI로 생성
@@ -237,7 +239,7 @@ router.post('/benchmark/content-run', async (req, res) => {
 
     await finishAutomationRun(supabase, run?.id, {
       status: passed ? '완료' : '이슈발생',
-      summary: `"${draft.title}" (${passed ? '통과' : '반려'})`,
+      summary: `"${draft.title}" (${passed ? '통과' : '반려'}${attempts > 0 ? `, AI 자동 수정 ${attempts}회` : ''})`,
     })
 
     res.json({ ok: true, draftId: savedDraft.id, status: savedDraft.status, review })

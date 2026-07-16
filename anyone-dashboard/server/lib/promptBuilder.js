@@ -79,6 +79,34 @@ export function buildDraftMessages({ channel, topic, referenceNote }) {
 }
 
 /**
+ * 반려된 초안을 검수 반려 사유에 맞춰 고쳐 쓰는 요청의 user prompt.
+ * @param {object} params
+ * @param {string} params.channel
+ * @param {string} params.title - 반려된 기존 제목
+ * @param {string} params.body - 반려된 기존 본문
+ * @param {string[]} params.reasons - 검수에서 지적된 반려 사유 목록
+ */
+export function buildReviseUserPrompt({ channel, title, body, reasons }) {
+  const reasonLines = (reasons && reasons.length > 0 ? reasons : ['사유 미기재']).map((r) => `- ${r}`).join('\n')
+  return `채널: ${channel}
+기존 제목: ${title}
+기존 본문:
+${body}
+
+[검수에서 반려된 이유]
+${reasonLines}
+
+위 반려 이유를 전부 해결하도록 제목과 본문을 다시 작성해줘. 원래 주제·톤·구조는 최대한 유지하되, 지적된 문제만 확실히 고쳐줘.`
+}
+
+export function buildReviseMessages({ channel, title, body, reasons }) {
+  return {
+    system: buildDraftSystemPrompt(channel),
+    messages: [{ role: 'user', content: buildReviseUserPrompt({ channel, title, body, reasons }) }],
+  }
+}
+
+/**
  * Claude 응답 텍스트(JSON 또는 ```json 코드펜스로 감싼 JSON)를 파싱해서
  * { title, body, hashtags } 형태로 돌려줍니다. 형식이 이상하면 명확한 에러를 던집니다.
  */

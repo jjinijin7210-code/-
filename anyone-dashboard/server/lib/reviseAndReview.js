@@ -1,0 +1,61 @@
+// ============================================================
+// 반려된 초안을 반려 사유에 맞춰 AI가 스스로 고치고, 통과하거나 최대 시도 횟수에
+// 닿을 때까지 반복 검수한다. 자동 파이프라인(benchmark.js)과 수동 "AI가 알아서
+// 고쳐서 재검수" 버튼(review.js) 둘 다 이 로직을 공유한다.
+// ============================================================
+
+import { callClaude } from './anthropicClient.js'
+import { buildReviseMessages, parseDraftResponse } from './promptBuilder.js'
+import {
+  buildReviewMessages,
+  parseReviewResponse,
+  combineStageResults,
+  REVIEW_STAGES,
+  STAGE_CHECK_KEYS,
+} from './reviewParser.js'
+
+// 무한 재시도로 API 비용이 새는 걸 막기 위한 상한
+const MAX_RETRIES = 2
+
+export async function runReviewStages({ title, body, channel }) {
+  const stageResults = []
+  for (const stage of REVIEW_STAGES) {
+    const { system, messages } = buildReviewMessages({ title, body, channel, stage })
+    const text = await callClaude({ system, messages, maxTokens: 1024 })
+    stageResults.push({ stage, result: parseReviewResponse(text, STAGE_CHECK_KEYS[stage]) })
+  }
+  return combineStageResults(stageResults)
+}
+
+/**
+ * @param {object} params
+ * @param {string} params.title
+ * @param {string} params.body
+ * @param {string} params.channel
+ * @param {object} params.initialReview - 이미 반려로 나온 최초 검수 결과 (combineStageResults 형태)
+ * @param {number} [params.maxRetries]
+ * @returns {Promise<{title:string, body:string, review:object, attempts:number}>}
+ */
+export async function reviseUntilPassOrGiveUp({ title, body, channel, initialReview, maxRetries = MAX_RETRIES }) {
+  let currentTitle = title
+  let currentBody = body
+  let review = initialReview
+  let attempts = 0
+
+  while (review.result !== '통과' && attempts < maxRetries) {
+    attempts++
+    const { system, messages } = buildReviseMessages({
+      channel,
+      title: currentTitle,
+      body: currentBody,
+      reasons: review.reasons,
+    })
+    const text = await callClaude({ system, messages, maxTokens: 1024 })
+    const revised = parseDraftResponse(text)
+    currentTitle = revised.title
+    currentBody = revised.body
+    review = await runReviewStages({ title: currentTitle, body: currentBody, channel })
+  }
+
+  return { title: currentTitle, body: currentBody, review, attempts }
+}

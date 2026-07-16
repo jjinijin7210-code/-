@@ -28,6 +28,11 @@ export function reviewDraftWithAi({ title, body, channel }) {
   return postJson('/api/review', { title, body, channel })
 }
 
+// 반려된 초안을 반려 사유에 맞춰 AI가 스스로 고치고, 통과하거나 최대 시도 횟수까지 자동 재검수
+export function autoFixAndReview({ title, body, channel, reasons }) {
+  return postJson('/api/review/auto-fix', { title, body, channel, reasons })
+}
+
 // 구글 계정 연결 여부 확인
 export async function getBloggerStatus() {
   const res = await fetch(`${API_BASE}/api/blogger/status`)

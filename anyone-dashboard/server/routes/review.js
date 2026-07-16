@@ -1,6 +1,7 @@
 import { Router } from 'express'
 import { callClaude } from '../lib/anthropicClient.js'
 import { buildReviewMessages, parseReviewResponse, combineStageResults, REVIEW_STAGES, STAGE_CHECK_KEYS } from '../lib/reviewParser.js'
+import { reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 
 const router = Router()
 
@@ -31,6 +32,24 @@ router.post('/review', async (req, res) => {
       stages: [],
       parseError: true,
     })
+  }
+})
+
+// 반려된 초안을 반려 사유에 맞춰 AI가 스스로 고치고, 통과하거나 최대 시도 횟수까지
+// 자동으로 반복 검수한다 (사람이 직접 고칠 필요 없이 버튼 한 번으로 처리).
+router.post('/review/auto-fix', async (req, res) => {
+  const { title, body, channel, reasons } = req.body || {}
+
+  if (!title || !body || !body.trim()) {
+    return res.status(400).json({ error: '제목/본문이 필요해요.' })
+  }
+
+  try {
+    const initialReview = { result: '반려', reasons: Array.isArray(reasons) ? reasons : [] }
+    const result = await reviseUntilPassOrGiveUp({ title, body, channel, initialReview })
+    res.json({ ok: true, ...result })
+  } catch (err) {
+    res.status(502).json({ error: err.message })
   }
 })
 

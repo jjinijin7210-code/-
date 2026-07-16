@@ -21,6 +21,7 @@ import {
 import {
   generateDraft,
   reviewDraftWithAi,
+  autoFixAndReview,
   getBloggerStatus,
   publishToBlogger,
   getGoogleConnectUrl,
@@ -85,6 +86,10 @@ export default function ContentDrafts() {
   // 반려된(또는 수정한) 기존 초안을 고친 뒤 다시 AI 검수받기
   const [reReviewLoading, setReReviewLoading] = useState(false)
   const [reReviewError, setReReviewError] = useState(null)
+
+  // 반려 사유를 사람이 직접 고치지 않고, AI가 스스로 고쳐서 통과할 때까지 자동 재검수
+  const [autoFixLoading, setAutoFixLoading] = useState(false)
+  const [autoFixError, setAutoFixError] = useState(null)
 
   // AI 이미지 생성 관련 상태 (Luna에게 맡기지 않고 바로 생성)
   const [aiImagePrompt, setAiImagePrompt] = useState('')
@@ -213,6 +218,7 @@ export default function ContentDrafts() {
     setReviewResult(null)
     setPublishMessage(null)
     setReReviewError(null)
+    setAutoFixError(null)
   }
 
   const openAdd = () => {
@@ -307,6 +313,29 @@ export default function ContentDrafts() {
       setReReviewError(err.message)
     } finally {
       setReReviewLoading(false)
+    }
+  }
+
+  // 반려 사유를 사람이 직접 안 고치고, AI가 스스로 고쳐서 통과할 때까지(최대 2번) 자동 재검수
+  const handleAutoFix = async () => {
+    setAutoFixLoading(true)
+    setAutoFixError(null)
+    try {
+      const reasons = (form.reject_reason || '').split(' / ').filter(Boolean)
+      const result = await autoFixAndReview({ title: form.title, body: form.body, channel: form.platform, reasons })
+      setReviewResult(result.review)
+      setForm((f) => ({
+        ...f,
+        title: result.title,
+        body: result.body,
+        status: result.review.result,
+        review_opinion: result.review.reasons?.join(' / ') || (result.review.result === '통과' ? '문제 없음' : ''),
+        reject_reason: result.review.result === '반려' ? result.review.reasons?.join(' / ') || '' : null,
+      }))
+    } catch (err) {
+      setAutoFixError(err.message)
+    } finally {
+      setAutoFixLoading(false)
     }
   }
 
@@ -663,18 +692,33 @@ export default function ContentDrafts() {
 
           {editing && (
             <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
-              <button
-                type="button"
-                onClick={handleReReview}
-                disabled={reReviewLoading || !form.title || !form.body}
-                className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
-              >
-                {reReviewLoading ? '검수 중...' : '🔄 다시 AI 검수받기'}
-              </button>
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={handleReReview}
+                  disabled={reReviewLoading || !form.title || !form.body}
+                  className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                >
+                  {reReviewLoading ? '검수 중...' : '🔄 다시 AI 검수받기'}
+                </button>
+                {form.status === '반려' && (
+                  <button
+                    type="button"
+                    onClick={handleAutoFix}
+                    disabled={autoFixLoading || !form.title || !form.body}
+                    className="rounded-md bg-ink px-4 py-2 text-sm font-semibold text-white hover:bg-ink/80 disabled:opacity-50"
+                  >
+                    {autoFixLoading ? 'AI가 고치는 중...' : '🤖 AI가 알아서 고쳐서 재검수'}
+                  </button>
+                )}
+              </div>
               <p className="mt-2 text-[11px] text-ink/40">
-                제목·본문·이미지를 수정한 뒤 눌러야 상태(통과/반려)가 다시 매겨져요. "저장"만 누르면 상태가 그대로 유지돼요.
+                "다시 AI 검수받기"는 본인이 직접 고친 뒤 확인만 다시 받는 거예요. "AI가 알아서
+                고쳐서 재검수"는 반려 사유를 보고 AI가 스스로 제목·본문을 고쳐서(최대 2번) 통과할
+                때까지 시도해요. "저장"만 누르면 상태가 그대로 유지돼요.
               </p>
               {reReviewError && <p className="mt-2 text-xs text-stamp-reject">{reReviewError}</p>}
+              {autoFixError && <p className="mt-2 text-xs text-stamp-reject">{autoFixError}</p>}
             </div>
           )}
 
