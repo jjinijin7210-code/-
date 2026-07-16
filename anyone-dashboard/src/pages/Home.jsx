@@ -31,6 +31,15 @@ function isToday(dateStr) {
   )
 }
 
+// 자동 파이프라인(benchmark.js)이 저장할 때 source에 "일본 벤치마킹 기반 자동 생성 (카테고리: X)"
+// 형태로 남기므로, 여기서 카테고리명만 뽑아냄 (수동으로 만든 초안과 구분하기 위한 표식이기도 함)
+const AUTO_SOURCE_MARK = '일본 벤치마킹 기반'
+const CATEGORY_RE = /카테고리: ([^)]+)\)/
+function extractCategory(source) {
+  const m = CATEGORY_RE.exec(source || '')
+  return m ? m[1] : '기타'
+}
+
 export default function Home() {
   const employees = useSupabaseTable('employee_status', { orderBy: 'updated_at' })
   const drafts = useSupabaseTable('content_drafts')
@@ -105,6 +114,18 @@ export default function Home() {
     .filter((d) => nextActionFor(d) !== null)
     .sort((a, b) => (ACTION_ORDER[a.status] ?? 9) - (ACTION_ORDER[b.status] ?? 9))
 
+  // 오늘 자동 파이프라인이 만든 것만 따로 - 몇 개를 어느 카테고리로, 통과/반려 몇 개인지 한눈에
+  const automatedToday = todayDrafts.filter((d) => d.source?.includes(AUTO_SOURCE_MARK))
+  const categoryCounts = {}
+  let autoPassedCount = 0
+  let autoRejectedCount = 0
+  automatedToday.forEach((d) => {
+    const cat = extractCategory(d.source)
+    categoryCounts[cat] = (categoryCounts[cat] || 0) + 1
+    if (d.status === '통과' || d.status === '발행완료') autoPassedCount++
+    else if (d.status === '반려') autoRejectedCount++
+  })
+
   return (
     <div className="space-y-6">
       <div>
@@ -116,6 +137,35 @@ export default function Home() {
 
       {/* 안전 원칙 - 전체 버전으로 홈 화면 상단에 크게 노출 */}
       <PrincipleChecklist />
+
+      {/* 오늘 자동 생성 현황 - 몇 개를 어느 카테고리로 만들었는지, 통과/반려 몇 개인지 한눈에 */}
+      <section className="rounded-xl bg-paper-card p-4 shadow-card">
+        <h2 className="mb-3 text-sm font-bold text-ink/70">📊 오늘 자동 생성 현황</h2>
+        {automatedToday.length === 0 ? (
+          <p className="rounded-lg border border-dashed border-ink/15 py-6 text-center text-sm text-ink/40">
+            오늘은 아직 자동으로 만들어진 게 없어요. (하루 5번, 오전 9시부터 순서대로 돌아요)
+          </p>
+        ) : (
+          <>
+            <div className="mb-3 flex flex-wrap items-baseline gap-2">
+              <span className="text-2xl font-bold text-ink">{automatedToday.length}개</span>
+              <span className="text-xs text-ink/50">
+                오늘 자동 생성됨 · 통과 {autoPassedCount}개 · 반려 {autoRejectedCount}개
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(categoryCounts).map(([cat, count]) => (
+                <span
+                  key={cat}
+                  className="rounded-full border border-stamp-amber/30 bg-stamp-amber/5 px-3 py-1 text-xs text-stamp-amber"
+                >
+                  {cat} {count}개
+                </span>
+              ))}
+            </div>
+          </>
+        )}
+      </section>
 
       {/* 지금 확인이 필요한 것 - 자동 파이프라인이 만든 초안 중 사용자 확인/발행이 필요한 것만 상품별로 나열 */}
       <section>
