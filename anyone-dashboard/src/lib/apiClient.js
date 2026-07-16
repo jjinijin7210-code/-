@@ -81,6 +81,11 @@ export async function generateAiImage({ prompt, size }) {
   return postJson('/api/images/generate', { prompt, size })
 }
 
+// 참고 사진을 올리면 그 느낌으로 비슷한 새 이미지를 AI가 다시 그려서 생성
+export async function generateSimilarImage({ imageDataUrl, prompt, size }) {
+  return postJson('/api/images/edit', { imageDataUrl, prompt, size })
+}
+
 // 영상 제작실 - 씬(이미지+모션+자막+보이스) + 배경음악을 직접 구성해서 mp4로 렌더링
 export async function renderVideoStudio(formData) {
   const res = await fetch(`${API_BASE}/api/video-studio/render`, { method: 'POST', body: formData })

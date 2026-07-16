@@ -18,7 +18,18 @@ import {
   isLocalizationChannel,
   isBloggerChannel,
 } from '../lib/contentPreview'
-import { generateDraft, reviewDraftWithAi, getBloggerStatus, publishToBlogger, getGoogleConnectUrl, generateAiImage, searchPexelsPhotos, fetchPexelsImage } from '../lib/apiClient'
+import {
+  generateDraft,
+  reviewDraftWithAi,
+  getBloggerStatus,
+  publishToBlogger,
+  getGoogleConnectUrl,
+  generateAiImage,
+  generateSimilarImage,
+  searchPexelsPhotos,
+  fetchPexelsImage,
+} from '../lib/apiClient'
+import { compressImageFile, fileToDataUrl } from '../lib/attachments'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
 
 const STATUS_OPTIONS = ['초안', '검수중', '통과', '반려', '발행완료']
@@ -98,6 +109,40 @@ export default function ContentDrafts() {
       setAiImageError(err.message)
     } finally {
       setAiImageLoading(false)
+    }
+  }
+
+  // 참고 사진을 올리면 그 느낌으로 비슷한 새 이미지를 AI가 다시 그려서 생성
+  const [similarRefFile, setSimilarRefFile] = useState(null)
+  const [similarPrompt, setSimilarPrompt] = useState('')
+  const [similarLoading, setSimilarLoading] = useState(false)
+  const [similarError, setSimilarError] = useState(null)
+
+  const handleGenerateSimilarImage = async () => {
+    if (!similarRefFile || !similarPrompt.trim()) return
+    setSimilarLoading(true)
+    setSimilarError(null)
+    try {
+      const compressed = await compressImageFile(similarRefFile)
+      const refDataUrl = await fileToDataUrl(compressed)
+      const { dataUrl } = await generateSimilarImage({ imageDataUrl: refDataUrl, prompt: similarPrompt })
+      const attachment = {
+        id: crypto.randomUUID(),
+        kind: 'image',
+        filename: `similar-${Date.now()}.png`,
+        mime_type: 'image/png',
+        size: dataUrl.length,
+        data_url: dataUrl,
+        note: `참고 사진 기반 생성: ${similarPrompt}`,
+        created_at: new Date().toISOString(),
+      }
+      setForm((f) => ({ ...f, images: [...(f.images || []), attachment] }))
+      setSimilarRefFile(null)
+      setSimilarPrompt('')
+    } catch (err) {
+      setSimilarError(err.message)
+    } finally {
+      setSimilarLoading(false)
     }
   }
 
@@ -445,6 +490,35 @@ export default function ContentDrafts() {
               </button>
             </div>
             {aiImageError && <p className="mb-2 text-xs text-stamp-reject">{aiImageError}</p>}
+
+            <div className="mb-2 rounded-md border border-ink/10 p-2">
+              <p className="mb-1.5 text-[11px] font-semibold text-ink/50">
+                📎 참고 사진을 올리면 그 느낌으로 비슷한(원본 그대로가 아닌 새로 그린) 이미지를 만들어요
+              </p>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={(e) => setSimilarRefFile(e.target.files?.[0] || null)}
+                  className="min-w-[160px] flex-1 text-xs"
+                />
+                <input
+                  className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+                  placeholder="어떻게 비슷하게 만들지 (예: 같은 분위기로 다른 색 원피스)"
+                  value={similarPrompt}
+                  onChange={(e) => setSimilarPrompt(e.target.value)}
+                />
+                <button
+                  type="button"
+                  disabled={similarLoading || !similarRefFile || !similarPrompt.trim()}
+                  onClick={handleGenerateSimilarImage}
+                  className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                >
+                  {similarLoading ? '생성 중...' : '🎨 비슷한 이미지 생성'}
+                </button>
+              </div>
+              {similarError && <p className="mt-1.5 text-xs text-stamp-reject">{similarError}</p>}
+            </div>
 
             <div className="mb-2 flex flex-wrap gap-2">
               <input
