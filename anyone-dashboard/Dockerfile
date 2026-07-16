@@ -8,6 +8,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-no
 
 WORKDIR /app
 COPY package.json package-lock.json ./
+# 인스타그램 자동 입력 기능(server/routes/instagram.js)의 playwright 패키지는 여기서
+# 브라우저 바이너리를 내려받을 필요가 없다 - 그 기능은 headless:false라서 화면이 있는
+# 사용자 컴퓨터에서만 동작하고, Render 서버에서는 애초에 실행될 수 없다. 그냥 안 쓰는
+# 수백MB짜리 크로미움 다운로드를 건너뛰어서 빌드 시간/용량만 아낀다.
+ENV PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1
 RUN npm ci
 
 COPY . .

@@ -91,6 +91,27 @@ export async function generateSimilarImage({ imageDataUrl, prompt, size }) {
   return postJson('/api/images/edit', { imageDataUrl, prompt, size })
 }
 
+// 인스타그램 자동 입력 (진희님 컴퓨터에서만 동작 - 실제 크롬을 열어서 조작)
+export function openInstagramLogin() {
+  return postJson('/api/instagram/open-login', {})
+}
+
+// prepare는 "로그인 필요" 상태(409)도 화면에서 구분해서 안내해야 해서 postJson을 안 쓰고 직접 처리
+export async function prepareInstagramPost({ caption, imageDataUrl }) {
+  const res = await fetch(`${API_BASE}/api/instagram/prepare`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ caption, imageDataUrl }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = new Error(data.error || `요청이 실패했어요 (${res.status})`)
+    err.loginRequired = Boolean(data.loginRequired)
+    throw err
+  }
+  return data
+}
+
 // 영상 제작실 - 씬(이미지+모션+자막+보이스) + 배경음악을 직접 구성해서 mp4로 렌더링
 export async function renderVideoStudio(formData) {
   const res = await fetch(`${API_BASE}/api/video-studio/render`, { method: 'POST', body: formData })

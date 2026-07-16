@@ -17,6 +17,7 @@ import {
   isAiDraftChannel,
   isLocalizationChannel,
   isBloggerChannel,
+  parseHashtags,
 } from '../lib/contentPreview'
 import {
   generateDraft,
@@ -29,6 +30,8 @@ import {
   generateSimilarImage,
   searchPexelsPhotos,
   fetchPexelsImage,
+  openInstagramLogin,
+  prepareInstagramPost,
 } from '../lib/apiClient'
 import { compressImageFile, fileToDataUrl } from '../lib/attachments'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
@@ -204,6 +207,49 @@ export default function ContentDrafts() {
   const [publishLoading, setPublishLoading] = useState(false)
   const [publishMessage, setPublishMessage] = useState(null)
 
+  // 인스타그램 자동 입력 (진희님 컴퓨터에서만 동작 - 실제 크롬 브라우저를 조작)
+  const [igLoading, setIgLoading] = useState(false)
+  const [igMessage, setIgMessage] = useState(null) // { type: 'success' | 'error', text }
+
+  const handleOpenInstagramLogin = async () => {
+    setIgLoading(true)
+    setIgMessage(null)
+    try {
+      const result = await openInstagramLogin()
+      setIgMessage({ type: 'success', text: result.message })
+    } catch (err) {
+      setIgMessage({ type: 'error', text: err.message })
+    } finally {
+      setIgLoading(false)
+    }
+  }
+
+  const handlePrepareInstagramPost = async () => {
+    const firstImage = (form.images || []).find((img) => img.kind === 'image')
+    if (!firstImage) {
+      setIgMessage({ type: 'error', text: '먼저 이미지를 1장 첨부해주세요.' })
+      return
+    }
+    const hashtagText = parseHashtags(form.hashtags).join(' ')
+    const caption = [form.body, hashtagText].filter(Boolean).join('\n\n')
+
+    setIgLoading(true)
+    setIgMessage(null)
+    try {
+      const result = await prepareInstagramPost({ caption, imageDataUrl: firstImage.data_url })
+      setIgMessage({ type: 'success', text: result.message })
+    } catch (err) {
+      setIgMessage({
+        type: 'error',
+        text: err.loginRequired
+          ? '인스타그램 로그인 창이 열렸어요! 화면에 뜬 창에서 로그인하신 뒤, 이 버튼을 한 번 더 눌러주세요.'
+          : err.message,
+      })
+    } finally {
+      setIgLoading(false)
+    }
+  }
+
   useEffect(() => {
     if (modalOpen && isBloggerChannel(form.platform)) {
       getBloggerStatus().then((s) => setBloggerConnected(s.connected))
@@ -219,6 +265,7 @@ export default function ContentDrafts() {
     setPublishMessage(null)
     setReReviewError(null)
     setAutoFixError(null)
+    setIgMessage(null)
   }
 
   const openAdd = () => {
@@ -634,6 +681,41 @@ export default function ContentDrafts() {
             value={form.hashtags}
             onChange={(v) => setForm({ ...form, hashtags: v })}
           />
+
+          {form.platform.startsWith('인스타/틱톡') && (
+            <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
+              <p className="mb-1 text-xs font-bold text-ink/70">📷 인스타그램 자동 입력</p>
+              <p className="mb-2 text-[11px] text-ink/40">
+                이 컴퓨터에서만 동작해요 (Render 배포 사이트에서는 안 돼요). 버튼 하나만 누르면 사진·본문·해시태그를
+                자동으로 채워줘요 (로그인이 안 되어 있으면 그때 뜨는 창에서 로그인하고 버튼을 한 번 더 누르면 돼요).
+                마지막 "공유" 버튼만 인스타그램 창에서 직접 눌러주세요.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handlePrepareInstagramPost}
+                  disabled={igLoading || !form.body}
+                  className="rounded-md bg-stamp-amber px-3 py-2 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                >
+                  {igLoading ? '처리 중...' : '📷 인스타그램에 사진·글 자동으로 채우기'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenInstagramLogin}
+                  disabled={igLoading}
+                  className="text-[11px] text-ink/40 underline decoration-dotted hover:text-stamp-amber disabled:opacity-50"
+                >
+                  (문제 있을 때만) 로그인 창만 다시 열기
+                </button>
+              </div>
+              {igMessage && (
+                <p className={`mt-2 text-[11px] ${igMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {igMessage.text}
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-2">
             <FormField label="링크" hint="http(s)://로 시작" value={form.link} onChange={(v) => setForm({ ...form, link: v })} />
             <FormField label="출처" value={form.source} onChange={(v) => setForm({ ...form, source: v })} />
