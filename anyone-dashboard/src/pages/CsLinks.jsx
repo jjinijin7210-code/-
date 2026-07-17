@@ -8,6 +8,7 @@ import FormField from '../components/FormField'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
 import { isValidUrl } from '../lib/contentPreview'
 import { isDuplicate } from '../lib/validation'
+import { scanInstagramComments, replyInstagramComment } from '../lib/apiClient'
 
 const CATEGORY_OPTIONS = ['인테리어/생활용품', '푸드쇼핑']
 
@@ -26,6 +27,49 @@ export default function CsLinks() {
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(emptyForm)
   const [formError, setFormError] = useState(null)
+
+  const [scanLoading, setScanLoading] = useState(false)
+  const [scanMessage, setScanMessage] = useState(null)
+  const [matches, setMatches] = useState([])
+  const [replyingKey, setReplyingKey] = useState(null)
+
+  const matchKey = (m) => `${m.postUrl}::${m.commenterUsername}`
+
+  const handleScanComments = async () => {
+    setScanLoading(true)
+    setScanMessage(null)
+    try {
+      const result = await scanInstagramComments()
+      setMatches(result.matches || [])
+      if (result.message) setScanMessage({ type: 'info', text: result.message })
+      else if ((result.matches || []).length === 0) {
+        setScanMessage({ type: 'info', text: `최근 게시물 ${result.scannedPosts ?? 0}개를 확인했는데, 새로 답글 보낼 댓글은 없었어요.` })
+      }
+    } catch (err) {
+      setScanMessage({
+        type: 'error',
+        text: err.loginRequired
+          ? '인스타그램 로그인 창이 열렸어요! 로그인하신 뒤 다시 눌러주세요.'
+          : err.message,
+      })
+    } finally {
+      setScanLoading(false)
+    }
+  }
+
+  const handleReply = async (match) => {
+    setReplyingKey(matchKey(match))
+    setScanMessage(null)
+    try {
+      const result = await replyInstagramComment(match)
+      setMatches((prev) => prev.filter((m) => matchKey(m) !== matchKey(match)))
+      setScanMessage({ type: 'success', text: result.message })
+    } catch (err) {
+      setScanMessage({ type: 'error', text: err.message })
+    } finally {
+      setReplyingKey(null)
+    }
+  }
 
   const openAdd = () => {
     setEditing(null)
@@ -73,8 +117,47 @@ export default function CsLinks() {
         addLabel="링크 추가"
       />
 
-      <div className="mb-4 rounded-lg border border-ink/10 bg-ink/[0.03] p-3 text-xs text-ink/60">
-        💡 지금 단계에서는 댓글 자동 감지·자동 발송을 구현하지 않아요. 사람이 승인하는 반자동 방식으로 운영합니다.
+      <div className="mb-4 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
+        <p className="mb-1 text-xs font-bold text-ink/70">💬 인스타그램 댓글 자동 확인</p>
+        <p className="mb-2 text-[11px] text-ink/40">
+          이 컴퓨터에서만 동작해요. 버튼을 누르면 최근 게시물 댓글에서 위 키워드가 들어간 댓글을 찾아줘요.
+          찾은 댓글마다 "답글 보내기"를 눌러야 실제로 답글이 나가요 (한 사람에게 같은 게시물에서는 한 번만 보내요).
+        </p>
+        <button
+          type="button"
+          onClick={handleScanComments}
+          disabled={scanLoading}
+          className="rounded-md bg-stamp-amber px-3 py-2 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+        >
+          {scanLoading ? '확인 중...' : '🔍 댓글 확인하기'}
+        </button>
+        {scanMessage && (
+          <p className={`mt-2 text-xs ${scanMessage.type === 'error' ? 'text-stamp-reject' : 'text-ink/60'}`}>
+            {scanMessage.text}
+          </p>
+        )}
+
+        {matches.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {matches.map((m) => (
+              <div key={matchKey(m)} className="rounded-lg bg-white p-3 shadow-card">
+                <p className="text-xs font-semibold">
+                  @{m.commenterUsername}{' '}
+                  <span className="font-normal text-ink/40">· "{m.matchedKeyword}" 매칭</span>
+                </p>
+                <p className="mt-1 text-xs text-ink/60">{m.commentText}</p>
+                <button
+                  type="button"
+                  onClick={() => handleReply(m)}
+                  disabled={replyingKey === matchKey(m)}
+                  className="mt-2 rounded-md bg-ink px-3 py-1.5 text-xs font-semibold text-white hover:bg-ink/80 disabled:opacity-50"
+                >
+                  {replyingKey === matchKey(m) ? '보내는 중...' : '답글 보내기'}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {loading && <LoadingView />}

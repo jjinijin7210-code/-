@@ -112,6 +112,52 @@ export async function prepareInstagramPost({ caption, imageDataUrl }) {
   return data
 }
 
+// 인스타그램 댓글 자동 응답 - 최근 게시물 댓글 중 CS 트리거 키워드가 있는 것을 찾기 (읽기 전용)
+export async function scanInstagramComments() {
+  const res = await fetch(`${API_BASE}/api/instagram/scan-comments`, { method: 'POST' })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = new Error(data.error || `요청이 실패했어요 (${res.status})`)
+    err.loginRequired = Boolean(data.loginRequired)
+    throw err
+  }
+  return data
+}
+
+// 찾은 댓글 하나에 실제로 답글을 보내고 기록 (사람이 항목별로 눌러서 실행)
+export async function replyInstagramComment(match) {
+  const res = await fetch(`${API_BASE}/api/instagram/reply-comment`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(match),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `요청이 실패했어요 (${res.status})`)
+  }
+  return data
+}
+
+// 틱톡 자동 입력 (진희님 컴퓨터에서만 동작 - 인스타그램과 같은 방식, 마지막 게시는 직접)
+export function openTiktokLogin() {
+  return postJson('/api/tiktok/open-login', {})
+}
+
+export async function prepareTiktokPost({ caption, imageDataUrl }) {
+  const res = await fetch(`${API_BASE}/api/tiktok/prepare`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ caption, imageDataUrl }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = new Error(data.error || `요청이 실패했어요 (${res.status})`)
+    err.loginRequired = Boolean(data.loginRequired)
+    throw err
+  }
+  return data
+}
+
 // 영상 제작실 - 씬(이미지+모션+자막+보이스) + 배경음악을 직접 구성해서 mp4로 렌더링
 export async function renderVideoStudio(formData) {
   const res = await fetch(`${API_BASE}/api/video-studio/render`, { method: 'POST', body: formData })

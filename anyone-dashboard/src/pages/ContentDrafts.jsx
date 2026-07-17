@@ -32,6 +32,8 @@ import {
   fetchPexelsImage,
   openInstagramLogin,
   prepareInstagramPost,
+  openTiktokLogin,
+  prepareTiktokPost,
 } from '../lib/apiClient'
 import { compressImageFile, fileToDataUrl } from '../lib/attachments'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
@@ -40,6 +42,8 @@ const STATUS_OPTIONS = ['초안', '검수중', '통과', '반려', '발행완료
 const PLATFORM_OPTIONS = PREVIEW_PLATFORMS
 // 발행/통과로 넘어가려면 반드시 안전 원칙 체크가 되어 있어야 함
 const PASS_LIKE_STATUSES = ['통과', '발행완료']
+// 중복 정리할 때 같은 제목이 여러 개면 이 순위가 가장 높은 것만 남김 (이미 업로드 완료한 건 항상 보호)
+const STATUS_RANK = { 발행완료: 5, 통과: 4, 검수중: 3, 반려: 2, 초안: 1 }
 const IMAGE_KIND = [
   { key: 'image', label: '이미지' },
   { key: 'video', label: '영상 (자동 합성)' },
@@ -65,6 +69,8 @@ const emptyForm = {
   reject_reason: '',
   checked_no_real_person_image: false,
   checked_no_overseas_reuse: false,
+  needs_custom_image: false,
+  needs_inpock_registration: false,
 }
 
 export default function ContentDrafts() {
@@ -73,6 +79,58 @@ export default function ContentDrafts() {
   const { insertRow: insertReviewLog } = useSupabaseTable('review_log')
   const confirm = useConfirm()
   const [searchParams, setSearchParams] = useSearchParams()
+
+  // 목록 보기: "작업중"(초안~반려까지) / "업로드 완료"(발행완료만, 따로 모아서 보관용) 탭
+  const [listView, setListView] = useState('working')
+  const workingRows = rows.filter((r) => r.status !== '발행완료')
+  const archivedRows = rows.filter((r) => r.status === '발행완료')
+  const visibleRows = listView === 'archive' ? archivedRows : workingRows
+
+  const [dupMessage, setDupMessage] = useState(null)
+  const [dupCleaning, setDupCleaning] = useState(false)
+  const handleCleanupDuplicates = async () => {
+    setDupMessage(null)
+    const groups = {}
+    for (const r of rows) {
+      const key = `${r.platform}::${(r.title || '').trim()}`
+      if (!groups[key]) groups[key] = []
+      groups[key].push(r)
+    }
+    const dupGroups = Object.values(groups).filter((g) => g.length > 1)
+    const toDelete = dupGroups.flatMap((g) => {
+      const sorted = [...g].sort((a, b) => {
+        const rankDiff = (STATUS_RANK[b.status] || 0) - (STATUS_RANK[a.status] || 0)
+        if (rankDiff !== 0) return rankDiff
+        return new Date(a.created_at) - new Date(b.created_at)
+      })
+      return sorted.slice(1) // 그룹마다 순위 가장 높은 것 1개만 남기고 나머지는 삭제 대상
+    })
+
+    if (toDelete.length === 0) {
+      setDupMessage({ type: 'success', text: '중복된 게시물이 없어요.' })
+      return
+    }
+
+    const titles = toDelete.map((r) => `[${r.status}] ${r.title}`)
+    const preview = titles.slice(0, 5).join(', ') + (titles.length > 5 ? ` 외 ${titles.length - 5}개` : '')
+    const ok = await confirm(
+      `제목·채널이 같은 중복 게시물 ${toDelete.length}개를 삭제할게요 (그룹마다 상태가 가장 좋은 것만 남겨요. 발행완료는 항상 보호돼요): ${preview}. 삭제하면 되돌릴 수 없어요, 진행할까요?`
+    )
+    if (!ok) return
+
+    setDupCleaning(true)
+    try {
+      for (const r of toDelete) {
+        await deleteRow(r.id)
+      }
+      setDupMessage({ type: 'success', text: `중복 게시물 ${toDelete.length}개를 삭제했어요.` })
+    } catch (e) {
+      setDupMessage({ type: 'error', text: `삭제 중 오류가 났어요: ${e.message}` })
+    } finally {
+      setDupCleaning(false)
+    }
+  }
+
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
   const [form, setForm] = useState(emptyForm)
@@ -250,6 +308,72 @@ export default function ContentDrafts() {
     }
   }
 
+  // 틱톡 자동 입력 (인스타그램과 같은 방식 - 다른 창/도메인이라 로그인은 따로 필요)
+  const [ttLoading, setTtLoading] = useState(false)
+  const [ttMessage, setTtMessage] = useState(null)
+
+  const handleOpenTiktokLogin = async () => {
+    setTtLoading(true)
+    setTtMessage(null)
+    try {
+      const result = await openTiktokLogin()
+      setTtMessage({ type: 'success', text: result.message })
+    } catch (err) {
+      setTtMessage({ type: 'error', text: err.message })
+    } finally {
+      setTtLoading(false)
+    }
+  }
+
+  const handlePrepareTiktokPost = async () => {
+    const firstImage = (form.images || []).find((img) => img.kind === 'image')
+    if (!firstImage) {
+      setTtMessage({ type: 'error', text: '먼저 이미지를 1장 첨부해주세요.' })
+      return
+    }
+    const hashtagText = parseHashtags(form.hashtags).join(' ')
+    const caption = [form.body, hashtagText].filter(Boolean).join('\n\n')
+
+    setTtLoading(true)
+    setTtMessage(null)
+    try {
+      const result = await prepareTiktokPost({ caption, imageDataUrl: firstImage.data_url })
+      setTtMessage({ type: 'success', text: result.message })
+    } catch (err) {
+      setTtMessage({
+        type: 'error',
+        text: err.loginRequired
+          ? '틱톡 로그인 창이 열렸어요! 화면에 뜬 창에서 로그인하신 뒤, 이 버튼을 한 번 더 눌러주세요.'
+          : err.message,
+      })
+    } finally {
+      setTtLoading(false)
+    }
+  }
+
+  // 인스타그램/틱톡은 각자 전용 탭(server/lib/localBrowser.js)을 따로 쓰기 때문에
+  // 순서대로 이어서 실행해도 서로 화면을 방해하지 않는다.
+  const handlePrepareBothPosts = async () => {
+    await handlePrepareInstagramPost()
+    await handlePrepareTiktokPost()
+  }
+
+  // 인스타/틱톡은 실제 게시가 별도 브라우저 창에서 사람이 직접 눌러야 끝나기 때문에,
+  // 여기서 "게시 완료" 버튼을 눌러줘야만 상태가 기록에 남는다 (안 누르면 계속 "통과"로 남아서
+  // 나중에 뭘 올렸는지 헷갈리게 됨 - 진희님이 겪은 바로 그 문제).
+  const [markPublishedMessage, setMarkPublishedMessage] = useState(null)
+  const handleMarkPublished = async () => {
+    setMarkPublishedMessage(null)
+    if (!form.checked_no_real_person_image || !form.checked_no_overseas_reuse) {
+      setMarkPublishedMessage({ type: 'error', text: '먼저 아래 "발행 전 안전 원칙 확인" 체크박스 두 개를 체크해주세요.' })
+      return
+    }
+    const published = { status: '발행완료' }
+    setForm((f) => ({ ...f, ...published }))
+    if (editing) await updateRow(editing.id, { ...form, ...published })
+    setMarkPublishedMessage({ type: 'success', text: '이 초안을 "발행완료"로 표시했어요.' })
+  }
+
   useEffect(() => {
     if (modalOpen && isBloggerChannel(form.platform)) {
       getBloggerStatus().then((s) => setBloggerConnected(s.connected))
@@ -266,6 +390,8 @@ export default function ContentDrafts() {
     setReReviewError(null)
     setAutoFixError(null)
     setIgMessage(null)
+    setTtMessage(null)
+    setMarkPublishedMessage(null)
   }
 
   const openAdd = () => {
@@ -395,8 +521,21 @@ export default function ContentDrafts() {
     setPublishMessage(null)
     try {
       const result = await publishToBlogger({ title: form.title, content: form.body, isDraft: false })
-      setForm((f) => ({ ...f, published_url: result.url || f.published_url, status: '발행완료' }))
-      setPublishMessage({ type: 'success', text: '구글 블로그에 발행했어요.' })
+      const safetyChecked = form.checked_no_real_person_image && form.checked_no_overseas_reuse
+      const published = {
+        published_url: result.url || form.published_url,
+        // 안전 원칙 체크가 안 되어 있으면 "발행완료"로 자동 전환하지 않음 (수동 저장 흐름과 동일한 기준 유지)
+        status: safetyChecked ? '발행완료' : form.status,
+      }
+      setForm((f) => ({ ...f, ...published }))
+      // "저장"을 따로 안 누르고 창을 닫아도 발행 상태가 기록에 남도록 바로 DB에도 반영
+      if (editing) await updateRow(editing.id, { ...form, ...published })
+      setPublishMessage({
+        type: 'success',
+        text: safetyChecked
+          ? '구글 블로그에 발행했고, 상태도 "발행완료"로 바로 저장했어요.'
+          : '구글 블로그에 발행했어요. (안전 원칙 체크를 안 하셔서 상태는 자동으로 안 바뀌었어요 - 체크 후 저장해주세요)',
+      })
     } catch (err) {
       setPublishMessage({ type: 'error', text: err.message })
     } finally {
@@ -474,10 +613,50 @@ export default function ContentDrafts() {
 
       {loading && <LoadingView />}
       {error && <ErrorView message={error} />}
-      {!loading && !error && rows.length === 0 && <EmptyView />}
+
+      {!loading && !error && (
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex gap-1 rounded-lg bg-paper-card p-1 shadow-card">
+            <button
+              onClick={() => setListView('working')}
+              className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                listView === 'working' ? 'bg-stamp-amber text-white' : 'text-ink/60 hover:bg-ink/5'
+              }`}
+            >
+              작업중 ({workingRows.length})
+            </button>
+            <button
+              onClick={() => setListView('archive')}
+              className={`rounded-md px-3 py-1.5 text-sm font-semibold transition ${
+                listView === 'archive' ? 'bg-stamp-amber text-white' : 'text-ink/60 hover:bg-ink/5'
+              }`}
+            >
+              📦 업로드 완료 ({archivedRows.length})
+            </button>
+          </div>
+          {listView === 'working' && (
+            <div className="flex flex-col items-end gap-1">
+              <button
+                onClick={handleCleanupDuplicates}
+                disabled={dupCleaning}
+                className="rounded-lg border border-ink/15 px-3 py-1.5 text-sm font-semibold text-ink/70 hover:bg-ink/5 disabled:opacity-50"
+              >
+                {dupCleaning ? '정리 중...' : '🧹 중복 정리'}
+              </button>
+              {dupMessage && (
+                <p className={`text-[11px] ${dupMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {dupMessage.text}
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!loading && !error && visibleRows.length === 0 && <EmptyView />}
 
       <div className="space-y-2">
-        {rows.map((row) => (
+        {visibleRows.map((row) => (
           <button
             key={row.id}
             onClick={() => openEdit(row)}
@@ -485,7 +664,15 @@ export default function ContentDrafts() {
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="font-semibold">{row.title}</span>
-              <StatusBadge status={row.status} />
+              <div className="flex flex-wrap items-center gap-1">
+                {row.needs_custom_image && (
+                  <span className="stamp-badge border-stamp-amber text-stamp-amber bg-stamp-amber/5">🎨 이미지 필요</span>
+                )}
+                {row.needs_inpock_registration && (
+                  <span className="stamp-badge border-stamp-amber text-stamp-amber bg-stamp-amber/5">🛒 인포크 등록 필요</span>
+                )}
+                <StatusBadge status={row.status} />
+              </div>
             </div>
             <div className="mt-1 flex flex-wrap gap-2 text-xs text-ink/50">
               <span>{row.platform}</span>
@@ -683,6 +870,34 @@ export default function ContentDrafts() {
           />
 
           {form.platform.startsWith('인스타/틱톡') && (
+            <button
+              type="button"
+              onClick={handlePrepareBothPosts}
+              disabled={igLoading || ttLoading || !form.body}
+              className="my-3 w-full rounded-lg bg-ink px-3 py-2 text-xs font-semibold text-white hover:bg-ink/80 disabled:opacity-50"
+            >
+              {igLoading || ttLoading ? '처리 중...' : '📤 인스타 + 틱톡 한 번에 채우기 (각자 다른 탭에 순서대로)'}
+            </button>
+          )}
+
+          {form.platform.startsWith('인스타/틱톡') && (
+            <div className="mb-3">
+              <button
+                type="button"
+                onClick={handleMarkPublished}
+                className="w-full rounded-lg border border-stamp-pass/40 bg-stamp-pass/5 px-3 py-2 text-xs font-semibold text-stamp-pass hover:bg-stamp-pass/10"
+              >
+                ✅ 실제로 게시(공유) 눌렀어요 - 발행완료로 표시하기
+              </button>
+              {markPublishedMessage && (
+                <p className={`mt-1 text-[11px] ${markPublishedMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {markPublishedMessage.text}
+                </p>
+              )}
+            </div>
+          )}
+
+          {form.platform.startsWith('인스타/틱톡') && (
             <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
               <p className="mb-1 text-xs font-bold text-ink/70">📷 인스타그램 자동 입력</p>
               <p className="mb-2 text-[11px] text-ink/40">
@@ -711,6 +926,39 @@ export default function ContentDrafts() {
               {igMessage && (
                 <p className={`mt-2 text-[11px] ${igMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
                   {igMessage.text}
+                </p>
+              )}
+            </div>
+          )}
+
+          {form.platform.startsWith('인스타/틱톡') && (
+            <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
+              <p className="mb-1 text-xs font-bold text-ink/70">🎵 틱톡 자동 입력</p>
+              <p className="mb-2 text-[11px] text-ink/40">
+                이 컴퓨터에서만 동작해요. 인스타그램과 같은 방식이지만 틱톡은 로그인을 따로 해야 해요 (처음 한 번만).
+                마지막 "게시" 버튼만 틱톡 창에서 직접 눌러주세요.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handlePrepareTiktokPost}
+                  disabled={ttLoading || !form.body}
+                  className="rounded-md bg-stamp-amber px-3 py-2 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                >
+                  {ttLoading ? '처리 중...' : '🎵 틱톡에 사진·글 자동으로 채우기'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenTiktokLogin}
+                  disabled={ttLoading}
+                  className="text-[11px] text-ink/40 underline decoration-dotted hover:text-stamp-amber disabled:opacity-50"
+                >
+                  (문제 있을 때만) 로그인 창만 다시 열기
+                </button>
+              </div>
+              {ttMessage && (
+                <p className={`mt-2 text-[11px] ${ttMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {ttMessage.text}
                 </p>
               )}
             </div>
@@ -880,6 +1128,23 @@ export default function ContentDrafts() {
               label="해외 원본 영상·이미지를 그대로 가공해 재사용하지 않았어요 (아이디어만 참고)"
               value={form.checked_no_overseas_reuse}
               onChange={(v) => setForm({ ...form, checked_no_overseas_reuse: v })}
+            />
+          </div>
+
+          {/* 아직 손이 더 가는 초안 표시 - 목록에서 배지로 바로 보여서 "이거 발행해도 되나?" 헷갈림 방지 */}
+          <div className="my-3 space-y-2 rounded-lg border border-stamp-amber/30 bg-stamp-amber/5 p-3">
+            <p className="text-xs font-bold text-stamp-amber">📋 추가로 할 일이 있나요?</p>
+            <FormField
+              type="checkbox"
+              label="🎨 이미지를 따로(직접) 만들어야 해요"
+              value={form.needs_custom_image}
+              onChange={(v) => setForm({ ...form, needs_custom_image: v })}
+            />
+            <FormField
+              type="checkbox"
+              label="🛒 인포크에 이 상품을 먼저 등록해야 해요"
+              value={form.needs_inpock_registration}
+              onChange={(v) => setForm({ ...form, needs_inpock_registration: v })}
             />
           </div>
 
