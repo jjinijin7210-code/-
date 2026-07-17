@@ -27,7 +27,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.join(__dirname, '..', '.env') })
 
 const app = express()
-const PORT = process.env.PORT || 3001
+// 로컬 개발 환경(preview 도구 등)이 프론트엔드용 포트를 잡아두려고 PORT를 자동으로
+// 미리 설정해두는 경우가 있어서, 그게 이 백엔드 서버까지 덮어써버리는 걸 막기 위해
+// BACKEND_PORT를 PORT보다 먼저 확인함 (Render 배포 환경엔 BACKEND_PORT가 없으니 기존처럼 PORT를 그대로 씀).
+const PORT = process.env.BACKEND_PORT || process.env.PORT || 3001
 
 app.use(cors())
 app.use(express.json({ limit: '5mb' })) // 이미지 base64가 섞인 요청도 받을 수 있게 넉넉하게
