@@ -13,18 +13,36 @@ import { spawnSync } from 'node:child_process'
 // 메모리가 작은 환경(예: 무료 호스팅 512MB)에서도 안 죽도록 인코더 부담을 최소화한다.
 const LOW_MEM_ENCODE_ARGS = ['-preset', 'ultrafast', '-threads', '1']
 
+// 로컬 PC에 방금 설치한 ffmpeg는 winget이 PATH에 등록해줘도 이미 켜져 있던 터미널/서버
+// 프로세스는 그 변경을 못 보는 경우가 많아서, 절대 경로를 직접 지정할 수 있게 해둠
+// (.env의 FFMPEG_PATH/FFPROBE_PATH - 안 정해져 있으면 기존처럼 PATH에서 그냥 찾음, Render는 그대로 동작).
+// 함수 안에서 매번 process.env를 읽어야 함 - 모듈 최상단에서 한 번만 읽으면 server/index.js의
+// dotenv.config()보다 이 import가 먼저 실행돼버려서(ESM은 import가 항상 먼저 실행됨) 항상 빈 값만 보임.
+function ffmpegBin() {
+  return process.env.FFMPEG_PATH || 'ffmpeg'
+}
+function ffprobeBin() {
+  return process.env.FFPROBE_PATH || 'ffprobe'
+}
+
 function run(args) {
-  const res = spawnSync('ffmpeg', ['-y', '-hide_banner', '-loglevel', 'error', ...args], { stdio: 'inherit' })
+  const res = spawnSync(ffmpegBin(), ['-y', '-hide_banner', '-loglevel', 'error', ...args], { stdio: 'inherit' })
+  if (res.error) {
+    throw new Error(`ffmpeg을 실행하지 못했어요 (${res.error.message}). ffmpeg이 설치되어 있는지, PATH에 잡혀 있는지 확인해주세요.`)
+  }
   if (res.status !== 0) {
     throw new Error(`ffmpeg exited with code ${res.status}: ffmpeg ${args.join(' ')}`)
   }
 }
 
 export function ffprobeDuration(file) {
-  const res = spawnSync('ffprobe', [
+  const res = spawnSync(ffprobeBin(), [
     '-v', 'error', '-show_entries', 'format=duration',
     '-of', 'default=noprint_wrappers=1:nokey=1', file,
   ])
+  if (res.error) {
+    throw new Error(`ffprobe를 실행하지 못했어요 (${res.error.message}).`)
+  }
   return parseFloat(res.stdout.toString().trim())
 }
 
