@@ -148,11 +148,11 @@ export function openTiktokLogin() {
   return postJson('/api/tiktok/open-login', {})
 }
 
-export async function prepareTiktokPost({ caption, imageDataUrl }) {
+export async function prepareTiktokPost({ caption, imageDataUrls }) {
   const res = await fetch(`${API_BASE}/api/tiktok/prepare`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ caption, imageDataUrl }),
+    body: JSON.stringify({ caption, imageDataUrls }),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {

@@ -205,3 +205,14 @@ export function renderVideo(cfg, outputPath) {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   }
 }
+
+// 사진 1~3장을 간단한 슬라이드쇼 영상으로 합성 (틱톡이 사진 업로드 모드를 없애고 영상만
+// 받게 되면서, 사진을 그대로 못 올리니까 짧은 영상으로 만들어서 올리기 위한 용도).
+// imageFiles: 로컬 파일 경로 배열. 사진 하나당 3초씩, 줌인 효과.
+export function composeSimpleSlideshow(imageFiles, outputPath) {
+  if (!imageFiles || imageFiles.length === 0) {
+    throw new Error('슬라이드쇼를 만들 이미지가 없어요.')
+  }
+  const scenes = imageFiles.map((src) => ({ src, duration: 3, motion: 'zoom-in' }))
+  return renderVideo({ scenes }, outputPath)
+}

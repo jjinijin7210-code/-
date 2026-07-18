@@ -327,9 +327,11 @@ export default function ContentDrafts() {
   }
 
   const handlePrepareTiktokPost = async () => {
-    const firstImage = (form.images || []).find((img) => img.kind === 'image')
-    if (!firstImage) {
-      setTtMessage({ type: 'error', text: '먼저 이미지를 1장 첨부해주세요.' })
+    // 틱톡 스튜디오가 사진 업로드를 없애고 영상만 받아서, 사진 최대 3장을 짧은
+    // 슬라이드쇼 영상으로 만들어 올림 (server/routes/tiktok.js의 composeSimpleSlideshow)
+    const imageEntries = (form.images || []).filter((img) => img.kind === 'image').slice(0, 3)
+    if (imageEntries.length === 0) {
+      setTtMessage({ type: 'error', text: '먼저 이미지를 1~3장 첨부해주세요.' })
       return
     }
     const hashtagText = parseHashtags(form.hashtags).join(' ')
@@ -338,7 +340,10 @@ export default function ContentDrafts() {
     setTtLoading(true)
     setTtMessage(null)
     try {
-      const result = await prepareTiktokPost({ caption, imageDataUrl: firstImage.data_url })
+      const result = await prepareTiktokPost({
+        caption,
+        imageDataUrls: imageEntries.map((img) => img.data_url),
+      })
       setTtMessage({ type: 'success', text: result.message })
     } catch (err) {
       setTtMessage({
@@ -985,6 +990,7 @@ export default function ContentDrafts() {
               <p className="mb-1 text-xs font-bold text-ink/70">🎵 틱톡 자동 입력</p>
               <p className="mb-2 text-[11px] text-ink/40">
                 이 컴퓨터에서만 동작해요. 인스타그램과 같은 방식이지만 틱톡은 로그인을 따로 해야 해요 (처음 한 번만).
+                틱톡이 사진 업로드를 없애서, 첨부한 사진(최대 3장)을 짧은 영상으로 자동으로 만들어서 올려요.
                 마지막 "게시" 버튼만 틱톡 창에서 직접 눌러주세요.
               </p>
               <div className="flex flex-wrap items-center gap-3">
@@ -994,7 +1000,7 @@ export default function ContentDrafts() {
                   disabled={ttLoading || !form.body}
                   className="rounded-md bg-stamp-amber px-3 py-2 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
                 >
-                  {ttLoading ? '처리 중...' : '🎵 틱톡에 사진·글 자동으로 채우기'}
+                  {ttLoading ? '영상 만드는 중...' : '🎵 틱톡에 사진 → 영상으로 자동 업로드'}
                 </button>
                 <button
                   type="button"
