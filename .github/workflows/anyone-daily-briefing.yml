@@ -1,0 +1,27 @@
+name: 애니원 관리 팀장 일일 브리핑
+
+# 하루 목표(콘텐츠 5개 이상 생성)가 실제로 지켜지고 있는지 아침 10시/저녁 10시
+# 두 번 확인해서 텔레그램으로 보고한다. anyone-auto-pipeline.yml(실제 콘텐츠 생성)과는
+# 별개 워크플로우 - 이건 "확인하고 보고만" 하는 관리 역할이라 분리해뒀다.
+on:
+  schedule:
+    - cron: '0 1 * * *'  # 매일 UTC 01:00 = 한국시간(KST) 오전 10시
+    - cron: '0 13 * * *' # 매일 UTC 13:00 = 한국시간(KST) 오후 10시
+  workflow_dispatch: {}
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 오늘 진행 상황 확인 + 텔레그램 보고
+        run: |
+          set -e
+          RESPONSE=$(curl -sS -X POST "https://anyone-dashboard-p3an.onrender.com/api/briefing/team-lead-report" \
+            -H "Content-Type: application/json" \
+            -d "{\"token\":\"${{ secrets.AUTO_RUN_SECRET }}\"}")
+          echo "$RESPONSE"
+          echo "## 관리 팀장 브리핑 결과" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESPONSE" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESPONSE" | grep -q '"ok":true'

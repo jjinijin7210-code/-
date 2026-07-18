@@ -20,6 +20,7 @@ import benchmarkAutoRoutes from './routes/benchmark.js'
 import instagramRoutes from './routes/instagram.js'
 import instagramCommentsRoutes from './routes/instagramComments.js'
 import tiktokRoutes from './routes/tiktok.js'
+import briefingRoutes from './routes/briefing.js'
 
 // 별도로 server/.env를 만들지 않고, 프로젝트 루트의 .env 파일 하나만 읽어요.
 // (이미 프론트엔드용 .env에 ANTHROPIC_API_KEY 등을 추가해두셨다면 그대로 인식됩니다.)
@@ -52,6 +53,7 @@ app.use('/api', benchmarkAutoRoutes)
 app.use('/api', instagramRoutes)
 app.use('/api', instagramCommentsRoutes)
 app.use('/api', tiktokRoutes)
+app.use('/api', briefingRoutes)
 app.use('/auth', authRoutes)
 
 // 쇼츠 렌더링 결과(mp4)를 바로 재생/다운로드할 수 있게 정적으로 서빙
