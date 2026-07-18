@@ -134,7 +134,15 @@ function buildAudioMix(videoFile, cfg, sceneStarts, totalDuration, tmpDir) {
   }
   cfg.scenes.forEach((scene, i) => {
     if (scene.voice) {
-      tracks.push({ file: scene.voice, delaySec: sceneStarts[i] || 0, volume: scene.voiceVolume || 1, loop: false })
+      // 숏폼은 빠른 템포가 몰입감을 높여서 내레이션만 기본 1.2배속으로 재생 (배경음악은 그대로 둠).
+      // scene.voiceSpeed로 씬마다 다르게 지정 가능 (0.5~2.0 범위, atempo 필터 제약).
+      tracks.push({
+        file: scene.voice,
+        delaySec: sceneStarts[i] || 0,
+        volume: scene.voiceVolume || 1,
+        loop: false,
+        tempo: scene.voiceSpeed || 1.2,
+      })
     }
   })
 
@@ -152,6 +160,7 @@ function buildAudioMix(videoFile, cfg, sceneStarts, totalDuration, tmpDir) {
     const inputIdx = i + 1
     const label = `a${i}`
     let chain = `[${inputIdx}:a]volume=${t.volume}`
+    if (t.tempo && t.tempo !== 1) chain += `,atempo=${t.tempo}`
     if (t.delaySec > 0) chain += `,adelay=${Math.round(t.delaySec * 1000)}:all=1`
     chain += `[${label}]`
     return { chain, label }
