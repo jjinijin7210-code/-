@@ -18,6 +18,10 @@ const SOURCING_ROLE = '소싱 담당 (1688 · 쿠팡 교차 확인)'
 const WRITER_ROLE = '작성자 (AI 초안 생성)'
 const REVIEWER_ROLES = ['검수자 A (1차 - 팩트체크·과장표현·AI스러움)', '검수자 B (교차 검수)', '검수자 C (가독성)']
 const CS_ROLE = 'CS 담당 (댓글 트리거 → 인포크 안내)'
+// 예전엔 "영상 제작 담당(팬줌 합성·내레이션)"이었는데, 지금 파이프라인은 영상 합성이 아니라
+// 썸네일 이미지를 생성하므로 그에 맞게 이름을 바꾸고 실제로 상태를 갱신하게 함(2026-07-19,
+// 이 역할이 코드에서 아예 안 건드려져서 "대기"로 멈춰 보이던 문제).
+const IMAGE_ROLE = '이미지·썸네일 제작 담당 (AI 이미지 생성)'
 
 function checkAuth(req, res) {
   const { token } = req.body || {}
@@ -187,6 +191,7 @@ router.post('/benchmark/content-run', async (req, res) => {
     // 박힌 화려한 랭킹형 썸네일이 잘 먹히는 걸 확인해서(2026-07-18) 이 두 카테고리만 그 스타일로,
     // 나머지 카테고리는 기존처럼 텍스트 없는 깔끔한 사진 스타일 그대로 유지함.
     const THUMBNAIL_STYLE_CATEGORIES = ['상품소싱', '여행지']
+    await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '작업중', `"${draft.title}" 이미지 생성 중`)
     const images = []
     try {
       const imagePrompt = THUMBNAIL_STYLE_CATEGORIES.includes(category.label)
@@ -209,8 +214,16 @@ router.post('/benchmark/content-run', async (req, res) => {
         note: `일본 벤치마킹(${category.label}) 기반 AI 생성 이미지`,
         created_at: new Date().toISOString(),
       })
+      await setEmployeeStatus(
+        supabase,
+        targetUserId,
+        IMAGE_ROLE,
+        '완료',
+        `"${draft.title}" ${THUMBNAIL_STYLE_CATEGORIES.includes(category.label) ? '랭킹형 썸네일' : '이미지'} 생성 완료`
+      )
     } catch (imgErr) {
       console.error('[benchmark/content-run] 이미지 생성 실패, 이미지 없이 저장:', imgErr.message)
+      await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '이슈발생', imgErr.message)
     }
 
     // 5) content_drafts에 저장
