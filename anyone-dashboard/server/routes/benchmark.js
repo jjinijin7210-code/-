@@ -183,9 +183,19 @@ router.post('/benchmark/content-run', async (req, res) => {
 
     // 4) 실제 스크래핑한 원본 사진을 그대로 쓰지 않기 위해, 주제에 맞는 완전히 새로운 이미지를 AI로 생성
     // (실존 인물 얼굴 클로즈업 없이, 사물/반려동물/풍경/소품 중심으로 그려달라고 명시)
+    // 상품소싱·여행지는 실제 일본 인기 콘텐츠 리서치 결과 "TOP5"/"○○選" 같은 굵은 텍스트가
+    // 박힌 화려한 랭킹형 썸네일이 잘 먹히는 걸 확인해서(2026-07-18) 이 두 카테고리만 그 스타일로,
+    // 나머지 카테고리는 기존처럼 텍스트 없는 깔끔한 사진 스타일 그대로 유지함.
+    const THUMBNAIL_STYLE_CATEGORIES = ['상품소싱', '여행지']
     const images = []
     try {
-      const imagePrompt = `"${draft.title}"라는 SNS 게시물에 어울리는 사진 스타일 이미지. ${category.label} 분위기.
+      const imagePrompt = THUMBNAIL_STYLE_CATEGORIES.includes(category.label)
+        ? `일본 SNS(인스타/틱톡)에서 잘 먹히는 화려한 랭킹형 썸네일 이미지. 배경은 "${draft.title}"
+주제에 어울리는 상품/장소 사진, 그 위에 굵고 큼직한 일본어 텍스트로 임팩트 있게 제목을 얹은
+스타일 (예: "TOP5", "○○選" 같은 리스트형 썸네일). 텍스트는 눈에 확 띄게 크고 두꺼운 폰트,
+배경보다 텍스트가 먼저 보이도록. 실존 인물의 얼굴을 클로즈업으로 그리지 말 것.
+저작권 문제 없는 완전히 새로운 창작 이미지여야 함.`
+        : `"${draft.title}"라는 SNS 게시물에 어울리는 사진 스타일 이미지. ${category.label} 분위기.
 실존 인물의 얼굴을 클로즈업으로 그리지 말고, 사물·반려동물·풍경·소품 중심의 따뜻하고 감성적인 구도로.
 저작권 문제 없는 완전히 새로운 창작 이미지여야 함.`
       const dataUrl = await generateImage({ prompt: imagePrompt })

@@ -39,6 +39,18 @@ const LOCALIZATION_RULES = `[반드시 지킬 것 - 해외 트렌드 소재 재�
 - "왜 인기 있는지, 어떤 포인트가 공감받았는지"만 참고해서 완전히 새로운 문장으로 다시 써줘
 - 그 나라 언어권 20대 초반이 이해하기 쉽게, 배경지식이 필요한 부분은 설명을 더해줘`
 
+// 일본 인스타/틱톡에서 실제로 잘 되는 콘텐츠를 조사해서(2026-07-18) 반영한 지침 -
+// 번역투가 아니라 진짜 일본 크리에이터가 쓸 법한 캐주얼한 말투와 구조를 쓰도록 유도
+const JAPANESE_NATURALNESS_RULES = `[일본어 자연스러움 지침 - 실제 인기 콘텐츠 패턴 반영]
+- 딱딱한 표준어체(〜です/〜ます 남발) 대신, 일본 또래들이 SNS에 실제로 쓰는 캐주얼한 말투를 써
+  (예: 〜だよね, 〜じゃない?, 〜かも, 문장 끝을 흐리는 표현 등)
+- 첫 문장은 질문형 후킹이 잘 먹혀 ("〜って知ってる?", "〜だと思う?" 같은 구조)
+- 상품·장소 추천류는 "TOP5", "〜選" 같은 랭킹/리스트 형식이 일본에서 특히 반응이 좋으니,
+  주제가 맞으면 이런 구조를 적극 활용해
+- 이모지는 문장 사이사이 자연스럽게 섞어 쓰되(✨🔥☔️ 등), 나열식으로 몰아넣지 마
+- 가능하면 막연한 표현보다 구체적인 디테일(왜 좋은지, 어떤 상황에 쓰는지)을 짧게라도 넣어줘 -
+  다만 실제로 확인 안 된 특정 브랜드명·매장명을 지어내진 마, 일반적인 표현으로 대체해`
+
 // 채널 이름에서 대상 언어를 뽑아낸다 ('인스타/틱톡(일본어)' -> '일본어', 그 외는 '한국어')
 function getTargetLanguage(channel) {
   if (channel.includes('영어')) return '영어'
@@ -61,6 +73,7 @@ export function buildDraftSystemPrompt(channel) {
     parts.push(LOCALIZATION_RULES)
     const lang = getTargetLanguage(channel)
     parts.push(`[언어] title/body/hashtags 전부 반드시 ${lang}로만 작성해. 다른 언어를 섞지 마.`)
+    if (lang === '일본어') parts.push(JAPANESE_NATURALNESS_RULES)
   }
   parts.push(
     '반드시 아래 JSON 형식으로만 응답해 (다른 설명 없이 JSON만): {"title": "제목", "body": "본문", "hashtags": "해시태그 공백으로 구분"}'
@@ -157,8 +170,9 @@ function buildTranslateSystemPrompt(targetChannel) {
     '이미 완성된 원본 게시물을 다른 언어권 독자에게 자연스럽게 전달되도록 현지화 번역하는 게 목표야. 원본과 완전히 다른 새 글을 쓰지 말고, 원본의 내용·훅(첫 문장)·전체 흐름을 그대로 살려줘.',
     `타겟 독자는 그 언어권의 20대 초반이야. 딱딱한 번역투 말고, 그 나라 젊은 세대가 실제로 SNS에 쓸 법한 캐주얼하고 리듬감 있는 표현으로 써줘. 문장은 짧게, 과도한 이모지·해시태그는 피해.`,
     `[언어 지시 - 재확인] title/body/hashtags 전부 ${lang}로만. 예시로 든 문구나 설명이 한국어였다고 해서 응답까지 한국어로 쓰면 안 돼.`,
-    '반드시 아래 JSON 형식으로만 응답해 (다른 설명 없이 JSON만): {"title": "제목", "body": "본문", "hashtags": "해시태그 공백으로 구분"}',
   ]
+  if (lang === '일본어') parts.push(JAPANESE_NATURALNESS_RULES)
+  parts.push('반드시 아래 JSON 형식으로만 응답해 (다른 설명 없이 JSON만): {"title": "제목", "body": "본문", "hashtags": "해시태그 공백으로 구분"}')
   return parts.join('\n\n')
 }
 
