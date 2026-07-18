@@ -151,7 +151,10 @@ router.post('/benchmark/content-run', async (req, res) => {
       topic,
       referenceNote,
     })
-    const draftText = await callClaude({ system: draftSystem, messages: draftMessages, maxTokens: 1024 })
+    // 1024로는 카테고리에 따라(특히 여행지처럼 서술이 길어지는 주제) JSON이 중간에 잘려서
+    // 파싱 실패("AI 응답을 JSON으로 해석하지 못했어요")가 나는 게 실제 운영 중 확인됨(2026-07-18,
+    // 하루 5번 자동 파이프라인 중 여행지 슬롯만 3연속 실패) - 여유 있게 늘림
+    const draftText = await callClaude({ system: draftSystem, messages: draftMessages, maxTokens: 2000 })
     const draft = parseDraftResponse(draftText)
 
     await setEmployeeStatus(supabase, targetUserId, WRITER_ROLE, '완료', `"${draft.title}" 초안 작성 완료`)
