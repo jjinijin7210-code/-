@@ -74,6 +74,11 @@ router.post('/tiktok/prepare', async (req, res) => {
       .first()
     await captionBox.waitFor({ state: 'visible', timeout: 45000 })
     await page.waitForTimeout(500)
+    // 틱톡이 영상 파일명(랜덤 UUID)을 캡션창에 기본값으로 미리 채워넣어서, fill()이 그걸 못 지우고
+    // 뒤에 그냥 이어붙이는 문제가 있었음 - 클릭 후 전체선택+삭제로 확실히 비우고 나서 입력함
+    await captionBox.click()
+    await page.keyboard.press('ControlOrMeta+A')
+    await page.keyboard.press('Delete')
     await captionBox.fill(caption.trim())
 
     res.json({
