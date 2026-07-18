@@ -63,6 +63,14 @@ function kenBurnsFilter(motion, frames, fps, w, h, bw) {
       return `zoompan=z=1.2:x='if(eq(on,0),0,min(x+${panStep},iw-iw/1.2))':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
     case 'none':
       return null
+    // "앞뒤 반전" - 부메랑처럼 씬 절반까지는 줌인, 나머지 절반은 다시 줌아웃해서 원래대로
+    // 돌아오는 효과(2026-07-19 요청). zoom(이전 프레임 값)이 아니라 on(현재 프레임 번호)의
+    // 순수 함수로 만들어서 - 예전에 zoom 누적 방식으로 pan을 만들었다가 떨림 버그가 났던
+    // 전례가 있어서 이번엔 처음부터 프레임 번호 기준으로 계산함.
+    case 'boomerang': {
+      const half = Math.max(Math.floor(frames / 2), 1)
+      return `zoompan=z='if(lte(on,${half}),min(1.0+${step}*on,1.3),max(1.3-${step}*(on-${half}),1.0))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
+    }
     case 'zoom-in':
     default:
       return `zoompan=z='min(zoom+${step},1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
@@ -72,6 +80,25 @@ function kenBurnsFilter(motion, frames, fps, w, h, bw) {
 function buildImageClip(scene, idx, cfg, tmpDir) {
   const { width: w, height: h, fps } = cfg
   const duration = scene.duration || cfg.defaultSceneDuration || 4
+
+  const textFilter = (() => {
+    if (!scene.text) return ''
+    const textFile = path.join(tmpDir, `text_${idx}.txt`)
+    fs.writeFileSync(textFile, scene.text, 'utf8')
+    return `,drawtext=font='Noto Sans CJK KR':textfile='${textFile}':fontcolor=white:fontsize=${(h * 0.045) | 0}:x=(w-text_w)/2:y=h-h*0.12:box=1:boxcolor=black@0.45:boxborderw=16`
+  })()
+
+  const out = path.join(tmpDir, `clip_${idx}.mp4`)
+
+  // 진희님이 직접 만든 영상을 씬 소스로 그대로 쓸 수 있게 함(2026-07-19) - 정지 이미지가
+  // 아니라서 loop/zoompan(줌·팬 효과)을 적용하면 안 되고, 이미 있는 움직임을 그대로 살려서
+  // 원하는 씬 길이에 맞게 자르거나(길면) 반복해서 채움(짧으면).
+  if (scene.isVideo) {
+    const filter = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps},format=yuv420p${textFilter}`
+    run(['-stream_loop', '-1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out])
+    return { file: out, duration }
+  }
+
   const frames = Math.round(duration * fps)
   // 무료 인스턴스(512MB) 메모리 절약을 위해 오버샘플링 배율을 최소한으로만 둠
   const bw = Math.round(w * 1.2)
@@ -81,14 +108,8 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
   let filter = `scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh}`
   filter += zoompan ? `,${zoompan}` : `,scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps}`
   filter += ',format=yuv420p'
+  filter += textFilter
 
-  if (scene.text) {
-    const textFile = path.join(tmpDir, `text_${idx}.txt`)
-    fs.writeFileSync(textFile, scene.text, 'utf8')
-    filter += `,drawtext=font='Noto Sans CJK KR':textfile='${textFile}':fontcolor=white:fontsize=${(h * 0.045) | 0}:x=(w-text_w)/2:y=h-h*0.12:box=1:boxcolor=black@0.45:boxborderw=16`
-  }
-
-  const out = path.join(tmpDir, `clip_${idx}.mp4`)
   // 입력 프레임레이트를 씬 길이 전체에 1장으로 낮춰서 이미지를 딱 1개의 입력 프레임으로만 공급한다.
   // 기본값(25fps)으로 두면 zoompan이 매 입력 프레임마다 줌/팬을 초기값으로 리셋해서
   // 초당 25번씩 화면이 튀는 깜빡임(스트로브) 현상이 생긴다.
@@ -213,6 +234,8 @@ export function composeSimpleSlideshow(imageFiles, outputPath) {
   if (!imageFiles || imageFiles.length === 0) {
     throw new Error('슬라이드쇼를 만들 이미지가 없어요.')
   }
-  const scenes = imageFiles.map((src) => ({ src, duration: 3, motion: 'zoom-in' }))
+  // 계속 줌인만 하면 단조로워서 사진마다 줌인/부메랑(줌인 후 다시 줌아웃)을 번갈아 씀
+  // (2026-07-19 요청 - 다른 쇼츠들도 앞뒤 반전 효과를 많이 쓰더라는 피드백 반영)
+  const scenes = imageFiles.map((src, i) => ({ src, duration: 3, motion: i % 2 === 0 ? 'zoom-in' : 'boomerang' }))
   return renderVideo({ scenes }, outputPath)
 }

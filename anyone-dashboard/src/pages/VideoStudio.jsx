@@ -7,6 +7,7 @@ const MOTION_OPTIONS = [
   { value: 'zoom-out', label: '줌아웃' },
   { value: 'pan-left', label: '좌로 팬' },
   { value: 'pan-right', label: '우로 팬' },
+  { value: 'boomerang', label: '앞뒤 반전 (줌인 후 다시 줌아웃)' },
   { value: 'none', label: '효과 없음' },
 ]
 
@@ -140,14 +141,25 @@ export default function VideoStudio() {
             </div>
             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <div>
-                <label className="mb-1 block text-xs font-semibold text-ink/70">이미지 *</label>
+                <label className="mb-1 block text-xs font-semibold text-ink/70">이미지 또는 영상 *</label>
                 <input
                   type="file"
-                  accept="image/*"
+                  accept="image/*,video/*"
                   onChange={(e) => updateScene(s.key, { imageFile: e.target.files?.[0] || null })}
                   className="w-full text-xs"
                 />
-                {s.imageFile && (
+                <p className="mt-1 text-[11px] text-ink/40">
+                  직접 만든 영상을 넣으면 줌/팬 효과 없이 그 영상 그대로 씬 길이에 맞춰 잘리거나 반복돼요.
+                </p>
+                {s.imageFile && s.imageFile.type.startsWith('video/') && (
+                  <video
+                    src={URL.createObjectURL(s.imageFile)}
+                    className="mt-2 h-24 rounded-md border border-ink/10 object-cover"
+                    muted
+                    controls
+                  />
+                )}
+                {s.imageFile && s.imageFile.type.startsWith('image/') && (
                   <img
                     src={URL.createObjectURL(s.imageFile)}
                     alt=""

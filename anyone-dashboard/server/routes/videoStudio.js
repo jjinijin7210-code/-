@@ -30,7 +30,10 @@ router.post('/video-studio/render', upload.any(), (req, res) => {
     const scenes = scenesMeta.map((s, i) => {
       const file = fileMap[`scene_image_${i}`]
       if (!file) throw new Error(`씬 ${i + 1}의 이미지 파일이 없어요.`)
-      const scene = { src: file.path, duration: Number(s.duration) || 4, motion: s.motion || 'zoom-in' }
+      // multer가 저장하는 파일명엔 확장자가 없어서, 진짜 영상인지 사진인지는 업로드
+      // 당시의 mimetype으로만 구분 가능함 (내가 만든 영상을 씬으로 그대로 넣고 싶다는 요청, 2026-07-19)
+      const isVideo = (file.mimetype || '').startsWith('video/')
+      const scene = { src: file.path, duration: Number(s.duration) || 4, motion: s.motion || 'zoom-in', isVideo }
       if (s.text) scene.text = s.text
       const voiceFile = fileMap[`scene_voice_${i}`]
       if (voiceFile) {

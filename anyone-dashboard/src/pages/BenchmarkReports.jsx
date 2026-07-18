@@ -306,6 +306,13 @@ export default function BenchmarkReports() {
                   >
                     {creatingDraftId === v.videoId ? '이동 중...' : '🇯🇵 일본어 초안으로'}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setResults((prev) => prev.filter((r) => r.videoId !== v.videoId))}
+                    className="rounded-md px-3 py-1 text-[11px] text-ink/40 hover:text-stamp-reject"
+                  >
+                    ✕ 목록에서 제거
+                  </button>
                 </div>
               </div>
             ))}
@@ -370,6 +377,13 @@ export default function BenchmarkReports() {
                       className="flex-shrink-0 rounded-md bg-ink px-3 py-1.5 text-xs font-semibold text-white hover:bg-ink/80 disabled:opacity-50"
                     >
                       {shorts?.loading ? '제작 중...' : '🎬 쇼츠 만들기'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setSourcingResults((prev) => prev.filter((_, idx) => idx !== i))}
+                      className="flex-shrink-0 rounded-md px-2 py-1 text-[11px] text-ink/40 hover:text-stamp-reject"
+                    >
+                      ✕
                     </button>
                   </div>
                   {shorts?.error && <p className="mt-2 text-xs text-stamp-reject">{shorts.error}</p>}
