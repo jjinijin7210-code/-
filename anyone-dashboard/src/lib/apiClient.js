@@ -56,6 +56,17 @@ export function getGoogleConnectUrl() {
 }
 
 // 유튜브 인기 영상 검색 (조회수순, 좋아요 minLikes 이상만)
+// 검색이 아니라 직접 찾은 유튜브 영상 URL을 바로 가져올 때 씀
+export async function lookupYoutubeVideo(url) {
+  const params = new URLSearchParams({ url })
+  const res = await fetch(`${API_BASE}/api/youtube/lookup?${params.toString()}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `영상을 가져오지 못했어요 (${res.status})`)
+  }
+  return data.video
+}
+
 export async function searchYoutubeVideos({ query, minLikes = 10000, regionCodes, videoDuration }) {
   const params = new URLSearchParams({ q: query, minLikes: String(minLikes) })
   if (regionCodes?.length) params.set('regionCodes', regionCodes.join(','))

@@ -16,7 +16,14 @@ const RESEARCHER_ROLE = '트렌드 리서처 (다지역 인기 영상 검색)'
 const REGIONS = ['US', 'KR', 'JP']
 
 // 소재가 마르지 않도록 돌아가면서 검색할 주제 후보 (매번 랜덤으로 하나 고름)
-const QUERY_POOL = ['home organization ideas', 'life hack gadgets', 'travel hidden gems', 'must have products review']
+// 2026-07-19: 유튜브팀 컨셉을 "신기한 동물 영상 일본어 번역"으로 잡아서 관련 검색어 비중을 높임
+const QUERY_POOL = [
+  'unusual animal behavior caught on camera',
+  'rare wildlife encounter video',
+  'weird animal facts video',
+  'home organization ideas',
+  'travel hidden gems',
+]
 
 router.post('/youtube/auto-research', async (req, res) => {
   const { token } = req.body || {}

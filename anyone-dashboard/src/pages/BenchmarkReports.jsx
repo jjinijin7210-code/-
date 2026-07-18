@@ -7,7 +7,7 @@ import PageHeader from '../components/PageHeader'
 import Modal from '../components/Modal'
 import FormField from '../components/FormField'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
-import { searchYoutubeVideos, search1688Products, generateShorts } from '../lib/apiClient'
+import { searchYoutubeVideos, lookupYoutubeVideo, search1688Products, generateShorts } from '../lib/apiClient'
 import { getCategoryForChannel } from '../lib/contentPreview'
 
 const DURATION_OPTIONS = [
@@ -60,6 +60,26 @@ export default function BenchmarkReports() {
 
   const toggleRegion = (value) => {
     setRegions((prev) => (prev.includes(value) ? prev.filter((r) => r !== value) : [...prev, value]))
+  }
+
+  // 검색이 아니라 직접 찾은 영상 URL을 바로 목록에 넣고 싶을 때 씀 (2026-07-19 요청)
+  const [lookupUrl, setLookupUrl] = useState('')
+  const [lookupLoading, setLookupLoading] = useState(false)
+  const [lookupError, setLookupError] = useState('')
+  const runLookup = async (e) => {
+    e.preventDefault()
+    if (!lookupUrl.trim()) return
+    setLookupLoading(true)
+    setLookupError('')
+    try {
+      const video = await lookupYoutubeVideo(lookupUrl.trim())
+      setResults((prev) => [video, ...(prev || []).filter((v) => v.videoId !== video.videoId)])
+      setLookupUrl('')
+    } catch (err) {
+      setLookupError(err.message)
+    } finally {
+      setLookupLoading(false)
+    }
   }
 
   const runSearch = async (e) => {
@@ -232,6 +252,23 @@ export default function BenchmarkReports() {
           ))}
         </div>
         <p className="mt-2 text-[11px] text-ink/40">좋아요 1만 개 이상인 영상만, 체크한 나라들을 합쳐서 조회수 순으로 보여줘요.</p>
+
+        <form onSubmit={runLookup} className="mt-3 flex flex-wrap gap-2 border-t border-ink/10 pt-3">
+          <input
+            className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+            placeholder="직접 찾은 영상 URL 붙여넣기 (예: https://www.youtube.com/watch?v=...)"
+            value={lookupUrl}
+            onChange={(e) => setLookupUrl(e.target.value)}
+          />
+          <button
+            type="submit"
+            disabled={lookupLoading}
+            className="rounded-md border border-stamp-amber px-4 py-2 text-sm font-semibold text-stamp-amber hover:bg-stamp-amber/10 disabled:opacity-50"
+          >
+            {lookupLoading ? '가져오는 중...' : '+ 이 영상 목록에 추가'}
+          </button>
+        </form>
+        {lookupError && <p className="mt-1 text-xs text-stamp-reject">{lookupError}</p>}
 
         {searchError && <p className="mt-3 text-xs text-stamp-reject">{searchError}</p>}
 

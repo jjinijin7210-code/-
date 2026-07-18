@@ -62,6 +62,59 @@ export async function searchPopularVideos({ query, minLikes = 10000, maxResults 
     .sort((a, b) => b.viewCount - a.viewCount)
 }
 
+// 유튜브 URL(watch?v=, youtu.be/, shorts/ 등 다양한 형식)에서 영상 ID만 뽑아냄
+export function extractYoutubeVideoId(urlOrId) {
+  const s = (urlOrId || '').trim()
+  if (!s) return null
+  if (/^[\w-]{11}$/.test(s)) return s // 이미 순수 ID 형태면 그대로
+  try {
+    const u = new URL(s)
+    if (u.hostname.includes('youtu.be')) return u.pathname.slice(1).split('/')[0]
+    if (u.pathname.startsWith('/shorts/')) return u.pathname.split('/')[2]
+    const v = u.searchParams.get('v')
+    if (v) return v
+  } catch {
+    return null
+  }
+  return null
+}
+
+// 검색이 아니라 진희님이 직접 찾은 특정 유튜브 영상 하나를 URL로 바로 가져올 때 씀
+// (2026-07-19 요청 - 검색으로 안 걸리는 영상도 직접 넣을 수 있게).
+export async function getVideoById(videoIdOrUrl) {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  if (!apiKey) {
+    throw new Error('YOUTUBE_API_KEY가 서버 .env에 설정되어 있지 않아요.')
+  }
+  const videoId = extractYoutubeVideoId(videoIdOrUrl)
+  if (!videoId) {
+    throw new Error('올바른 유튜브 영상 URL이나 ID가 아니에요.')
+  }
+
+  const videosParams = new URLSearchParams({ part: 'snippet,statistics', id: videoId, key: apiKey })
+  const videosRes = await fetch(`${VIDEOS_URL}?${videosParams.toString()}`)
+  if (!videosRes.ok) {
+    const errText = await videosRes.text().catch(() => '')
+    throw new Error(`YouTube 영상 정보 API 오류 (${videosRes.status}): ${errText.slice(0, 300)}`)
+  }
+  const videosData = await videosRes.json()
+  const v = videosData.items?.[0]
+  if (!v) {
+    throw new Error('해당 영상을 찾지 못했어요. URL을 다시 확인해주세요.')
+  }
+
+  return {
+    videoId: v.id,
+    title: v.snippet.title,
+    channelTitle: v.snippet.channelTitle,
+    publishedAt: v.snippet.publishedAt,
+    thumbnail: v.snippet.thumbnails?.medium?.url || v.snippet.thumbnails?.default?.url,
+    viewCount: Number(v.statistics.viewCount || 0),
+    likeCount: Number(v.statistics.likeCount || 0),
+    url: `https://www.youtube.com/watch?v=${v.id}`,
+  }
+}
+
 // 특정 지역 하나로 고정하지 않고 여러 나라를 한 번에 같이 확인하고 싶다는 요청(2026-07-18)
 // 반영 - regionCodes 배열을 받아서 나라별로 검색한 뒤 하나로 합침. 같은 영상이 여러 나라
 // 검색에 동시에 걸리면 처음 나온 지역 표시만 남기고 중복 제거, 조회수 기준 재정렬.
