@@ -374,9 +374,21 @@ export default function ContentDrafts() {
       setMarkPublishedMessage({ type: 'error', text: '먼저 아래 "발행 전 안전 원칙 확인" 체크박스 두 개를 체크해주세요.' })
       return
     }
+    if (!editing) {
+      setMarkPublishedMessage({ type: 'error', text: '먼저 이 초안을 저장한 뒤에 발행완료로 표시할 수 있어요.' })
+      return
+    }
     const published = { status: '발행완료' }
+    try {
+      // 전체 form을 통째로 다시 저장하면(예전 방식) 다른 값이 실수로 덮어써질 위험도 있고,
+      // 실패해도 에러 처리가 없어서 조용히 아무 일도 안 일어난 것처럼 보이는 버그가 있었음
+      // (진희님이 겪은 "발행완료 눌러도 안 옮겨짐" 문제) - 바꿀 값만 딱 보내고 실패하면 알려줌
+      await updateRow(editing.id, published)
+    } catch (e) {
+      setMarkPublishedMessage({ type: 'error', text: `저장에 실패했어요: ${e.message}` })
+      return
+    }
     setForm((f) => ({ ...f, ...published }))
-    if (editing) await updateRow(editing.id, { ...form, ...published })
     setMarkPublishedMessage({ type: 'success', text: '이 초안을 "발행완료"로 표시했어요.' })
   }
 
