@@ -12,8 +12,8 @@ on:
     - cron: '0 0 * * *'  # 매일 UTC 00:00 = 한국시간(KST) 오전 9시 - 벤치마킹 수집 + 일상공감·개그
     - cron: '0 3 * * *'  # 매일 UTC 03:00 = 한국시간(KST) 낮 12시 - 브이로그·힐링
     - cron: '0 6 * * *'  # 매일 UTC 06:00 = 한국시간(KST) 오후 3시 - 패션뷰티소품
-    - cron: '0 9 * * *'  # 매일 UTC 09:00 = 한국시간(KST) 오후 6시 - 일상공감·개그
-    - cron: '0 12 * * *' # 매일 UTC 12:00 = 한국시간(KST) 오후 9시 - 브이로그·힐링
+    - cron: '0 9 * * *'  # 매일 UTC 09:00 = 한국시간(KST) 오후 6시 - 여행지
+    - cron: '0 12 * * *' # 매일 UTC 12:00 = 한국시간(KST) 오후 9시 - 일상공감·개그
   workflow_dispatch:
     inputs:
       category:
@@ -37,8 +37,8 @@ jobs:
             '0 0 * * *') CATEGORY='일상공감·개그'; COLLECT=true ;;
             '0 3 * * *') CATEGORY='브이로그·힐링' ;;
             '0 6 * * *') CATEGORY='패션뷰티소품' ;;
-            '0 9 * * *') CATEGORY='일상공감·개그' ;;
-            '0 12 * * *') CATEGORY='브이로그·힐링' ;;
+            '0 9 * * *') CATEGORY='여행지' ;;
+            '0 12 * * *') CATEGORY='일상공감·개그' ;;
             *)
               CATEGORY="${{ github.event.inputs.category }}"
               if [ -z "$CATEGORY" ]; then CATEGORY='일상공감·개그'; fi
