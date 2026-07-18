@@ -11,6 +11,8 @@ export const DEFAULT_ANYONE_ROSTER = [
   { department: '인스타틱톡팀 · 검수', role_name: '검수자 A (1차 - 팩트체크·과장표현·AI스러움)', role_emoji: '🧐' },
   { department: '인스타틱톡팀 · 검수', role_name: '검수자 B (교차 검수)', role_emoji: '🔁' },
   { department: '인스타틱톡팀 · 검수', role_name: '검수자 C (가독성)', role_emoji: '📖' },
+  { department: '인스타틱톡팀 · 현지화', role_name: '번역/현지화 담당 (영어)', role_emoji: '🌐' },
+  { department: '인스타틱톡팀 · 현지화', role_name: '번역/현지화 담당 (일본어)', role_emoji: '🌐' },
   { department: '인스타틱톡팀 · 발행CS', role_name: 'CS 담당 (댓글 트리거 → 인포크 안내)', role_emoji: '💬' },
 
   { department: '스레드블로그팀 · 콘텐츠제작', role_name: '작성자 (스레드·블로그 AI 초안 생성)', role_emoji: '✍️' },

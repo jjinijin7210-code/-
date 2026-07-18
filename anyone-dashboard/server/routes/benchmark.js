@@ -8,7 +8,7 @@ import { setEmployeeStatus } from '../lib/employeeStatusSync.js'
 import { startAutomationRun, finishAutomationRun } from '../lib/automationLog.js'
 import { ensureCsLink, CS_TRIGGER_KEYWORD } from '../lib/csLink.js'
 import { callClaude } from '../lib/anthropicClient.js'
-import { buildDraftMessages, parseDraftResponse } from '../lib/promptBuilder.js'
+import { buildDraftMessages, buildTranslateMessages, parseDraftResponse } from '../lib/promptBuilder.js'
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { generateImage } from '../lib/imageClient.js'
 import { sendTelegramMessage } from '../lib/telegramClient.js'
@@ -18,6 +18,9 @@ const SOURCING_ROLE = '소싱 담당 (1688 · 쿠팡 교차 확인)'
 const WRITER_ROLE = '작성자 (AI 초안 생성)'
 const REVIEWER_ROLES = ['검수자 A (1차 - 팩트체크·과장표현·AI스러움)', '검수자 B (교차 검수)', '검수자 C (가독성)']
 const CS_ROLE = 'CS 담당 (댓글 트리거 → 인포크 안내)'
+// 한국어 초안이 통과하면 영어/일본어로 자동 번역+검수까지 이어감(2026-07-19,
+// 원래 조직도에 있던 언어별 번역 담당을 실제로 자동화에 연결).
+const TRANSLATOR_ROLES = { '인스타/틱톡(영어)': '번역/현지화 담당 (영어)', '인스타/틱톡(일본어)': '번역/현지화 담당 (일본어)' }
 // 예전엔 "영상 제작 담당(팬줌 합성·내레이션)"이었는데, 지금 파이프라인은 영상 합성이 아니라
 // 썸네일 이미지를 생성하므로 그에 맞게 이름을 바꾸고 실제로 상태를 갱신하게 함(2026-07-19,
 // 이 역할이 코드에서 아예 안 건드려져서 "대기"로 멈춰 보이던 문제).
@@ -264,6 +267,67 @@ router.post('/benchmark/content-run', async (req, res) => {
       if (logError) console.error('[benchmark/content-run] review_log 저장 실패:', logError.message)
     }
 
+    // 6) 한국어 초안이 통과했으면 영어/일본어로 자동 번역 + 각자 검수까지 이어감
+    // (반려된 건 번역할 가치가 없으니 건너뜀 - 어차피 반려 사유 고치고 나서 하는 게 맞음)
+    const translations = []
+    if (passed && targetChannel === '인스타/틱톡') {
+      for (const [targetLangChannel, translatorRole] of Object.entries(TRANSLATOR_ROLES)) {
+        await setEmployeeStatus(supabase, targetUserId, translatorRole, '작업중', `"${draft.title}" 번역 중`)
+        try {
+          const { system: trSystem, messages: trMessages } = buildTranslateMessages({
+            targetChannel: targetLangChannel,
+            title: draft.title,
+            body: draft.body,
+            hashtags: draft.hashtags,
+          })
+          const trText = await callClaude({ system: trSystem, messages: trMessages, maxTokens: 2000 })
+          const trDraft = parseDraftResponse(trText)
+
+          const trInitialReview = await runReviewStages({ title: trDraft.title, body: trDraft.body, channel: targetLangChannel })
+          const trResult = await reviseUntilPassOrGiveUp({
+            title: trDraft.title,
+            body: trDraft.body,
+            channel: targetLangChannel,
+            initialReview: trInitialReview,
+          })
+          const trPassed = trResult.review.result === '통과'
+
+          const { data: trSaved, error: trInsertError } = await supabase
+            .from('content_drafts')
+            .insert({
+              user_id: targetUserId,
+              title: trResult.title,
+              platform: targetLangChannel,
+              category: category.label,
+              body: trResult.body,
+              images,
+              hashtags: trDraft.hashtags,
+              source: `한국어 원본 자동 번역 (원본: "${draft.title}")`,
+              status: trPassed ? '통과' : '반려',
+              review_opinion: trResult.review.reasons.join(' / '),
+              reject_reason: trPassed ? null : trResult.review.reasons.join(' / '),
+              checked_no_real_person_image: true,
+              checked_no_overseas_reuse: true,
+            })
+            .select()
+            .single()
+          if (trInsertError) throw new Error(trInsertError.message)
+
+          await setEmployeeStatus(
+            supabase,
+            targetUserId,
+            translatorRole,
+            trPassed ? '완료' : '이슈발생',
+            trPassed ? `"${trResult.title}" 번역+검수 완료` : `번역 검수 반려 - ${trResult.review.reasons[0] || '사유 미기재'}`
+          )
+          translations.push({ channel: targetLangChannel, draftId: trSaved.id, passed: trPassed })
+        } catch (trErr) {
+          console.error(`[benchmark/content-run] ${targetLangChannel} 번역 실패:`, trErr.message)
+          await setEmployeeStatus(supabase, targetUserId, translatorRole, '이슈발생', trErr.message)
+        }
+      }
+    }
+
     await finishAutomationRun(supabase, run?.id, {
       status: passed ? '완료' : '이슈발생',
       summary: `"${draft.title}" (${passed ? '통과' : '반려'}${attempts > 0 ? `, AI 자동 수정 ${attempts}회` : ''})`,
@@ -272,11 +336,12 @@ router.post('/benchmark/content-run', async (req, res) => {
     const resultLine = passed
       ? `✅ 통과 - 발행 대기 중`
       : `⚠️ 반려 - ${review.reasons[0] || '사유 미기재'}`
+    const translationLines = translations.map((t) => `${t.channel}: ${t.passed ? '✅ 통과' : '⚠️ 반려'}`).join('\n')
     await sendTelegramMessage(
-      `🤖 애니원 자동 생성 (${category.label})\n\n"${draft.title}"\n${resultLine}${attempts > 0 ? `\n(AI 자동 수정 ${attempts}회 후)` : ''}`
+      `🤖 애니원 자동 생성 (${category.label})\n\n"${draft.title}"\n${resultLine}${attempts > 0 ? `\n(AI 자동 수정 ${attempts}회 후)` : ''}${translationLines ? `\n\n[번역]\n${translationLines}` : ''}`
     )
 
-    res.json({ ok: true, draftId: savedDraft.id, status: savedDraft.status, review })
+    res.json({ ok: true, draftId: savedDraft.id, status: savedDraft.status, review, translations })
   } catch (err) {
     await setEmployeeStatus(supabase, targetUserId, WRITER_ROLE, '이슈발생', err.message)
     await finishAutomationRun(supabase, run?.id, { status: '이슈발생', errorMessage: err.message })
