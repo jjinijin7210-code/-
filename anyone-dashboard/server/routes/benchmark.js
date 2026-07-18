@@ -11,6 +11,7 @@ import { callClaude } from '../lib/anthropicClient.js'
 import { buildDraftMessages, parseDraftResponse } from '../lib/promptBuilder.js'
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { generateImage } from '../lib/imageClient.js'
+import { sendTelegramMessage } from '../lib/telegramClient.js'
 
 const TOP_PER_HASHTAG = 3 // 해시태그마다 상위 몇 개만 저장할지 (Apify 사용량/비용 절감)
 const SOURCING_ROLE = '소싱 담당 (1688 · 쿠팡 교차 확인)'
@@ -242,10 +243,18 @@ router.post('/benchmark/content-run', async (req, res) => {
       summary: `"${draft.title}" (${passed ? '통과' : '반려'}${attempts > 0 ? `, AI 자동 수정 ${attempts}회` : ''})`,
     })
 
+    const resultLine = passed
+      ? `✅ 통과 - 발행 대기 중`
+      : `⚠️ 반려 - ${review.reasons[0] || '사유 미기재'}`
+    await sendTelegramMessage(
+      `🤖 애니원 자동 생성 (${category.label})\n\n"${draft.title}"\n${resultLine}${attempts > 0 ? `\n(AI 자동 수정 ${attempts}회 후)` : ''}`
+    )
+
     res.json({ ok: true, draftId: savedDraft.id, status: savedDraft.status, review })
   } catch (err) {
     await setEmployeeStatus(supabase, targetUserId, WRITER_ROLE, '이슈발생', err.message)
     await finishAutomationRun(supabase, run?.id, { status: '이슈발생', errorMessage: err.message })
+    await sendTelegramMessage(`🤖 애니원 자동 생성 (${category.label}) 실패\n\n❌ ${err.message}`)
     res.status(502).json({ error: err.message })
   }
 })
