@@ -21,6 +21,7 @@ import {
 } from '../lib/contentPreview'
 import {
   generateDraft,
+  translateDraft,
   reviewDraftWithAi,
   autoFixAndReview,
   getBloggerStatus,
@@ -372,6 +373,54 @@ export default function ContentDrafts() {
     setForm((f) => ({ ...f, ...published }))
     if (editing) await updateRow(editing.id, { ...form, ...published })
     setMarkPublishedMessage({ type: 'success', text: '이 초안을 "발행완료"로 표시했어요.' })
+  }
+
+  // 완성된 초안(주로 한국어)을 다른 언어 채널로 번역해서 새 초안으로 복제 - 직역이 아니라
+  // buildTranslateMessages(프롬프트 빌더)가 현지화해서 다시 씀. 원본은 그대로 두고 새 행을 추가함
+  // (같은 영상/이미지를 그대로 여러 나라에 배포하는 흐름 - 자막/음성은 새 초안에서 각각 준비).
+  const translateTargets = PLATFORM_OPTIONS.filter((p) => p.startsWith('인스타/틱톡') && p !== form.platform)
+  const [translateChannel, setTranslateChannel] = useState('')
+  const [translateLoading, setTranslateLoading] = useState(false)
+  const [translateMessage, setTranslateMessage] = useState(null)
+  const handleTranslate = async () => {
+    setTranslateMessage(null)
+    if (!translateChannel) {
+      setTranslateMessage({ type: 'error', text: '번역할 언어 채널을 먼저 선택해주세요.' })
+      return
+    }
+    if (!form.title || !form.body) {
+      setTranslateMessage({ type: 'error', text: '원본 제목·본문이 먼저 있어야 번역할 수 있어요.' })
+      return
+    }
+    setTranslateLoading(true)
+    try {
+      const translated = await translateDraft({
+        targetChannel: translateChannel,
+        title: form.title,
+        body: form.body,
+        hashtags: form.hashtags,
+      })
+      const newDraft = await insertRow({
+        ...emptyForm,
+        title: translated.title,
+        body: translated.body,
+        hashtags: translated.hashtags,
+        platform: translateChannel,
+        category: getCategoryForChannel(translateChannel),
+        images: form.images,
+        source: `${form.title} (초안 번역, 원본 채널: ${form.platform})`,
+        author_name: 'AI 번역',
+      })
+      setTranslateMessage({
+        type: 'success',
+        text: `"${translateChannel}" 채널로 새 초안을 만들었어요. 목록에서 확인해보세요.`,
+      })
+      void newDraft
+    } catch (e) {
+      setTranslateMessage({ type: 'error', text: e.message })
+    } finally {
+      setTranslateLoading(false)
+    }
   }
 
   useEffect(() => {
@@ -1147,6 +1196,37 @@ export default function ContentDrafts() {
               onChange={(v) => setForm({ ...form, needs_inpock_registration: v })}
             />
           </div>
+
+          {/* 다른 언어로 번역해서 새 초안 만들기 - 같은 이미지/영상으로 여러 나라에 배포할 때 씀 */}
+          {editing && isLocalizationChannel(form.platform) && translateTargets.length > 0 && (
+            <div className="my-3 rounded-lg border border-stamp-amber/30 bg-stamp-amber/5 p-3">
+              <p className="mb-2 text-xs font-bold text-stamp-amber">🌐 다른 언어로 번역해서 새 초안 만들기</p>
+              <p className="mb-2 text-[11px] text-ink/50">
+                직역이 아니라 그 언어권 20대가 자연스럽게 느끼도록 다시 써요. 원본은 그대로 두고, 이미지는 그대로 가져간 새 초안이 만들어져요.
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <FormField
+                  type="select"
+                  options={[{ value: '', label: '언어 선택' }, ...translateTargets]}
+                  value={translateChannel}
+                  onChange={setTranslateChannel}
+                />
+                <button
+                  type="button"
+                  onClick={handleTranslate}
+                  disabled={translateLoading}
+                  className="rounded-md bg-stamp-amber px-3 py-1.5 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                >
+                  {translateLoading ? '번역 중...' : '번역해서 새 초안 만들기'}
+                </button>
+              </div>
+              {translateMessage && (
+                <p className={`mt-1 text-[11px] ${translateMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {translateMessage.text}
+                </p>
+              )}
+            </div>
+          )}
 
           {/* 채널별 미리보기 */}
           <div className="my-3">

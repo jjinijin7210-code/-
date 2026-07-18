@@ -23,6 +23,11 @@ export function generateDraft({ channel, topic, referenceNote }) {
   return postJson('/api/draft', { channel, topic, referenceNote })
 }
 
+// 완성된 초안을 다른 언어 채널로 현지화(번역) - 직역이 아니라 그 언어권 표현으로 다시 씀
+export function translateDraft({ targetChannel, title, body, hashtags }) {
+  return postJson('/api/draft/translate', { targetChannel, title, body, hashtags })
+}
+
 // AI 자동 검수 (팩트체크/과장표현/AI스러운 문체)
 export function reviewDraftWithAi({ title, body, channel }) {
   return postJson('/api/review', { title, body, channel })
