@@ -50,7 +50,9 @@ export async function reviseUntilPassOrGiveUp({ title, body, channel, initialRev
       body: currentBody,
       reasons: review.reasons,
     })
-    const text = await callClaude({ system, messages, maxTokens: 1024 })
+    // draft.js/benchmark.js의 최초 생성 호출과 마찬가지로 1024로는 카테고리에 따라
+    // JSON이 중간에 잘리는 문제가 있었음 (반려→재작성 경로에서 실측 확인, 2026-07-18)
+    const text = await callClaude({ system, messages, maxTokens: 2000 })
     const revised = parseDraftResponse(text)
     currentTitle = revised.title
     currentBody = revised.body

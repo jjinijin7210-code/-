@@ -82,9 +82,18 @@ export default function ContentDrafts() {
   const [searchParams, setSearchParams] = useSearchParams()
 
   // 목록 보기: "작업중"(초안~반려까지) / "업로드 완료"(발행완료만, 따로 모아서 보관용) 탭
+  // 업로드 완료는 계속 쌓아두지 않고 표시된 지 일주일 지나면 목록에서 자동으로 빠짐(진희님 요청,
+  // 2026-07-18) - DB에서 지우는 건 아니라 필요하면 나중에라도 데이터 자체는 남아있음.
+  const ARCHIVE_VISIBLE_DAYS = 7
   const [listView, setListView] = useState('working')
   const workingRows = rows.filter((r) => r.status !== '발행완료')
-  const archivedRows = rows.filter((r) => r.status === '발행완료')
+  const archiveExpiryMs = ARCHIVE_VISIBLE_DAYS * 24 * 60 * 60 * 1000
+  const archivedRows = rows.filter((r) => {
+    if (r.status !== '발행완료') return false
+    const publishedAt = r.published_at || r.updated_at
+    if (!publishedAt) return true // 시점 정보가 없는 아주 오래된 데이터는 안전하게 계속 보여줌
+    return Date.now() - new Date(publishedAt).getTime() < archiveExpiryMs
+  })
   const visibleRows = listView === 'archive' ? archivedRows : workingRows
 
   const [dupMessage, setDupMessage] = useState(null)
@@ -378,7 +387,7 @@ export default function ContentDrafts() {
       setMarkPublishedMessage({ type: 'error', text: '먼저 이 초안을 저장한 뒤에 발행완료로 표시할 수 있어요.' })
       return
     }
-    const published = { status: '발행완료' }
+    const published = { status: '발행완료', published_at: new Date().toISOString() }
     try {
       // 전체 form을 통째로 다시 저장하면(예전 방식) 다른 값이 실수로 덮어써질 위험도 있고,
       // 실패해도 에러 처리가 없어서 조용히 아무 일도 안 일어난 것처럼 보이는 버그가 있었음
@@ -700,6 +709,9 @@ export default function ContentDrafts() {
               📦 업로드 완료 ({archivedRows.length})
             </button>
           </div>
+          {listView === 'archive' && (
+            <p className="text-[11px] text-ink/40">⏳ 표시된 지 일주일 지나면 이 목록에서 자동으로 없어져요 (기록 자체는 남아있어요)</p>
+          )}
           {listView === 'working' && (
             <div className="flex flex-col items-end gap-1">
               <button
