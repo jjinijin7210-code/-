@@ -1,0 +1,26 @@
+name: 애니원 유튜브팀 트렌드 리서치
+
+# 여러 나라(미국·한국·일본) 인기 영상을 하루 1번 자동으로 검색해서 benchmark_reports에 쌓아둔다.
+# 아직 영상/스크립트 자동 제작까지는 아니고 리서치까지만 자동화된 상태.
+on:
+  schedule:
+    - cron: '0 4 * * *'  # 매일 UTC 04:00 = 한국시간(KST) 오후 1시
+  workflow_dispatch: {}
+
+jobs:
+  run-research:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 다지역 유튜브 트렌드 검색
+        run: |
+          set -e
+          RESPONSE=$(curl -sS -X POST "https://anyone-dashboard-p3an.onrender.com/api/youtube/auto-research" \
+            -H "Content-Type: application/json" \
+            -d "{\"token\":\"${{ secrets.AUTO_RUN_SECRET }}\"}" \
+            --max-time 60)
+          echo "$RESPONSE"
+          echo "## 유튜브팀 리서치 결과" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESPONSE" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESPONSE" | grep -q '"ok":true'

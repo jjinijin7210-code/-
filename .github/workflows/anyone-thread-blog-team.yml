@@ -1,0 +1,45 @@
+name: 애니원 스레드/블로그팀 자동 생성
+
+# 인스타/틱톡팀(anyone-auto-pipeline.yml)과는 별개 팀 - 하루 2번(스레드 1번, 여행 블로그 1번)
+# AI 초안 생성 + 검수까지 자동으로 돌린다.
+on:
+  schedule:
+    - cron: '30 1 * * *'  # 매일 UTC 01:30 = 한국시간(KST) 오전 10시30분 - 스레드
+    - cron: '30 7 * * *'  # 매일 UTC 07:30 = 한국시간(KST) 오후 4시30분 - 여행 블로그
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: '채널 (비워두면 스레드)'
+        required: false
+        default: '스레드'
+
+jobs:
+  run-pipeline:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 실행 시각에 맞는 채널 결정
+        id: pick
+        run: |
+          case "${{ github.event.schedule }}" in
+            '30 1 * * *') CHANNEL='스레드' ;;
+            '30 7 * * *') CHANNEL='블로그(네이버)-여행' ;;
+            *)
+              CHANNEL="${{ github.event.inputs.channel }}"
+              if [ -z "$CHANNEL" ]; then CHANNEL='스레드'; fi
+              ;;
+          esac
+          echo "channel=$CHANNEL" >> "$GITHUB_OUTPUT"
+
+      - name: 스레드/블로그 콘텐츠 초안 생성
+        run: |
+          set -e
+          RESPONSE=$(curl -sS -X POST "https://anyone-dashboard-p3an.onrender.com/api/thread-blog/auto-run" \
+            -H "Content-Type: application/json" \
+            -d "{\"token\":\"${{ secrets.AUTO_RUN_SECRET }}\",\"channel\":\"${{ steps.pick.outputs.channel }}\"}" \
+            --max-time 280)
+          echo "$RESPONSE"
+          echo "## 스레드/블로그 생성 결과 (채널: ${{ steps.pick.outputs.channel }})" >> "$GITHUB_STEP_SUMMARY"
+          echo '```json' >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESPONSE" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "$RESPONSE" | grep -q '"ok":true'
