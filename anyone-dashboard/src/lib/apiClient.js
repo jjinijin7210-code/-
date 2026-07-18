@@ -56,9 +56,9 @@ export function getGoogleConnectUrl() {
 }
 
 // 유튜브 인기 영상 검색 (조회수순, 좋아요 minLikes 이상만)
-export async function searchYoutubeVideos({ query, minLikes = 10000, regionCode, videoDuration }) {
+export async function searchYoutubeVideos({ query, minLikes = 10000, regionCodes, videoDuration }) {
   const params = new URLSearchParams({ q: query, minLikes: String(minLikes) })
-  if (regionCode) params.set('regionCode', regionCode)
+  if (regionCodes?.length) params.set('regionCodes', regionCodes.join(','))
   if (videoDuration) params.set('videoDuration', videoDuration)
   const res = await fetch(`${API_BASE}/api/youtube/search?${params.toString()}`)
   const data = await res.json().catch(() => ({}))

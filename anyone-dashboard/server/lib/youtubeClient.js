@@ -61,3 +61,24 @@ export async function searchPopularVideos({ query, minLikes = 10000, maxResults 
     .filter((v) => v.likeCount >= minLikes)
     .sort((a, b) => b.viewCount - a.viewCount)
 }
+
+// 특정 지역 하나로 고정하지 않고 여러 나라를 한 번에 같이 확인하고 싶다는 요청(2026-07-18)
+// 반영 - regionCodes 배열을 받아서 나라별로 검색한 뒤 하나로 합침. 같은 영상이 여러 나라
+// 검색에 동시에 걸리면 처음 나온 지역 표시만 남기고 중복 제거, 조회수 기준 재정렬.
+export async function searchPopularVideosMultiRegion({ query, minLikes = 10000, maxResults = 15, regionCodes, videoDuration }) {
+  const regions = regionCodes && regionCodes.length > 0 ? regionCodes : [undefined]
+  const resultsByRegion = await Promise.all(
+    regions.map(async (regionCode) => {
+      const videos = await searchPopularVideos({ query, minLikes, maxResults, regionCode, videoDuration })
+      return videos.map((v) => ({ ...v, region: regionCode || '전체' }))
+    })
+  )
+
+  const seen = new Map()
+  for (const videos of resultsByRegion) {
+    for (const v of videos) {
+      if (!seen.has(v.videoId)) seen.set(v.videoId, v)
+    }
+  }
+  return [...seen.values()].sort((a, b) => b.viewCount - a.viewCount)
+}

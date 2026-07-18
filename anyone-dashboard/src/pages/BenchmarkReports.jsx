@@ -13,10 +13,11 @@ const DURATION_OPTIONS = [
   { value: 'short', label: '쇼츠(4분 미만)' },
   { value: 'long', label: '롱폼(20분 이상)' },
 ]
+// 지역을 하나로 고정하지 않고 여러 나라를 한 번에 같이 확인함(2026-07-18 요청) - 체크박스 다중선택
 const REGION_OPTIONS = [
-  { value: '', label: '전체 지역' },
-  { value: 'US', label: '해외(미국)' },
-  { value: 'KR', label: '국내(한국)' },
+  { value: 'US', label: '미국' },
+  { value: 'KR', label: '한국' },
+  { value: 'JP', label: '일본' },
 ]
 
 function formatCount(n) {
@@ -48,10 +49,14 @@ export default function BenchmarkReports() {
 
   const [query, setQuery] = useState('')
   const [duration, setDuration] = useState('')
-  const [region, setRegion] = useState('US')
+  const [regions, setRegions] = useState(REGION_OPTIONS.map((o) => o.value)) // 기본으로 전부 체크 - 한 나라로 고정 안 함
   const [searching, setSearching] = useState(false)
   const [searchError, setSearchError] = useState('')
   const [results, setResults] = useState(null)
+
+  const toggleRegion = (value) => {
+    setRegions((prev) => (prev.includes(value) ? prev.filter((r) => r !== value) : [...prev, value]))
+  }
 
   const runSearch = async (e) => {
     e.preventDefault()
@@ -59,7 +64,7 @@ export default function BenchmarkReports() {
     setSearching(true)
     setSearchError('')
     try {
-      const videos = await searchYoutubeVideos({ query, minLikes: 10000, regionCode: region || undefined, videoDuration: duration || undefined })
+      const videos = await searchYoutubeVideos({ query, minLikes: 10000, regionCodes: regions, videoDuration: duration || undefined })
       setResults(videos)
     } catch (err) {
       setSearchError(err.message)
@@ -173,15 +178,6 @@ export default function BenchmarkReports() {
           />
           <select
             className="rounded-md border border-ink/15 px-2 py-2 text-sm"
-            value={region}
-            onChange={(e) => setRegion(e.target.value)}
-          >
-            {REGION_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>{o.label}</option>
-            ))}
-          </select>
-          <select
-            className="rounded-md border border-ink/15 px-2 py-2 text-sm"
             value={duration}
             onChange={(e) => setDuration(e.target.value)}
           >
@@ -197,7 +193,16 @@ export default function BenchmarkReports() {
             {searching ? '검색 중...' : '검색'}
           </button>
         </form>
-        <p className="mt-2 text-[11px] text-ink/40">좋아요 1만 개 이상인 영상만 조회수 순으로 보여줘요.</p>
+        <div className="mt-2 flex flex-wrap items-center gap-3">
+          <span className="text-[11px] text-ink/40">지역(여러 개 같이 확인):</span>
+          {REGION_OPTIONS.map((o) => (
+            <label key={o.value} className="flex items-center gap-1 text-xs text-ink/70">
+              <input type="checkbox" checked={regions.includes(o.value)} onChange={() => toggleRegion(o.value)} />
+              {o.label}
+            </label>
+          ))}
+        </div>
+        <p className="mt-2 text-[11px] text-ink/40">좋아요 1만 개 이상인 영상만, 체크한 나라들을 합쳐서 조회수 순으로 보여줘요.</p>
 
         {searchError && <p className="mt-3 text-xs text-stamp-reject">{searchError}</p>}
 
@@ -216,6 +221,7 @@ export default function BenchmarkReports() {
                   </a>
                   <p className="truncate text-xs text-ink/50">
                     {v.channelTitle} · 조회수 {formatCount(v.viewCount)} · 좋아요 {formatCount(v.likeCount)}
+                    {v.region && <span className="ml-1 rounded bg-ink/5 px-1.5 py-0.5 text-[10px]">{v.region}</span>}
                   </p>
                 </div>
                 <button
