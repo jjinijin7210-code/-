@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
 import { useConfirm } from '../components/ConfirmDialog'
 import SaveStatusIndicator from '../components/SaveStatusIndicator'
@@ -7,6 +8,7 @@ import Modal from '../components/Modal'
 import FormField from '../components/FormField'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
 import { searchYoutubeVideos, search1688Products, generateShorts } from '../lib/apiClient'
+import { getCategoryForChannel } from '../lib/contentPreview'
 
 const DURATION_OPTIONS = [
   { value: '', label: '전체 길이' },
@@ -42,6 +44,8 @@ export default function BenchmarkReports() {
   const { rows, loading, error, saveStatus, insertRow, updateRow, deleteRow } = useSupabaseTable('benchmark_reports', {
     orderBy: 'collected_at',
   })
+  const { insertRow: insertContentDraft } = useSupabaseTable('content_drafts')
+  const navigate = useNavigate()
   const confirm = useConfirm()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -138,6 +142,31 @@ export default function BenchmarkReports() {
     setModalOpen(true)
   }
 
+  // 해외 유튜브 영상을 일본어 채널 초안으로 바로 연결 - 콘텐츠 관리(작업중→발행완료→
+  // 일주일 후 자동 보관) 흐름을 그대로 타도록 content_drafts에 초안을 만들고 그 화면으로 이동시킴.
+  // 원본을 그대로 번역하지 않고 재구성하라는 원칙(promptBuilder.js LOCALIZATION_RULES)은
+  // 콘텐츠 관리의 "AI로 초안 생성"이 이미 강제하고 있어서 여기선 source에 출처만 남겨둠.
+  const [creatingDraftId, setCreatingDraftId] = useState(null)
+  const createJapaneseDraftFromVideo = async (video) => {
+    setCreatingDraftId(video.videoId)
+    try {
+      const saved = await insertContentDraft({
+        title: video.title,
+        platform: '인스타/틱톡(일본어)',
+        category: getCategoryForChannel('인스타/틱톡(일본어)'),
+        body: '',
+        images: [],
+        status: '초안',
+        source: `유튜브 벤치마킹 기반 (직역 금지, 참고만) - "${video.title}" · ${video.channelTitle} · 조회수 ${formatCount(video.viewCount)} · ${video.url}`,
+      })
+      navigate(`/drafts?id=${saved.id}`)
+    } catch (err) {
+      setSearchError(`초안 생성 실패: ${err.message}`)
+    } finally {
+      setCreatingDraftId(null)
+    }
+  }
+
   const openAdd = () => {
     setEditing(null)
     setForm(emptyForm)
@@ -224,13 +253,23 @@ export default function BenchmarkReports() {
                     {v.region && <span className="ml-1 rounded bg-ink/5 px-1.5 py-0.5 text-[10px]">{v.region}</span>}
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => addVideoToReport(v)}
-                  className="flex-shrink-0 rounded-md border border-stamp-amber px-3 py-1.5 text-xs font-semibold text-stamp-amber hover:bg-stamp-amber/10"
-                >
-                  + 리포트에 추가
-                </button>
+                <div className="flex flex-shrink-0 flex-col gap-1">
+                  <button
+                    type="button"
+                    onClick={() => addVideoToReport(v)}
+                    className="rounded-md border border-stamp-amber px-3 py-1.5 text-xs font-semibold text-stamp-amber hover:bg-stamp-amber/10"
+                  >
+                    + 리포트에 추가
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => createJapaneseDraftFromVideo(v)}
+                    disabled={creatingDraftId === v.videoId}
+                    className="rounded-md bg-stamp-amber px-3 py-1.5 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                  >
+                    {creatingDraftId === v.videoId ? '이동 중...' : '🇯🇵 일본어 초안으로'}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
