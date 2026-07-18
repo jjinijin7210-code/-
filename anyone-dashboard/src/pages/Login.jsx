@@ -27,6 +27,8 @@ export default function Login() {
         <form onSubmit={handleSubmit} className="space-y-3">
           <input
             type="email"
+            name="email"
+            autoComplete="email"
             required
             placeholder="이메일"
             value={email}
@@ -35,6 +37,8 @@ export default function Login() {
           />
           <input
             type="password"
+            name="password"
+            autoComplete="current-password"
             required
             placeholder="비밀번호"
             value={password}
