@@ -13,7 +13,10 @@ router.post('/draft', async (req, res) => {
 
   try {
     const { system, messages } = buildDraftMessages({ channel, topic, referenceNote })
-    const text = await callClaude({ system, messages, maxTokens: 1024 })
+    // 블로그는 소제목이 있는 긴 article 형태라 1024토큰으로는 JSON이 중간에 잘려서
+    // 파싱 실패가 났음(실측 확인) - 블로그류만 넉넉하게 늘림
+    const maxTokens = channel.startsWith('블로그') ? 3000 : 1024
+    const text = await callClaude({ system, messages, maxTokens })
     const draft = parseDraftResponse(text)
     res.json(draft)
   } catch (err) {

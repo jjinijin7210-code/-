@@ -11,6 +11,7 @@
 export const PREVIEW_PLATFORMS = [
   '블로그(네이버)-인테리어/생활',
   '블로그(네이버)-푸드',
+  '블로그(네이버)-여행',
   '블로그(구글 Blogger)',
   '스레드',
   '인스타/틱톡',
@@ -22,6 +23,7 @@ export const PREVIEW_PLATFORMS = [
 export const PLATFORM_PREVIEW_SPECS = {
   '블로그(네이버)-인테리어/생활': { bodyMaxLen: 400, aspect: 'article', showHashtagsInline: false },
   '블로그(네이버)-푸드': { bodyMaxLen: 400, aspect: 'article', showHashtagsInline: false },
+  '블로그(네이버)-여행': { bodyMaxLen: 400, aspect: 'article', showHashtagsInline: false },
   '블로그(구글 Blogger)': { bodyMaxLen: 400, aspect: 'article', showHashtagsInline: false },
   스레드: { bodyMaxLen: 120, aspect: 'square', showHashtagsInline: true },
   '인스타/틱톡': { bodyMaxLen: 100, aspect: 'vertical', showHashtagsInline: true },
@@ -32,12 +34,14 @@ export const PLATFORM_PREVIEW_SPECS = {
 // 채널별로 어떤 카테고리(기존 CS링크/벤치마킹 등에서 쓰는 인테리어·생활 / 푸드쇼핑 구분)에 해당하는지
 export function getCategoryForChannel(channel) {
   if (channel === '블로그(네이버)-푸드') return '푸드쇼핑'
+  if (channel === '블로그(네이버)-여행') return '여행지'
   return '인테리어/생활용품'
 }
 
-// "AI로 초안 생성" 버튼을 보여줄 채널인지 (이번 작업 범위: 스레드·인스타/틱톡(전 언어)의 텍스트 자동화만)
+// "AI로 초안 생성" 버튼을 보여줄 채널인지 - 스레드·인스타/틱톡(전 언어)에 이어 여행 블로그도 추가
+// (긴 글이라 promptBuilder.js의 블로그 전용 톤 규칙이 적용됨)
 export function isAiDraftChannel(channel) {
-  return channel === '스레드' || channel.startsWith('인스타/틱톡')
+  return channel === '스레드' || channel === '블로그(네이버)-여행' || channel.startsWith('인스타/틱톡')
 }
 
 // 해외 트렌드 소재 재구성 원칙(원문 그대로 번역 금지)이 적용되는 채널인지
