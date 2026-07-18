@@ -81,7 +81,9 @@ router.post('/thread-blog/auto-run', async (req, res) => {
         body: finalBody,
         images: [],
         hashtags: draft.hashtags,
-        source: `스레드/블로그팀 자동 생성 (주제: ${topic})`,
+        // 한국어 콘텐츠는 게시하지 않는다는 정책(2026-07-19) - 이 팀은 아직 번역 사슬이
+        // 없어서 일단 표시만 해둠 (실제로 쓰려면 인스타/틱톡팀처럼 번역 자동화를 추가해야 함)
+        source: `[번역용 소스 - 직접 게시 금지, 번역 자동화 미구현] 스레드/블로그팀 자동 생성 (주제: ${topic})`,
         status: passed ? '통과' : '반려',
         review_opinion: review.reasons.join(' / '),
         reject_reason: passed ? null : review.reasons.join(' / '),

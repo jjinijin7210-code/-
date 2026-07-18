@@ -240,7 +240,9 @@ router.post('/benchmark/content-run', async (req, res) => {
         body: draft.body,
         images,
         hashtags: draft.hashtags,
-        source: `일본 벤치마킹 기반 자동 생성 (카테고리: ${category.label})`,
+        // 한국어 초안은 게시용이 아니라 영어/일본어 번역의 소스로만 쓰임(2026-07-19 정책) -
+        // 제목에도 표시해서 목록에서 헷갈리지 않게 함
+        source: `[번역용 소스 - 직접 게시 금지] 일본 벤치마킹 기반 자동 생성 (카테고리: ${category.label})`,
         status: passed ? '통과' : '반려',
         review_opinion: review.reasons.join(' / '),
         reject_reason: passed ? null : review.reasons.join(' / '),

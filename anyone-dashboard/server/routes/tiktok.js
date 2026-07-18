@@ -16,9 +16,20 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { getPage, saveErrorScreenshot, dataUrlToFile } from '../lib/localBrowser.js'
 import { composeSimpleSlideshow } from '../lib/videoRenderer.js'
+import { getSupabaseAdmin } from '../lib/supabaseAdmin.js'
+import { setEmployeeStatus } from '../lib/employeeStatusSync.js'
 
 const router = Router()
 const UPLOAD_URL = 'https://www.tiktok.com/tiktokstudio/upload?from=webapp'
+const SHORTS_ROLE = '쇼츠 제작 담당 (사진→영상 합성)'
+
+// 이 라우트는 진희님 컴퓨터에서만 쓰는 로컬 전용 기능이라 로그인 세션이 따로 없어서,
+// 직원 현황 갱신은 AUTO_TARGET_USER_ID(진희님 계정)를 그대로 씀 (instagramComments.js와 같은 패턴)
+async function updateShortsStatus(status, task) {
+  const targetUserId = process.env.AUTO_TARGET_USER_ID
+  if (!targetUserId) return
+  await setEmployeeStatus(getSupabaseAdmin(), targetUserId, SHORTS_ROLE, status, task)
+}
 
 router.post('/tiktok/open-login', async (req, res) => {
   try {
@@ -58,11 +69,13 @@ router.post('/tiktok/prepare', async (req, res) => {
     }
 
     // 사진들을 짧은 슬라이드쇼 영상으로 합성 (사진 1장이어도 3초짜리 영상 하나로 만듦)
+    await updateShortsStatus('작업중', `사진 ${images.length}장 → 영상 합성 중`)
     images.forEach((dataUrl, i) => tempFiles.push(dataUrlToFile(dataUrl, `tiktok-src-${i}`)))
     const videoOutDir = path.join(os.tmpdir(), 'anyone-tiktok-video')
     fs.mkdirSync(videoOutDir, { recursive: true })
     videoFile = path.join(videoOutDir, `${crypto.randomUUID()}.mp4`)
     composeSimpleSlideshow(tempFiles, videoFile)
+    await updateShortsStatus('완료', `사진 ${images.length}장 → 영상 합성 완료`)
 
     const fileInput = page.locator('input[type="file"]')
     await fileInput.waitFor({ state: 'attached', timeout: 20000 })
@@ -88,6 +101,7 @@ router.post('/tiktok/prepare', async (req, res) => {
     })
   } catch (err) {
     const screenshotPath = await saveErrorScreenshot(page)
+    await updateShortsStatus('이슈발생', err.message)
     res.status(500).json({
       error: screenshotPath
         ? `${err.message} (실패 순간 화면이 여기 저장됐어요: ${screenshotPath})`
