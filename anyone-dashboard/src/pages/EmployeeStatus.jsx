@@ -7,7 +7,7 @@ import Modal from '../components/Modal'
 import FormField from '../components/FormField'
 import StatusBadge from '../components/StatusBadge'
 import { LoadingView, ErrorView } from '../components/StateViews'
-import { DEFAULT_ANYONE_ROSTER, ANYONE_DEPARTMENT_ORDER } from '../data/anyoneRoster'
+import { DEFAULT_ANYONE_ROSTER, ANYONE_DEPARTMENT_ORDER, ANYONE_TEAM_ORDER, getTeamFromDepartment } from '../data/anyoneRoster'
 
 const STATUS_OPTIONS = ['대기', '작업중', '완료', '이슈발생']
 
@@ -73,14 +73,25 @@ export default function EmployeeStatus() {
     setModalOpen(false)
   }
 
-  // 기본 14명 부서 순서 + 그 외 직접 추가한 역할은 "기타"로 묶어서 마지막에 표시
+  // 총괄 팀장 아래 채널별 팀(인스타틱톡팀/스레드블로그팀/유튜브팀)으로 먼저 묶고,
+  // 그 안에서 다시 부서(리서치/콘텐츠제작/검수 등)로 묶어서 보여줌 (2026-07-19 팀 재편)
   const knownDepartments = new Set(ANYONE_DEPARTMENT_ORDER)
   const extraDepartments = [...new Set(rows.map((r) => r.department).filter((d) => d && !knownDepartments.has(d)))]
   const departmentOrder = [...ANYONE_DEPARTMENT_ORDER, ...extraDepartments]
+  const knownTeams = new Set(ANYONE_TEAM_ORDER)
+  const extraTeams = [...new Set(departmentOrder.map(getTeamFromDepartment).filter((t) => !knownTeams.has(t)))]
+  const teamOrder = [...ANYONE_TEAM_ORDER, ...extraTeams]
 
-  const grouped = departmentOrder
-    .map((dept) => ({ department: dept, members: rows.filter((r) => (r.department || '기타') === dept) }))
-    .filter((g) => g.members.length > 0)
+  const teamGroups = teamOrder
+    .map((team) => {
+      const teamDepartments = departmentOrder.filter((d) => getTeamFromDepartment(d) === team)
+      const groups = teamDepartments
+        .map((dept) => ({ department: dept, members: rows.filter((r) => (r.department || '기타') === dept) }))
+        .filter((g) => g.members.length > 0)
+      const memberCount = groups.reduce((sum, g) => sum + g.members.length, 0)
+      return { team, groups, memberCount }
+    })
+    .filter((t) => t.memberCount > 0)
   const uncategorized = rows.filter((r) => !r.department)
 
   return (
@@ -88,7 +99,7 @@ export default function EmployeeStatus() {
       <PageHeader
         title="직원 현황 — AnyOne 팀"
         emoji="🧑‍💼"
-        description="부서별로 담당 업무가 다른 14개 역할의 현재 작업 상태 (리서치·콘텐츠 제작·현지화·검수·성과 분석·발행/CS)"
+        description="총괄 팀장 아래 채널별 3개 팀(인스타/틱톡·스레드/블로그·유튜브)의 현재 작업 상태"
         onAddClick={openAdd}
         addLabel="직원 추가"
       />
@@ -97,44 +108,54 @@ export default function EmployeeStatus() {
       {error && <ErrorView message={error} />}
 
       {!loading && !error && (
-        <div className="space-y-4">
-          {grouped.map(({ department, members }) => {
-            const isOpen = openDepartments.has(department)
-            return (
-              <div key={department} className="rounded-xl bg-paper-card shadow-card">
-                <button
-                  onClick={() => toggleDepartment(department)}
-                  className="flex w-full items-center justify-between px-4 py-3 text-left"
-                >
-                  <span className="font-semibold text-ink">
-                    {department} <span className="ml-1 text-xs font-normal text-ink/40">({members.length})</span>
-                  </span>
-                  <span className="text-ink/40">{isOpen ? '▾' : '▸'}</span>
-                </button>
-                {isOpen && (
-                  <div className="grid grid-cols-1 gap-2 border-t border-ink/5 p-3 sm:grid-cols-2 lg:grid-cols-3">
-                    {members.map((row) => (
+        <div className="space-y-6">
+          {teamGroups.map(({ team, groups, memberCount }) => (
+            <div key={team}>
+              <h2 className="mb-2 flex items-center gap-2 text-sm font-bold text-stamp-amber">
+                {team} <span className="text-xs font-normal text-ink/40">({memberCount}명)</span>
+              </h2>
+              <div className="space-y-3">
+                {groups.map(({ department, members }) => {
+                  const isOpen = openDepartments.has(department)
+                  return (
+                    <div key={department} className="rounded-xl bg-paper-card shadow-card">
                       <button
-                        key={row.id}
-                        onClick={() => openEdit(row)}
-                        className="rounded-lg border border-ink/10 p-3 text-left hover:bg-ink/[0.03]"
+                        onClick={() => toggleDepartment(department)}
+                        className="flex w-full items-center justify-between px-4 py-3 text-left"
                       >
-                        <div className="flex items-center justify-between gap-2">
-                          <span className="flex items-center gap-1.5 text-sm font-medium">
-                            <span aria-hidden>{row.role_emoji}</span>
-                            {row.role_name}
-                          </span>
-                          <StatusBadge status={row.status} />
-                        </div>
-                        {row.current_task && <p className="mt-1 truncate text-xs text-ink/50">{row.current_task}</p>}
-                        {row.note && <p className="mt-1 truncate text-xs text-ink/30">{row.note}</p>}
+                        <span className="font-semibold text-ink">
+                          {department.includes(' · ') ? department.split(' · ')[1] : department}{' '}
+                          <span className="ml-1 text-xs font-normal text-ink/40">({members.length})</span>
+                        </span>
+                        <span className="text-ink/40">{isOpen ? '▾' : '▸'}</span>
                       </button>
-                    ))}
-                  </div>
-                )}
+                      {isOpen && (
+                        <div className="grid grid-cols-1 gap-2 border-t border-ink/5 p-3 sm:grid-cols-2 lg:grid-cols-3">
+                          {members.map((row) => (
+                            <button
+                              key={row.id}
+                              onClick={() => openEdit(row)}
+                              className="rounded-lg border border-ink/10 p-3 text-left hover:bg-ink/[0.03]"
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <span className="flex items-center gap-1.5 text-sm font-medium">
+                                  <span aria-hidden>{row.role_emoji}</span>
+                                  {row.role_name}
+                                </span>
+                                <StatusBadge status={row.status} />
+                              </div>
+                              {row.current_task && <p className="mt-1 truncate text-xs text-ink/50">{row.current_task}</p>}
+                              {row.note && <p className="mt-1 truncate text-xs text-ink/30">{row.note}</p>}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
               </div>
-            )
-          })}
+            </div>
+          ))}
 
           {uncategorized.length > 0 && (
             <div className="rounded-xl bg-paper-card shadow-card">

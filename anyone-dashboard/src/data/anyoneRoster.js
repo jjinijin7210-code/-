@@ -1,30 +1,32 @@
 // 애니원(AnyOne) 자체 팀 조직도 기본값
-// (계획서 "2. 전체 구조 — AI 직원 팀 구성" 섹션 그대로 반영)
-// Luna 스튜디오와 같은 방식으로 부서별로 묶어서 보여주기 위한 순수 데이터 모듈.
+// 2026-07-19: 총괄 팀장 아래 채널별 3개 팀(인스타/틱톡, 스레드/블로그, 유튜브)으로 재편.
+// department 필드에 "팀 · 부서" 형식으로 팀 구분을 같이 넣어서(DB 스키마 변경 없이) 그룹핑에 씀.
 
 export const DEFAULT_ANYONE_ROSTER = [
-  { department: '리서치', role_name: '리서처', role_emoji: '🔍' },
-  { department: '콘텐츠 제작', role_name: '작성자 A (블로그·인테리어/생활)', role_emoji: '✍️' },
-  { department: '콘텐츠 제작', role_name: '작성자 B (블로그·푸드)', role_emoji: '✍️' },
-  { department: '콘텐츠 제작', role_name: '작성자 C (스레드)', role_emoji: '✍️' },
-  { department: '현지화', role_name: '번역/현지화 담당 (한국어)', role_emoji: '🌐' },
-  { department: '현지화', role_name: '번역/현지화 담당 (영어)', role_emoji: '🌐' },
-  { department: '현지화', role_name: '번역/현지화 담당 (일본어)', role_emoji: '🌐' },
-  { department: '검수', role_name: '검수자 (팩트체커·1차)', role_emoji: '✅' },
-  { department: '검수', role_name: '최종 매니저 (2차)', role_emoji: '🧑‍💼' },
-  { department: '성과 분석', role_name: '데이터 분석/방향성 담당', role_emoji: '📊' },
-  { department: '성과 분석', role_name: '성과 부진 원인 파악 담당', role_emoji: '🩺' },
-  { department: '발행·CS', role_name: '발행 담당', role_emoji: '📤' },
-  { department: '발행·CS', role_name: 'CS 응대 담당', role_emoji: '📤' },
-  { department: '영상 (3단계 예정)', role_name: '영상 제작 담당', role_emoji: '🎬' },
+  { department: '총괄', role_name: '총괄 팀장 (전체 진행 확인·브리핑)', role_emoji: '🧑‍💼' },
+
+  { department: '인스타틱톡팀 · 리서치', role_name: '리서처', role_emoji: '🔍' },
+  { department: '인스타틱톡팀 · 콘텐츠제작', role_name: '작성자 (AI 초안 생성)', role_emoji: '✍️' },
+  { department: '인스타틱톡팀 · 콘텐츠제작', role_name: '이미지·썸네일 제작 담당 (AI 이미지 생성)', role_emoji: '🎬' },
+  { department: '인스타틱톡팀 · 검수', role_name: '검수자 A (1차 - 팩트체크·과장표현·AI스러움)', role_emoji: '🧐' },
+  { department: '인스타틱톡팀 · 검수', role_name: '검수자 B (교차 검수)', role_emoji: '🔁' },
+  { department: '인스타틱톡팀 · 검수', role_name: '검수자 C (가독성)', role_emoji: '📖' },
+  { department: '인스타틱톡팀 · 발행CS', role_name: 'CS 담당 (댓글 트리거 → 인포크 안내)', role_emoji: '💬' },
+
+  { department: '스레드블로그팀 · 콘텐츠제작', role_name: '작성자 (스레드·블로그 AI 초안 생성)', role_emoji: '✍️' },
+  { department: '스레드블로그팀 · 검수', role_name: '검수자 (스레드·블로그 팩트체크·과장표현·AI스러움)', role_emoji: '🧐' },
+
+  { department: '유튜브팀 · 리서치', role_name: '트렌드 리서처 (다지역 인기 영상 검색)', role_emoji: '🔍' },
 ]
 
-export const ANYONE_DEPARTMENT_ORDER = [
-  '리서치',
-  '콘텐츠 제작',
-  '현지화',
-  '검수',
-  '성과 분석',
-  '발행·CS',
-  '영상 (3단계 예정)',
-]
+// 화면에 보여줄 팀 순서 (총괄이 맨 위, 그 아래 채널별 3개 팀)
+export const ANYONE_TEAM_ORDER = ['총괄', '인스타틱톡팀', '스레드블로그팀', '유튜브팀']
+
+export const ANYONE_DEPARTMENT_ORDER = DEFAULT_ANYONE_ROSTER.map((p) => p.department).filter((d, i, arr) => arr.indexOf(d) === i)
+
+// department 값("팀 · 부서" 또는 팀 이름 그 자체)에서 팀 이름만 뽑아냄
+export function getTeamFromDepartment(department) {
+  if (!department) return '기타'
+  const [team] = department.split(' · ')
+  return team
+}
