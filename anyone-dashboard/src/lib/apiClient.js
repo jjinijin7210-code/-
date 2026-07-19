@@ -92,6 +92,28 @@ export async function search1688Products({ query, maxProducts, sortType }) {
   return data.products || []
 }
 
+// 1688 소싱 상품이 쿠팡에도 실제로 팔리고 있는지 확인 (구매 링크를 붙이려면 쿠팡에 있어야 함)
+export async function searchCoupangProducts({ query }) {
+  const params = new URLSearchParams({ q: query })
+  const res = await fetch(`${API_BASE}/api/sourcing/coupang?${params.toString()}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `쿠팡 상품 확인이 실패했어요 (${res.status})`)
+  }
+  return data.products || []
+}
+
+// 쿠팡/1688 검색 결과의 상품 이미지를 첨부용 data URL로 변환
+export async function fetchSourcingImage(url) {
+  const params = new URLSearchParams({ url })
+  const res = await fetch(`${API_BASE}/api/sourcing/fetch-image?${params.toString()}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `이미지를 불러오지 못했어요 (${res.status})`)
+  }
+  return data.dataUrl
+}
+
 // 쇼츠 자동 제작 (상품 이미지 + 스크립트/내레이션 자동 생성 → mp4 렌더링)
 export async function generateShorts({ title, imageUrls, note }) {
   return postJson('/api/shorts/generate', { title, imageUrls, note })
@@ -182,6 +204,11 @@ export async function renderVideoStudio(formData) {
     throw new Error(data.error || `영상 렌더링이 실패했어요 (${res.status})`)
   }
   return data
+}
+
+// 자동화 실행 로그에서 "이슈발생" 난 항목을 버튼 하나로 재시도 (같은 내부 파이프라인을 다시 호출)
+export function retryAutomationRun(runId) {
+  return postJson('/api/automation/retry', { runId })
 }
 
 // 무료 스톡 사진(Pexels) 검색

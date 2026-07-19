@@ -309,6 +309,8 @@ create table automation_runs (
   summary text,
   error_message text,
   draft_id uuid references content_drafts(id) on delete set null, -- 이 실행이 만든 초안 (있으면) - 로그에서 바로 초안으로 이동하기 위함
+  endpoint text,   -- 이 실행을 재시도할 때 다시 호출할 내부 API 경로
+  payload jsonb,   -- 재시도 시 그대로 다시 보낼 요청 본문 (token 제외)
   started_at timestamptz not null default now(),
   finished_at timestamptz
 );

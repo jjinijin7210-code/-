@@ -3,10 +3,11 @@
 // "실행됐는지/성공했는지/왜 실패했는지"를 대시보드에서 바로 확인할 수 있게 한다.
 // ============================================================
 
-export async function startAutomationRun(supabase, userId, runType) {
+export async function startAutomationRun(supabase, userId, runType, retry = {}) {
+  const { endpoint, payload } = retry
   const { data, error } = await supabase
     .from('automation_runs')
-    .insert({ user_id: userId, run_type: runType, status: '진행중' })
+    .insert({ user_id: userId, run_type: runType, status: '진행중', endpoint: endpoint || null, payload: payload || null })
     .select()
     .single()
   if (error) {

@@ -37,7 +37,10 @@ router.post('/youtube/auto-research', async (req, res) => {
 
   const query = QUERY_POOL[Math.floor(Math.random() * QUERY_POOL.length)]
   const supabase = getSupabaseAdmin()
-  const run = await startAutomationRun(supabase, targetUserId, `유튜브 트렌드 리서치 (${query})`)
+  const run = await startAutomationRun(supabase, targetUserId, `유튜브 트렌드 리서치 (${query})`, {
+    endpoint: '/api/youtube/auto-research',
+    payload: {},
+  })
   await setEmployeeStatus(supabase, targetUserId, RESEARCHER_ROLE, '작업중', `"${query}" 다지역(${REGIONS.join('/')}) 검색 중`)
 
   try {

@@ -44,7 +44,10 @@ router.post('/thread-blog/auto-run', async (req, res) => {
   const topic = pool[Math.floor(Math.random() * pool.length)]
 
   const supabase = getSupabaseAdmin()
-  const run = await startAutomationRun(supabase, targetUserId, `스레드/블로그 생성 (${channel})`)
+  const run = await startAutomationRun(supabase, targetUserId, `스레드/블로그 생성 (${channel})`, {
+    endpoint: '/api/thread-blog/auto-run',
+    payload: { channel },
+  })
   await setEmployeeStatus(supabase, targetUserId, WRITER_ROLE, '작업중', `"${topic}" 주제로 ${channel} 초안 작성 중`)
 
   try {

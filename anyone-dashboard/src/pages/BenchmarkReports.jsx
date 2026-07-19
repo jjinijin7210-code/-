@@ -7,7 +7,16 @@ import PageHeader from '../components/PageHeader'
 import Modal from '../components/Modal'
 import FormField from '../components/FormField'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
-import { searchYoutubeVideos, lookupYoutubeVideo, search1688Products, generateShorts } from '../lib/apiClient'
+import {
+  searchYoutubeVideos,
+  lookupYoutubeVideo,
+  search1688Products,
+  generateShorts,
+  searchCoupangProducts,
+  fetchSourcingImage,
+  generateDraft,
+  reviewDraftWithAi,
+} from '../lib/apiClient'
 import { getCategoryForChannel } from '../lib/contentPreview'
 
 const DURATION_OPTIONS = [
@@ -133,6 +142,85 @@ export default function BenchmarkReports() {
       setShortsState((prev) => ({ ...prev, [key]: { loading: false, videoUrl } }))
     } catch (err) {
       setShortsState((prev) => ({ ...prev, [key]: { loading: false, error: err.message } }))
+    }
+  }
+
+  // 1688에서 소싱한 상품을 쿠팡에서 실제로 파는지 먼저 확인하고("승인 게이트"), 확인된
+  // 상품만 사람이 직접 "초안 만들기"를 눌러야 AI 초안이 생성됨 (2026-07-19 요청 - 인포크
+  // 파트너스 링크는 진희님이 직접 상품을 등록해서 만드는 구조라, 쿠팡에 없는 상품은
+  // 애초에 진행하면 안 되고, 있는 상품도 자동으로 바로 게시하지 않고 승인을 거쳐야 함).
+  const [coupangKeyword, setCoupangKeyword] = useState('')
+  const [coupangCheckState, setCoupangCheckState] = useState({}) // key -> { loading, error, notFound, match, creatingDraft, imageChoice }
+
+  const checkCoupang = async (product, key) => {
+    if (!coupangKeyword.trim()) {
+      setCoupangCheckState((prev) => ({ ...prev, [key]: { error: '쿠팡 확인용 한글 키워드를 먼저 입력해주세요.' } }))
+      return
+    }
+    setCoupangCheckState((prev) => ({ ...prev, [key]: { loading: true } }))
+    try {
+      const products = await searchCoupangProducts({ query: coupangKeyword })
+      const match = products[0]
+      if (!match) {
+        setCoupangCheckState((prev) => ({ ...prev, [key]: { notFound: true } }))
+        return
+      }
+      setCoupangCheckState((prev) => ({ ...prev, [key]: { match, imageChoice: match.thumbnail ? 'coupang' : '1688' } }))
+    } catch (err) {
+      setCoupangCheckState((prev) => ({ ...prev, [key]: { error: err.message } }))
+    }
+  }
+
+  const approveAndCreateDraft = async (product, key) => {
+    const state = coupangCheckState[key]
+    if (!state?.match) return
+    setCoupangCheckState((prev) => ({ ...prev, [key]: { ...state, creatingDraft: true, createError: null } }))
+    try {
+      const { match, imageChoice } = state
+      const priceText = match.price ? `${Number(match.price).toLocaleString('ko-KR')}원` : '정보 없음'
+      const topic = `상품명: ${product.title} (가격대: ${priceText})
+
+[필수 지시사항] 게시물 마지막 부분에 "댓글에 '정보'라고 남겨주시면 구매 링크 보내드릴게요!" 같은
+자연스러운 유도 문구를 반드시 포함해서 작성해줘. 이게 없으면 안 돼.`
+      const channel = '인스타/틱톡'
+      const draft = await generateDraft({ channel, topic })
+      const review = await reviewDraftWithAi({ title: draft.title, body: draft.body, channel })
+
+      const images = []
+      const chosenUrl = imageChoice === '1688' ? product.imageUrl : match.thumbnail
+      if (chosenUrl) {
+        try {
+          const dataUrl = await fetchSourcingImage(chosenUrl)
+          images.push({
+            id: crypto.randomUUID(),
+            kind: 'image',
+            filename: `sourced-${Date.now()}.jpg`,
+            mime_type: 'image/jpeg',
+            size: dataUrl.length,
+            data_url: dataUrl,
+            note: imageChoice === '1688' ? `1688 소싱 이미지 (${product.shopName || '-'})` : `쿠팡 상품 이미지 (${match.title})`,
+            created_at: new Date().toISOString(),
+          })
+        } catch (imgErr) {
+          console.error('[상품소싱] 이미지 첨부 실패, 텍스트만 저장:', imgErr.message)
+        }
+      }
+
+      const saved = await insertContentDraft({
+        title: draft.title,
+        platform: channel,
+        category: getCategoryForChannel(channel),
+        body: draft.body,
+        images,
+        hashtags: draft.hashtags,
+        source: `상품소싱 승인 완료 - 쿠팡: "${match.title}" (${match.productUrl}) / 1688: "${product.title}" (${product.detailUrl})`,
+        status: review.result,
+        review_opinion: review.reasons?.join(' / ') || (review.result === '통과' ? '문제 없음' : ''),
+        reject_reason: review.result === '반려' ? review.reasons?.join(' / ') || '' : null,
+      })
+      navigate(`/drafts?id=${saved.id}`)
+    } catch (err) {
+      setCoupangCheckState((prev) => ({ ...prev, [key]: { ...state, creatingDraft: false, createError: err.message } }))
     }
   }
 
@@ -340,6 +428,19 @@ export default function BenchmarkReports() {
         </form>
         <p className="mt-2 text-[11px] text-ink/40">주문량(수요) 기준 베스트셀러 순으로 보여줘요.</p>
 
+        <div className="mt-3 rounded-lg border border-ink/10 bg-ink/[0.02] p-2">
+          <label className="mb-1 block text-[11px] font-semibold text-ink/60">🛒 쿠팡 확인용 한글 키워드</label>
+          <input
+            className="w-full rounded-md border border-ink/15 px-3 py-1.5 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+            placeholder="예: 실리콘 주방매트 (아래 상품 중 하나를 고른 뒤 '쿠팡 확인'을 누르기 전에 입력해주세요)"
+            value={coupangKeyword}
+            onChange={(e) => setCoupangKeyword(e.target.value)}
+          />
+          <p className="mt-1 text-[11px] text-ink/40">
+            쿠팡에서 실제로 파는 상품인지 먼저 확인하고, 승인해야만 AI 초안이 만들어져요 — 인포크 파트너스 링크는 직접 상품을 등록해서 만드셔야 하니, 그것부터 먼저 하고 오셔도 돼요.
+          </p>
+        </div>
+
         {sourcingError && <p className="mt-3 text-xs text-stamp-reject">{sourcingError}</p>}
 
         {sourcingResults && sourcingResults.length === 0 && !sourcingError && (
@@ -351,6 +452,7 @@ export default function BenchmarkReports() {
             {sourcingResults.map((p, i) => {
               const key = p.detailUrl || String(i)
               const shorts = shortsState[key]
+              const coupangCheck = coupangCheckState[key]
               return (
                 <div key={key} className="rounded-lg border border-ink/10 p-2">
                   <div className="flex items-center gap-3">
@@ -380,6 +482,14 @@ export default function BenchmarkReports() {
                     </button>
                     <button
                       type="button"
+                      disabled={coupangCheck?.loading}
+                      onClick={() => checkCoupang(p, key)}
+                      className="flex-shrink-0 rounded-md border border-ink/15 px-3 py-1.5 text-xs font-semibold text-ink/70 hover:bg-ink/5 disabled:opacity-50"
+                    >
+                      {coupangCheck?.loading ? '확인 중...' : '🛒 쿠팡 확인'}
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setSourcingResults((prev) => prev.filter((_, idx) => idx !== i))}
                       className="flex-shrink-0 rounded-md px-2 py-1 text-[11px] text-ink/40 hover:text-stamp-reject"
                     >
@@ -389,6 +499,62 @@ export default function BenchmarkReports() {
                   {shorts?.error && <p className="mt-2 text-xs text-stamp-reject">{shorts.error}</p>}
                   {shorts?.videoUrl && (
                     <video src={shorts.videoUrl} controls className="mt-2 max-h-80 rounded-lg" />
+                  )}
+
+                  {coupangCheck?.error && <p className="mt-2 text-xs text-stamp-reject">{coupangCheck.error}</p>}
+                  {coupangCheck?.notFound && (
+                    <p className="mt-2 text-xs text-stamp-reject">
+                      쿠팡에서 '{coupangKeyword}' 판매 상품을 못 찾았어요. 이 상품은 넘어가거나 다른 키워드로 다시 확인해보세요.
+                    </p>
+                  )}
+                  {coupangCheck?.match && (
+                    <div className="mt-2 rounded-lg border border-stamp-amber/40 bg-stamp-amber/5 p-2">
+                      <p className="mb-1 text-xs font-semibold text-ink/70">✅ 쿠팡에서 찾았어요 — 인포크 파트너스 링크를 먼저 등록해두셨다면 아래에서 승인해주세요.</p>
+                      <div className="flex items-center gap-2">
+                        {coupangCheck.match.thumbnail && (
+                          <img src={coupangCheck.match.thumbnail} alt="" className="h-14 w-14 flex-shrink-0 rounded object-cover" />
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <a href={coupangCheck.match.productUrl} target="_blank" rel="noreferrer" className="block truncate text-sm text-ink hover:underline">
+                            {coupangCheck.match.title}
+                          </a>
+                          <p className="text-xs text-ink/50">
+                            {coupangCheck.match.price ? `${Number(coupangCheck.match.price).toLocaleString('ko-KR')}원` : '가격 정보 없음'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-3 text-xs text-ink/60">
+                        <span className="font-semibold">사용할 사진:</span>
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="radio"
+                            checked={coupangCheck.imageChoice === 'coupang'}
+                            onChange={() => setCoupangCheckState((prev) => ({ ...prev, [key]: { ...prev[key], imageChoice: 'coupang' } }))}
+                          />
+                          쿠팡 사진
+                        </label>
+                        <label className="flex items-center gap-1">
+                          <input
+                            type="radio"
+                            checked={coupangCheck.imageChoice === '1688'}
+                            onChange={() => setCoupangCheckState((prev) => ({ ...prev, [key]: { ...prev[key], imageChoice: '1688' } }))}
+                          />
+                          1688 사진
+                        </label>
+                      </div>
+                      <p className="mt-1 text-[11px] text-ink/40">
+                        직접 찍거나 만든 사진을 쓰고 싶으면, 초안이 만들어진 뒤 "콘텐츠 관리"에서 사진을 바꿔 넣으실 수 있어요.
+                      </p>
+                      <button
+                        type="button"
+                        disabled={coupangCheck.creatingDraft}
+                        onClick={() => approveAndCreateDraft(p, key)}
+                        className="mt-2 rounded-md bg-stamp-amber px-4 py-2 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                      >
+                        {coupangCheck.creatingDraft ? '초안 만드는 중...' : '✅ 승인하고 초안 만들기'}
+                      </button>
+                      {coupangCheck.createError && <p className="mt-2 text-xs text-stamp-reject">{coupangCheck.createError}</p>}
+                    </div>
                   )}
                 </div>
               )

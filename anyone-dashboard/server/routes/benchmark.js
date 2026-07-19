@@ -48,7 +48,10 @@ router.post('/benchmark/collect', async (req, res) => {
   if (!targetUserId) return
 
   const supabase = getSupabaseAdmin()
-  const run = await startAutomationRun(supabase, targetUserId, '일본 벤치마킹 수집')
+  const run = await startAutomationRun(supabase, targetUserId, '일본 벤치마킹 수집', {
+    endpoint: '/api/benchmark/collect',
+    payload: {},
+  })
   await setEmployeeStatus(supabase, targetUserId, SOURCING_ROLE, '작업중', '일본 인스타/틱톡 트렌드 수집 중')
 
   let savedCount = 0
@@ -126,7 +129,10 @@ router.post('/benchmark/content-run', async (req, res) => {
   const targetChannel = channel || '인스타/틱톡'
 
   const supabase = getSupabaseAdmin()
-  const run = await startAutomationRun(supabase, targetUserId, `콘텐츠 생성 (${category.label})`)
+  const run = await startAutomationRun(supabase, targetUserId, `콘텐츠 생성 (${category.label})`, {
+    endpoint: '/api/benchmark/content-run',
+    payload: { category: category.label, channel: targetChannel },
+  })
   await setEmployeeStatus(supabase, targetUserId, WRITER_ROLE, '작업중', `"${category.label}" 카테고리 초안 작성 중`)
 
   try {
