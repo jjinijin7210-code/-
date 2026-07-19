@@ -5,7 +5,7 @@
 
 const DEFAULT_VOICE_ID = process.env.ELEVENLABS_VOICE_ID || '21m00Tcm4TlvDq8ikWAM' // Rachel (multilingual)
 
-export async function generateSpeech({ text, voiceId = DEFAULT_VOICE_ID }) {
+export async function generateSpeech({ text, voiceId = DEFAULT_VOICE_ID, stability = 0.5, similarityBoost = 0.75 }) {
   const apiKey = process.env.ELEVENLABS_API_KEY
   if (!apiKey) {
     throw new Error('ELEVENLABS_API_KEY가 서버 .env에 설정되어 있지 않아요.')
@@ -23,7 +23,9 @@ export async function generateSpeech({ text, voiceId = DEFAULT_VOICE_ID }) {
     body: JSON.stringify({
       text,
       model_id: 'eleven_multilingual_v2',
-      voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+      // stability를 높일수록 톤 기복이 줄어서 차분하게 들림 (기본값은 짧고 임팩트 있는
+      // 상품 쇼츠용 - 심리학 콘텐츠처럼 차분해야 하는 경우 호출하는 쪽에서 더 높여서 씀)
+      voice_settings: { stability, similarity_boost: similarityBoost },
     }),
   })
 

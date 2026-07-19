@@ -118,7 +118,18 @@ router.post('/youtube/psychology-video-run', async (req, res) => {
   await setEmployeeStatus(supabase, targetUserId, VIDEO_ROLE, '작업중', `"${topic}" 주제로 ${videoFormat === 'long' ? '롱폼' : '쇼츠'} 제작 중`)
 
   try {
-    const { fileName, title, hook, hasMusic } = await generatePsychologyVideo({ topic, format: videoFormat })
+    // 진희님이 벤치마킹 리포트에 직접 추가한 심리학 참고 링크(category='심리학')가 있으면
+    // 스타일/각도 참고 자료로 대본 생성에 반영 (원문 번역/복사 금지 - promptBuilder와 같은 원칙)
+    const { data: references } = await supabase
+      .from('benchmark_reports')
+      .select('keyword, note')
+      .eq('user_id', targetUserId)
+      .eq('category', '심리학')
+      .order('collected_at', { ascending: false })
+      .limit(5)
+    const referenceNote = references?.length ? references.map((r) => `- ${r.keyword}: ${r.note}`).join('\n') : undefined
+
+    const { fileName, title, hook, hasMusic } = await generatePsychologyVideo({ topic, format: videoFormat, referenceNote })
     const videoUrl = `${req.protocol}://${req.get('host')}/generated/${fileName}`
 
     const initialReview = await runReviewStages({ title, body: hook, channel: YOUTUBE_CHANNEL })
