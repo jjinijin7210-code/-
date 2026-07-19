@@ -20,6 +20,21 @@ const SIZE_PRESETS = [
 let sceneSeq = 0
 const emptyScene = () => ({ key: `s${sceneSeq++}`, imageFile: null, motion: 'zoom-in', duration: 4, text: '', voiceFile: null })
 
+// 영상 파일의 실제 길이를 읽어서, 여러 영상을 한 번에 추가할 때 기본 노출 시간으로 씀
+// (안 그러면 기본값 4초로 다 잘려버림 - 실제 영상 길이 그대로 이어붙이는 게 자연스러움)
+function readVideoDuration(file) {
+  return new Promise((resolve) => {
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.onloadedmetadata = () => {
+      URL.revokeObjectURL(video.src)
+      resolve(video.duration && isFinite(video.duration) ? Math.round(video.duration * 10) / 10 : 4)
+    }
+    video.onerror = () => resolve(4)
+    video.src = URL.createObjectURL(file)
+  })
+}
+
 export default function VideoStudio() {
   const [scenes, setScenes] = useState([emptyScene()])
   const [sizePreset, setSizePreset] = useState(SIZE_PRESETS[0].value)
@@ -27,6 +42,7 @@ export default function VideoStudio() {
   const [transitionDuration, setTransitionDuration] = useState(0.6)
   const [musicFile, setMusicFile] = useState(null)
   const [musicVolume, setMusicVolume] = useState(0.8)
+  const [bulkAdding, setBulkAdding] = useState(false)
 
   const [rendering, setRendering] = useState(false)
   const [error, setError] = useState(null)
@@ -37,6 +53,24 @@ export default function VideoStudio() {
   }
   const addScene = () => setScenes((prev) => [...prev, emptyScene()])
   const removeScene = (key) => setScenes((prev) => (prev.length > 1 ? prev.filter((s) => s.key !== key) : prev))
+
+  // 영상 파일 여러 개를 한 번에 골라서 순서대로 씬으로 자동 추가 (이어붙이기) - 효과 없이
+  // 원본 길이 그대로, 매번 "씬 추가" 누르고 하나씩 올릴 필요 없게 함(2026-07-19 요청).
+  const addVideosBulk = async (fileList) => {
+    const files = Array.from(fileList || [])
+    if (files.length === 0) return
+    setBulkAdding(true)
+    try {
+      const newScenes = []
+      for (const file of files) {
+        const duration = await readVideoDuration(file)
+        newScenes.push({ key: `s${sceneSeq++}`, imageFile: file, motion: 'none', duration, text: '', voiceFile: null })
+      }
+      setScenes((prev) => (prev.length === 1 && !prev[0].imageFile ? newScenes : [...prev, ...newScenes]))
+    } finally {
+      setBulkAdding(false)
+    }
+  }
 
   const canRender = scenes.every((s) => s.imageFile) && !rendering
 
@@ -122,6 +156,26 @@ export default function VideoStudio() {
             className="w-full text-xs"
           />
         </div>
+      </div>
+
+      <div className="mb-4 rounded-xl border border-dashed border-stamp-amber/40 bg-stamp-amber/5 p-4">
+        <label className="mb-1 block text-sm font-semibold text-ink/80">🎬 영상 여러 개 한 번에 추가 (이어붙이기)</label>
+        <input
+          type="file"
+          accept="video/*"
+          multiple
+          disabled={bulkAdding}
+          onChange={(e) => {
+            addVideosBulk(e.target.files)
+            e.target.value = ''
+          }}
+          className="w-full text-xs"
+        />
+        <p className="mt-1 text-[11px] text-ink/40">
+          {bulkAdding
+            ? '영상 길이 확인 중...'
+            : '고른 순서대로 씬이 자동으로 만들어져요. 효과 없이 원본 그대로 이어붙고, 아래에서 순서·길이는 나중에 바꿀 수 있어요.'}
+        </p>
       </div>
 
       <div className="space-y-3">
