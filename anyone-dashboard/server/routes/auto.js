@@ -96,12 +96,12 @@ router.post('/auto/run', async (req, res) => {
     // 5) 비슷한 상품 여러 장을 모아 팬/줌 영상으로 합성 (실패하면 상품 사진 1장으로 대체)
     const images = []
     try {
-      const { fileName } = await generateShortsVideo({
+      const { fileName, videoUrl: storageUrl } = await generateShortsVideo({
         title: draft.title,
         imageUrls: sourceProducts.map((p) => p.imageUrl),
         note: `${keyword} 카테고리 소개 영상`,
       })
-      const videoUrl = `${req.protocol}://${req.get('host')}/generated/${fileName}`
+      const videoUrl = storageUrl || `${req.protocol}://${req.get('host')}/generated/${fileName}`
       images.push({
         id: crypto.randomUUID(),
         kind: 'video',

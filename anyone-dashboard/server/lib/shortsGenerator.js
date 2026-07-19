@@ -13,6 +13,7 @@ import { buildShortsScriptMessages, parseShortsScriptResponse } from './shortsSc
 import { generateSpeech } from './ttsClient.js'
 import { downloadToFile } from './mediaDownload.js'
 import { renderVideo, ffprobeDuration } from './videoRenderer.js'
+import { uploadGeneratedVideo } from './videoStorage.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const GENERATED_DIR = path.join(__dirname, '..', '..', 'generated')
@@ -64,7 +65,10 @@ export async function generateShortsVideo({ title, imageUrls, note }) {
     const outputPath = path.join(GENERATED_DIR, fileName)
     renderVideo({ width: 540, height: 960, fps: 24, transitionDuration: 0.5, audio: audioPath, scenes }, outputPath)
 
-    return { fileName, script }
+    // Render 무료 디스크는 재배포마다 초기화돼서(에페메럴), 영구 보관용으로 Supabase Storage에도 올림
+    const videoUrl = await uploadGeneratedVideo(outputPath, fileName)
+
+    return { fileName, videoUrl, script }
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   }

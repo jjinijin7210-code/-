@@ -19,6 +19,7 @@ import { listCharacterImages } from './characterImages.js'
 import { renderVideo, ffprobeDuration } from './videoRenderer.js'
 import { pickBackgroundMusic } from './backgroundMusic.js'
 import { GENERATED_DIR } from './shortsGenerator.js'
+import { uploadGeneratedVideo } from './videoStorage.js'
 
 const MIN_SCENE_DURATION = 2.5
 
@@ -118,7 +119,11 @@ export async function generatePsychologyVideo({ topic, format = 'shorts', refere
       outputPath
     )
 
-    return { fileName, title: jaScript.title, hook: jaScript.hook, hasMusic: Boolean(musicPath) }
+    // Render 무료 디스크는 재배포마다 초기화돼서(에페메럴), 영구 보관용으로 Supabase Storage에도 올림
+    // (2026-07-19 발견 - 오늘 여러 번 재배포하는 사이 만들어둔 영상이 실제로 사라져서 재생이 안 됐음)
+    const videoUrl = await uploadGeneratedVideo(outputPath, fileName)
+
+    return { fileName, videoUrl, title: jaScript.title, hook: jaScript.hook, hasMusic: Boolean(musicPath) }
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   }

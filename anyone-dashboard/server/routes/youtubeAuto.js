@@ -191,8 +191,8 @@ router.post('/youtube/psychology-video-run', async (req, res) => {
     const marketNote = await getLatestMarketInsight(supabase, targetUserId)
     const referenceNote = [linkNote, marketNote ? `[국가별 트렌드 비교]\n${marketNote}` : ''].filter(Boolean).join('\n\n') || undefined
 
-    const { fileName, title, hook, hasMusic } = await generatePsychologyVideo({ topic, format: videoFormat, referenceNote })
-    const videoUrl = `${req.protocol}://${req.get('host')}/generated/${fileName}`
+    const { fileName, videoUrl: storageUrl, title, hook, hasMusic } = await generatePsychologyVideo({ topic, format: videoFormat, referenceNote })
+    const videoUrl = storageUrl || `${req.protocol}://${req.get('host')}/generated/${fileName}`
 
     const initialReview = await runReviewStages({ title, body: hook, channel: YOUTUBE_CHANNEL })
     const { title: finalTitle, review, attempts } = await reviseUntilPassOrGiveUp({

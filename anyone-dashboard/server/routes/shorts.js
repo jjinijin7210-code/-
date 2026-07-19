@@ -16,8 +16,8 @@ router.post('/shorts/generate', async (req, res) => {
   }
 
   try {
-    const { fileName, script } = await generateShortsVideo({ title, imageUrls, note })
-    res.json({ videoUrl: `/generated/${fileName}`, script })
+    const { fileName, videoUrl, script } = await generateShortsVideo({ title, imageUrls, note })
+    res.json({ videoUrl: videoUrl || `/generated/${fileName}`, script })
   } catch (err) {
     res.status(502).json({ error: err.message })
   }
