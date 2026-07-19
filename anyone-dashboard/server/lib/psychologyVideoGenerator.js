@@ -23,6 +23,20 @@ import { uploadGeneratedVideo } from './videoStorage.js'
 
 const MIN_SCENE_DURATION = 2.5
 
+// 2026-07-19: 일본 심리학 채널 전용 마스코트 "Kokoro(こころ)" 확정(사용자가 만든 캐릭터 바이블
+// 기준) - server/assets/characters/에 실제 캐릭터 파일을 넣어두면 이 프롬프트 대신 그 파일을
+// 그대로 씀(더 정확함). 파일이 아직 없을 때의 AI 생성 폴백이 이 캐릭터 디자인에 최대한 맞도록
+// 여기 묘사를 최대한 자세히 적어둠 - 정확히 똑같은 그림은 아니지만 톤/실루엣은 맞출 수 있음.
+const KOKORO_CHARACTER_PROMPT = `캐릭터: "Kokoro(こころ)" - 심리를 쉽게 설명해주는 친구 같은 마스코트.
+- 실루엣: 머리와 몸이 하나로 이어진 둥글고 통통한 물방울/블롭 모양, 짧은 다리 두 개만 있고 팔은
+  포즈에 따라 아주 단순하게만 표현 (선생님이 아니라 옆에서 같이 고민해주는 친구 느낌)
+- 색상: 흰색/크림색 몸통 + 굵고 깔끔한 검은색 윤곽선. 포인트 컬러는 민트그린(정수리에 작은
+  하트 모양 더듬이/새싹 하나)과 연한 하늘색뿐 - 그 외 색은 거의 안 씀
+- 얼굴: 아주 단순한 검은 점 두 개(눈)와 옅은 분홍색 볼터치. 입은 표정에 따라 곡선 하나로만.
+  이목구비를 복잡하게 그리지 말고 "1초 안에 알아볼 수 있게" 최대한 단순하게
+- 스타일: 플랫 벡터/라인아트, 그림자·그라데이션 없이 평면적으로, 귀엽고 친근한 톤
+- 표정/포즈는 웃음·놀람·슬픔·화남·고민·기쁨·피곤·민망·설렘·울음 등 순수하고 단순한 감정 표현 위주`
+
 // 20대~시니어까지 편하게 들을 수 있는 차분한 목소리 (River - ElevenLabs 자체 라벨이 "calm").
 // 기본 목소리(Rachel)는 좀 더 또렷하고 상품 홍보용 톤이라 심리학 콘텐츠엔 안 맞았음(2026-07-19 피드백).
 const PSYCHOLOGY_VOICE_ID = 'SAz9YHcvj6GT2YYXdXww' // River
@@ -77,9 +91,11 @@ export async function generatePsychologyVideo({ topic, format = 'shorts', refere
       const imageCount = Math.min(points.length, cfg.maxUniqueImages)
       imagePaths = []
       for (let i = 0; i < imageCount; i++) {
-        const prompt = `심리학 유튜브 영상용 이미지. "${topic}" 주제와 어울리는 추상적/상징적 일러스트
-또는 사물·풍경 중심 구도. 실존 인물의 얼굴을 클로즈업으로 그리지 말 것. 차분하고 신뢰감 있는
-톤(차가운 블루톤이나 파스텔 톤). 저작권 문제 없는 완전히 새로운 창작 이미지여야 함.`
+        const prompt = `${KOKORO_CHARACTER_PROMPT}
+
+이 캐릭터가 "${topic}" 주제의 포인트를 설명/공감하는 장면. 표정과 포즈는 이 포인트의 감정(놀람,
+공감, 위로, 생각에 잠김 등)에 맞게 골라서 그려줘. 배경은 아주 단순하게(단색 또는 옅은 파스텔),
+캐릭터가 화면 중심에서 잘 보이도록. 저작권 문제 없는 완전히 새로운 창작 이미지여야 함.`
         const dataUrl = await generateImage({ prompt, size: format === 'shorts' ? '1024x1536' : '1536x1024' })
         const base64 = dataUrl.split(',')[1]
         const imgPath = path.join(tmpDir, `img_${i}.png`)
