@@ -61,8 +61,13 @@ function kenBurnsFilter(motion, frames, fps, w, h, bw) {
       return `zoompan=z=1.2:x='if(eq(on,0),iw-iw/1.2,max(x-${panStep},0))':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
     case 'pan-right':
       return `zoompan=z=1.2:x='if(eq(on,0),0,min(x+${panStep},iw-iw/1.2))':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
+    // "효과 없음"도 줌/팬 없는 zoompan(z=1 고정)으로 만든다 - zoompan 없이 낮은 입력
+    // 프레임레이트(1/씬길이) 이미지를 바로 fps 필터로 늘리면 화면이 까맣게 나오는 버그가
+    // 있었다(2026-07-19 발견, 심리학 영상에서 "동영상 플레이가 안 되는데" 리포트로 확인).
+    // zoompan의 d= 파라미터가 저프레임레이트 입력을 프레임 수만큼 실제로 펼쳐주는 역할을
+    // 하는데, zoompan 자체를 안 쓰면 그 역할을 아무도 안 해서 생긴 문제로 보임.
     case 'none':
-      return null
+      return `zoompan=z=1:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
     // "앞뒤 반전" - 부메랑처럼 씬 절반까지는 줌인, 나머지 절반은 다시 줌아웃해서 원래대로
     // 돌아오는 효과(2026-07-19 요청). zoom(이전 프레임 값)이 아니라 on(현재 프레임 번호)의
     // 순수 함수로 만들어서 - 예전에 zoom 누적 방식으로 pan을 만들었다가 떨림 버그가 났던
