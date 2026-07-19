@@ -8,6 +8,7 @@ const MOTION_OPTIONS = [
   { value: 'pan-left', label: '좌로 팬' },
   { value: 'pan-right', label: '우로 팬' },
   { value: 'boomerang', label: '앞뒤 반전 (줌인 후 다시 줌아웃)' },
+  { value: 'pan-boomerang', label: '앞뒤 반전 (팬만, 줌 없음)' },
   { value: 'none', label: '효과 없음' },
 ]
 

@@ -71,6 +71,14 @@ function kenBurnsFilter(motion, frames, fps, w, h, bw) {
       const half = Math.max(Math.floor(frames / 2), 1)
       return `zoompan=z='if(lte(on,${half}),min(1.0+${step}*on,1.3),max(1.3-${step}*(on-${half}),1.0))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
     }
+    // "앞뒤 반전 (팬만, 줌 없음)" - boomerang과 같은 왕복 구조지만 줌은 전혀 안 쓰고 좌우로만
+    // 왕복함(2026-07-19 요청: "앞뒤반전도 줌아웃 없는것도"). pan-left/right와 같은 panStep
+    // 방식으로 절반 지점에서 끝에 정확히 도달하게 해서 떨림을 방지.
+    case 'pan-boomerang': {
+      const half = Math.max(Math.floor(frames / 2), 1)
+      const halfPanStep = panRange / Math.max(half - 1, 1)
+      return `zoompan=z=1.2:x='if(lte(on,${half}),min(${halfPanStep}*on,${panRange}),max(${panRange}-${halfPanStep}*(on-${half}),0))':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
+    }
     case 'zoom-in':
     default:
       return `zoompan=z='min(zoom+${step},1.3)':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
