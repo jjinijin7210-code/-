@@ -38,7 +38,7 @@ function formatCount(n) {
 
 const PLATFORM_OPTIONS = ['블로그', '스레드', '유튜브', '상품소싱']
 const SOURCE_OPTIONS = ['공식 API', '트렌드 도구']
-const CATEGORY_OPTIONS = ['인테리어/생활용품', '푸드쇼핑']
+const CATEGORY_OPTIONS = ['인테리어/생활용품', '푸드쇼핑', '심리학']
 
 const emptyForm = {
   keyword: '',

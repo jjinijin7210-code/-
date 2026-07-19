@@ -2,6 +2,9 @@
 // 유튜브팀 자동 리서치 - 지금은 콘텐츠(영상) 자동 제작까지는 아니고, 여러 나라를 동시에
 // 확인하는 인기 영상 트렌드 리서치만 자동으로 돌려서 benchmark_reports에 쌓아둠
 // (2026-07-19, 3팀 체제 개편 - 유튜브 실제 영상/스크립트 자동 제작은 별도 확장 필요).
+//
+// 2026-07-19: 일본 유튜브 채널 컨텐츠 방향을 "심리학"으로 확정 (사용자 결정) - 검색어 풀을
+// 심리학 콘텐츠 위주로 바꾸고, 담당 리서처도 심리학 특화로 이름 변경.
 // ============================================================
 
 import { Router } from 'express'
@@ -12,17 +15,17 @@ import { searchPopularVideosMultiRegion } from '../lib/youtubeClient.js'
 import { sendTelegramMessage } from '../lib/telegramClient.js'
 
 const router = Router()
-const RESEARCHER_ROLE = '트렌드 리서처 (다지역 인기 영상 검색)'
+const RESEARCHER_ROLE = '심리학 콘텐츠 리서처 (일본 채널 · 다지역 인기 영상 검색)'
 const REGIONS = ['US', 'KR', 'JP']
 
 // 소재가 마르지 않도록 돌아가면서 검색할 주제 후보 (매번 랜덤으로 하나 고름)
-// 2026-07-19: 유튜브팀 컨셉을 "신기한 동물 영상 일본어 번역"으로 잡아서 관련 검색어 비중을 높임
 const QUERY_POOL = [
-  'unusual animal behavior caught on camera',
-  'rare wildlife encounter video',
-  'weird animal facts video',
-  'home organization ideas',
-  'travel hidden gems',
+  'psychology facts about human behavior',
+  'dark psychology tricks explained',
+  'why people do this psychology',
+  'relationship psychology tips',
+  'body language psychology signs',
+  'mind tricks psychology facts',
 ]
 
 router.post('/youtube/auto-research', async (req, res) => {
@@ -53,7 +56,7 @@ router.post('/youtube/auto-research', async (req, res) => {
         keyword: v.title,
         platform: '유튜브',
         source_type: '공식 API',
-        category: '인테리어/생활용품',
+        category: '심리학',
         popularity_score: v.viewCount,
         note: `[자동 리서치] ${v.channelTitle} · 조회수 ${v.viewCount} · 좋아요 ${v.likeCount} · ${v.region} · ${v.url}`,
       })
