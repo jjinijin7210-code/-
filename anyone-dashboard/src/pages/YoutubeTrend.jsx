@@ -3,7 +3,7 @@ import { useSupabaseTable } from '../hooks/useSupabaseTable'
 import PageHeader from '../components/PageHeader'
 import { scanYoutubeTrend } from '../lib/apiClient'
 
-const GENRE_OPTIONS = ['트로트', '감동사연', 'AI영상', '쇼핑쇼츠']
+const GENRE_OPTIONS = ['트로트', '감성음악', '감동사연', 'AI영상', '쇼핑쇼츠']
 
 function TrendBadge({ children, tone = 'amber' }) {
   const toneClass =

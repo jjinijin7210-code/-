@@ -38,6 +38,19 @@ const QUERY_POOL = [
   'mind tricks psychology facts',
 ]
 
+// 일본은 한국이랑 생활상이 비슷한 부분이 많다는 판단(사용자 결정, 2026-07-19)으로, 일본 자료가
+// 부족해도 한국에서 사람들이 실제로 많이 겪는 고민/걱정 콘텐츠를 벤치마킹 삼아 심리학 채널
+// 주제를 잡는다. 이 결과도 category='심리학'으로 저장되어 psychology-video-run의 참고자료에
+// 자동으로 같이 실린다.
+const KR_WORRY_QUERY_POOL = [
+  '요즘 고민 많은 사람들 심리',
+  '인간관계 고민 심리학',
+  '스트레스 원인 심리학',
+  '자존감 낮은 이유 심리',
+  '불안한 마음 다스리는 법',
+  '번아웃 심리학',
+]
+
 // 실제 영상 제작용 주제 후보 (스크립트 작성 지시문이라 한글로 구체적으로)
 const VIDEO_TOPIC_POOL = [
   '첫인상이 왜 그렇게 오래 가는지에 대한 심리학',
@@ -81,6 +94,29 @@ router.post('/youtube/auto-research', async (req, res) => {
         popularity_score: v.viewCount,
         note: `[자동 리서치] ${v.channelTitle} · 조회수 ${v.viewCount} · 좋아요 ${v.likeCount} · ${v.region} · ${v.url}`,
       })
+    }
+
+    // 한국 "고민/걱정" 콘텐츠도 같이 벤치마킹 - 일본 자료가 부족해도 생활상이 비슷한 한국
+    // 콘텐츠를 참고해서 심리학 채널 주제를 잡을 수 있게 (사용자 결정, 2026-07-19)
+    let krWorrySavedCount = 0
+    try {
+      const worryQuery = KR_WORRY_QUERY_POOL[Math.floor(Math.random() * KR_WORRY_QUERY_POOL.length)]
+      const krVideos = await searchPopularVideosMultiRegion({ query: worryQuery, minLikes: 3000, maxResults: 10, regionCodes: ['KR'] })
+      const krTop = krVideos.slice(0, 5)
+      for (const v of krTop) {
+        await supabase.from('benchmark_reports').insert({
+          user_id: targetUserId,
+          keyword: v.title,
+          platform: '유튜브',
+          source_type: '공식 API',
+          category: '심리학',
+          popularity_score: v.viewCount,
+          note: `[한국 고민 콘텐츠 벤치마킹 - 일본어 채널 주제 참고용] ${v.channelTitle} · 조회수 ${v.viewCount} · 좋아요 ${v.likeCount} · ${v.url}`,
+        })
+      }
+      krWorrySavedCount = krTop.length
+    } catch (krErr) {
+      console.error('[youtube/auto-research] 한국 고민 콘텐츠 검색 실패:', krErr.message)
     }
 
     // 나라별 비교 분석 - "미국은 지금 어떤 형식이 인기인가", "일본 썸네일 스타일" 같은 인사이트를
