@@ -12,8 +12,10 @@ import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import { callClaude } from './anthropicClient.js'
 import { buildPsychologyScriptMessages, parsePsychologyScriptResponse } from './psychologyScript.js'
+import { buildPsychologyTranslateMessages, parsePsychologyTranslateResponse } from './psychologyTranslate.js'
 import { generateSpeech } from './ttsClient.js'
 import { generateImage } from './imageClient.js'
+import { listCharacterImages } from './characterImages.js'
 import { renderVideo, ffprobeDuration } from './videoRenderer.js'
 import { pickBackgroundMusic } from './backgroundMusic.js'
 import { GENERATED_DIR } from './shortsGenerator.js'
@@ -38,15 +40,21 @@ export async function generatePsychologyVideo({ topic, format = 'shorts', refere
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anyone-psych-video-'))
 
   try {
-    // 1. 대본 생성 (포인트 여러 개, 포인트마다 자막+내레이션)
+    // 1. 대본 생성 (한국어, 포인트 여러 개 - 사실관계 작성/검토가 한국어 프롬프트 체계에서 더 안정적)
     const { system, messages } = buildPsychologyScriptMessages({ topic, pointCount: cfg.pointCount, referenceNote })
     const scriptText = await callClaude({ system, messages, maxTokens: 2048 })
     const script = parsePsychologyScriptResponse(scriptText)
 
-    // 2. 포인트별 내레이션 TTS + 길이 측정 - 차분한 목소리로, 배속 없이(1.0배) 재생
+    // 1.5. 일본 채널이므로 실제 내레이션/자막은 일본어로 번역 (2026-07-19 피드백: "일본이라면서
+    // 음성은 한국말로 나와" - 직역이 아니라 자연스러운 일본어 구어체로, 사실관계는 그대로 유지)
+    const { system: trSystem, messages: trMessages } = buildPsychologyTranslateMessages({ script })
+    const trText = await callClaude({ system: trSystem, messages: trMessages, maxTokens: 2048 })
+    const jaScript = parsePsychologyTranslateResponse(trText, script.points.length)
+
+    // 2. 포인트별 내레이션 TTS(일본어) + 길이 측정 - 차분한 목소리로, 배속 없이(1.0배) 재생
     const points = []
-    for (let i = 0; i < script.points.length; i++) {
-      const point = script.points[i]
+    for (let i = 0; i < jaScript.points.length; i++) {
+      const point = jaScript.points[i]
       const audioBuffer = await generateSpeech({
         text: point.narration,
         voiceId: PSYCHOLOGY_VOICE_ID,
@@ -58,18 +66,25 @@ export async function generatePsychologyVideo({ topic, format = 'shorts', refere
       points.push({ caption: point.caption, voicePath, duration })
     }
 
-    // 3. 이미지 생성 (포인트 수보다 적게 만들어서 돌려씀 - 비용/속도 절감)
-    const imageCount = Math.min(points.length, cfg.maxUniqueImages)
-    const imagePaths = []
-    for (let i = 0; i < imageCount; i++) {
-      const prompt = `심리학 유튜브 영상용 이미지. "${topic}" 주제와 어울리는 추상적/상징적 일러스트
+    // 3. 이미지 - 진희님이 만든 캐릭터 이미지가 있으면 그걸 그대로 씀(비용 절감 + 채널 정체성),
+    // 없으면 기존처럼 AI로 생성 (포인트 수보다 적게 만들어서 돌려씀)
+    const characterFiles = listCharacterImages()
+    let imagePaths
+    if (characterFiles.length > 0) {
+      imagePaths = characterFiles.slice(0, cfg.maxUniqueImages)
+    } else {
+      const imageCount = Math.min(points.length, cfg.maxUniqueImages)
+      imagePaths = []
+      for (let i = 0; i < imageCount; i++) {
+        const prompt = `심리학 유튜브 영상용 이미지. "${topic}" 주제와 어울리는 추상적/상징적 일러스트
 또는 사물·풍경 중심 구도. 실존 인물의 얼굴을 클로즈업으로 그리지 말 것. 차분하고 신뢰감 있는
 톤(차가운 블루톤이나 파스텔 톤). 저작권 문제 없는 완전히 새로운 창작 이미지여야 함.`
-      const dataUrl = await generateImage({ prompt, size: format === 'shorts' ? '1024x1536' : '1536x1024' })
-      const base64 = dataUrl.split(',')[1]
-      const imgPath = path.join(tmpDir, `img_${i}.png`)
-      fs.writeFileSync(imgPath, Buffer.from(base64, 'base64'))
-      imagePaths.push(imgPath)
+        const dataUrl = await generateImage({ prompt, size: format === 'shorts' ? '1024x1536' : '1536x1024' })
+        const base64 = dataUrl.split(',')[1]
+        const imgPath = path.join(tmpDir, `img_${i}.png`)
+        fs.writeFileSync(imgPath, Buffer.from(base64, 'base64'))
+        imagePaths.push(imgPath)
+      }
     }
 
     // 4. 씬 구성 - 이미지는 모자라면 순환(modulo)해서 돌려씀. 줌/팬 효과를 쓰면 화면이
@@ -103,7 +118,7 @@ export async function generatePsychologyVideo({ topic, format = 'shorts', refere
       outputPath
     )
 
-    return { fileName, title: script.title, hook: script.hook, hasMusic: Boolean(musicPath) }
+    return { fileName, title: jaScript.title, hook: jaScript.hook, hasMusic: Boolean(musicPath) }
   } finally {
     fs.rmSync(tmpDir, { recursive: true, force: true })
   }
