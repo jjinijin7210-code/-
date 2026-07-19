@@ -99,6 +99,9 @@ app.listen(PORT, () => {
   if (!process.env.PEXELS_API_KEY) {
     console.warn('⚠️  PEXELS_API_KEY가 설정되지 않았어요. 무료 스톡 사진 검색이 동작하지 않아요.')
   }
+  if (!process.env.NAVER_CLIENT_ID || !process.env.NAVER_CLIENT_SECRET) {
+    console.warn('⚠️  NAVER_CLIENT_ID/SECRET이 설정되지 않았어요. 블로그 트렌드 확인 없이 기본 카테고리(푸드)로만 발행돼요.')
+  }
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY || !process.env.AUTO_RUN_SECRET || !process.env.AUTO_TARGET_USER_ID) {
     console.warn('⚠️  SUPABASE_SERVICE_ROLE_KEY/AUTO_RUN_SECRET/AUTO_TARGET_USER_ID가 설정되지 않았어요. 자동 파이프라인(/api/auto/run)이 동작하지 않아요.')
   }
