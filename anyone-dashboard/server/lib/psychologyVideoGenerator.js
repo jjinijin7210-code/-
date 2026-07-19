@@ -10,7 +10,7 @@ import os from 'node:os'
 import path from 'node:path'
 import crypto from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { callClaude } from './anthropicClient.js'
+import { callClaudeJson } from './anthropicClient.js'
 import { buildPsychologyScriptMessages, parsePsychologyScriptResponse } from './psychologyScript.js'
 import { buildPsychologyTranslateMessages, parsePsychologyTranslateResponse } from './psychologyTranslate.js'
 import { generateSpeech } from './ttsClient.js'
@@ -56,15 +56,20 @@ export async function generatePsychologyVideo({ topic, format = 'shorts', refere
 
   try {
     // 1. 대본 생성 (한국어, 포인트 여러 개 - 사실관계 작성/검토가 한국어 프롬프트 체계에서 더 안정적)
+    // JSON 파싱이 한 번 깨지면 영상 제작 전체가 날아가는 문제가 있어서(2026-07-19, benchmark.js와
+    // 동일한 원인) 같은 프롬프트로 최대 2번까지 자동 재시도.
     const { system, messages } = buildPsychologyScriptMessages({ topic, pointCount: cfg.pointCount, referenceNote })
-    const scriptText = await callClaude({ system, messages, maxTokens: 2048 })
-    const script = parsePsychologyScriptResponse(scriptText)
+    const script = await callClaudeJson({ system, messages, maxTokens: 2048, parse: parsePsychologyScriptResponse })
 
     // 1.5. 일본 채널이므로 실제 내레이션/자막은 일본어로 번역 (2026-07-19 피드백: "일본이라면서
     // 음성은 한국말로 나와" - 직역이 아니라 자연스러운 일본어 구어체로, 사실관계는 그대로 유지)
     const { system: trSystem, messages: trMessages } = buildPsychologyTranslateMessages({ script })
-    const trText = await callClaude({ system: trSystem, messages: trMessages, maxTokens: 2048 })
-    const jaScript = parsePsychologyTranslateResponse(trText, script.points.length)
+    const jaScript = await callClaudeJson({
+      system: trSystem,
+      messages: trMessages,
+      maxTokens: 2048,
+      parse: (text) => parsePsychologyTranslateResponse(text, script.points.length),
+    })
 
     // 2. 포인트별 내레이션 TTS(일본어) + 길이 측정 - 차분한 목소리로, 배속 없이(1.0배) 재생
     const points = []

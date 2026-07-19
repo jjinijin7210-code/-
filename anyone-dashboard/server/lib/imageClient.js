@@ -5,6 +5,15 @@
 const OPENAI_IMAGES_URL = 'https://api.openai.com/v1/images/generations'
 const OPENAI_IMAGES_EDIT_URL = 'https://api.openai.com/v1/images/edits'
 
+// 2026-07-19 사용자 피드백: 썸네일에 텍스트를 넣을 때 AI가 노란색 한 가지만 계속 쓰는 경향이
+// 있어서(예: "TOP5" 전부 노란색), 색상 위계를 명확히 지정해달라고 함 - 자동 파이프라인이든
+// 수동 "AI 이미지 생성" 버튼이든 어디서 호출하든 항상 이 지침이 같이 붙도록 generateImage()
+// 자체에 붙여둠(호출하는 쪽에서 매번 챙기지 않아도 되게).
+const THUMBNAIL_COLOR_RULE = `[텍스트 색상 지침] 이미지 안에 글자를 넣을 경우, 한 가지 색으로 전부
+칠하지 말고 중요도에 따라 색을 나눠서 써: 가장 중요한 문구는 핑크색, 그보다 덜 중요한 문구는
+노란색, 일반적인 설명 문구는 흰색으로. 글자 크기도 너무 크게 화면을 꽉 채우지 말고 배경 사진이
+잘 보이도록 적당히.`
+
 export async function generateImage({ prompt, size = '1024x1024' }) {
   const apiKey = process.env.OPENAI_API_KEY
   if (!apiKey) {
@@ -22,7 +31,7 @@ export async function generateImage({ prompt, size = '1024x1024' }) {
     },
     body: JSON.stringify({
       model: 'gpt-image-1',
-      prompt,
+      prompt: `${prompt}\n\n${THUMBNAIL_COLOR_RULE}`,
       size,
       n: 1,
     }),
@@ -65,7 +74,7 @@ export async function editImage({ imageDataUrl, prompt, size = '1024x1024' }) {
   const form = new FormData()
   form.append('model', 'gpt-image-1')
   form.append('image[]', new Blob([buffer], { type: mimeType }), 'reference.png')
-  form.append('prompt', prompt)
+  form.append('prompt', `${prompt}\n\n${THUMBNAIL_COLOR_RULE}`)
   form.append('size', size)
   form.append('n', '1')
 

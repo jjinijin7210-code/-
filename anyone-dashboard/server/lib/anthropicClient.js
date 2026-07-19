@@ -42,3 +42,22 @@ export async function callClaude({ system, messages, maxTokens = 1024 }) {
 
   return text
 }
+
+// 2026-07-19: "초안작성 직원 혼자 하니까 이슈 발생하면 초안이 아예 안 나온다"는 피드백 -
+// AI 응답이 JSON으로 안 잡히는 건 대부분 그날그날의 응답 변동(가끔 설명을 덧붙이거나 형식을
+// 깨뜨림)이라, 같은 프롬프트로 다시 한번 물어보면 성공하는 경우가 많음. parse가 실패하면
+// maxRetries만큼 새로 호출해서 재시도하고, 그래도 안 되면 마지막 에러를 그대로 던짐 - 자동
+// 파이프라인 한 슬롯이 파싱 실패 한 번으로 통째로 날아가는 걸 줄이기 위함.
+export async function callClaudeJson({ system, messages, maxTokens = 1024, parse, maxRetries = 2 }) {
+  let lastErr
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const text = await callClaude({ system, messages, maxTokens })
+    try {
+      return parse(text)
+    } catch (err) {
+      lastErr = err
+      console.error(`[callClaudeJson] 파싱 실패 (시도 ${attempt + 1}/${maxRetries + 1}):`, err.message)
+    }
+  }
+  throw lastErr
+}

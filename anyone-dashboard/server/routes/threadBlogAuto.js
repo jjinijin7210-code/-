@@ -16,7 +16,7 @@ import { Router } from 'express'
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js'
 import { setEmployeeStatus } from '../lib/employeeStatusSync.js'
 import { startAutomationRun, finishAutomationRun } from '../lib/automationLog.js'
-import { callClaude } from '../lib/anthropicClient.js'
+import { callClaudeJson } from '../lib/anthropicClient.js'
 import { buildDraftMessages, buildTranslateMessages, parseDraftResponse } from '../lib/promptBuilder.js'
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { sendTelegramMessage } from '../lib/telegramClient.js'
@@ -106,8 +106,14 @@ router.post('/thread-blog/auto-run', async (req, res) => {
     const referenceNote = marketNote ? `[국가별 트렌드 비교]\n${marketNote}` : undefined
 
     const { system, messages } = buildDraftMessages({ channel, topic, referenceNote })
-    const draftText = await callClaude({ system, messages, maxTokens: channel.startsWith('블로그') ? 3000 : 1024 })
-    const draft = parseDraftResponse(draftText)
+    // 작성자 단계가 유일한 관문이라 JSON 파싱이 한 번 깨지면 그 슬롯이 통째로 날아가는 문제가
+    // 있었음(2026-07-19 사용자 보고, benchmark.js와 동일) - 최대 2번까지 자동 재시도.
+    const draft = await callClaudeJson({
+      system,
+      messages,
+      maxTokens: channel.startsWith('블로그') ? 3000 : 1024,
+      parse: parseDraftResponse,
+    })
 
     await setEmployeeStatus(supabase, targetUserId, WRITER_ROLE, '완료', `"${draft.title}" 초안 작성 완료`)
     await setEmployeeStatus(supabase, targetUserId, REVIEWER_ROLE, '작업중', `"${draft.title}" 검수 중`)
@@ -166,8 +172,7 @@ router.post('/thread-blog/auto-run', async (req, res) => {
           body: finalBody,
           hashtags: draft.hashtags,
         })
-        const trText = await callClaude({ system: trSystem, messages: trMessages, maxTokens: 3000 })
-        const trDraft = parseDraftResponse(trText)
+        const trDraft = await callClaudeJson({ system: trSystem, messages: trMessages, maxTokens: 3000, parse: parseDraftResponse })
 
         const trInitialReview = await runReviewStages({ title: trDraft.title, body: trDraft.body, channel: GOOGLE_BLOG_CHANNEL })
         const trResult = await reviseUntilPassOrGiveUp({

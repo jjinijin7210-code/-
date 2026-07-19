@@ -7,7 +7,7 @@ import { BENCHMARK_CATEGORIES, getCategoryByLabel } from '../lib/benchmarkCatego
 import { setEmployeeStatus } from '../lib/employeeStatusSync.js'
 import { startAutomationRun, finishAutomationRun } from '../lib/automationLog.js'
 import { ensureCsLink, CS_TRIGGER_KEYWORD } from '../lib/csLink.js'
-import { callClaude } from '../lib/anthropicClient.js'
+import { callClaudeJson } from '../lib/anthropicClient.js'
 import { buildDraftMessages, buildTranslateMessages, parseDraftResponse } from '../lib/promptBuilder.js'
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { generateImage } from '../lib/imageClient.js'
@@ -179,8 +179,15 @@ router.post('/benchmark/content-run', async (req, res) => {
     // 1024로는 카테고리에 따라(특히 여행지처럼 서술이 길어지는 주제) JSON이 중간에 잘려서
     // 파싱 실패("AI 응답을 JSON으로 해석하지 못했어요")가 나는 게 실제 운영 중 확인됨(2026-07-18,
     // 하루 5번 자동 파이프라인 중 여행지 슬롯만 3연속 실패) - 여유 있게 늘림
-    const draftText = await callClaude({ system: draftSystem, messages: draftMessages, maxTokens: 2000 })
-    const draft = parseDraftResponse(draftText)
+    // 2026-07-19: 그래도 가끔 파싱이 깨질 수 있는데, 작성자 단계가 유일한 관문이라 여기서
+    // 실패하면 그 슬롯 자체가 통째로 날아가는 문제가 있었음(사용자 보고) - 같은 프롬프트로
+    // 최대 2번까지 자동 재시도하도록 callClaudeJson으로 교체.
+    const draft = await callClaudeJson({
+      system: draftSystem,
+      messages: draftMessages,
+      maxTokens: 2000,
+      parse: parseDraftResponse,
+    })
 
     await setEmployeeStatus(supabase, targetUserId, WRITER_ROLE, '완료', `"${draft.title}" 초안 작성 완료`)
 
@@ -211,47 +218,56 @@ router.post('/benchmark/content-run', async (req, res) => {
     // 사용함 - 원본 바이럴 게시물을 그대로 퍼가는 게 아니라 같은 동물의 "다른" 정식 라이선스
     // 사진을 쓰는 방식이라 저작권 문제가 없음. Pexels에서 못 찾으면 기존처럼 AI가 완전히 새로운
     // 이미지를 창작하는 방식으로 대체함.
+    // 2026-07-19 (추가 피드백): "소갯글도 없이 사진 하나밖에 없다, 사진 몇 장 같이 넣어도
+    // 좋겠다" - 인스타 캐러셀처럼 여러 장 붙이도록 확장.
+    const MAX_IMAGES_PER_POST = 3
     await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '작업중', `"${draft.title}" 이미지 준비 중`)
     const images = []
-    let pickedPhoto = null
+    let pickedPhotos = []
     if (draft.photoQuery) {
       try {
-        const photos = await searchPhotos({ query: draft.photoQuery, perPage: 5 })
-        if (photos.length > 0) pickedPhoto = photos[Math.floor(Math.random() * Math.min(photos.length, 3))]
+        const photos = await searchPhotos({ query: draft.photoQuery, perPage: 10 })
+        // 위쪽 결과 중에서 무작위로 최대 MAX_IMAGES_PER_POST장을 골라 다양성을 조금 줌
+        const pool = photos.slice(0, Math.max(photos.length, MAX_IMAGES_PER_POST * 2))
+        pickedPhotos = pool.sort(() => Math.random() - 0.5).slice(0, MAX_IMAGES_PER_POST)
       } catch (pexelsErr) {
         console.error('[benchmark/content-run] Pexels 검색 실패, AI 이미지 생성으로 대체:', pexelsErr.message)
       }
     }
     try {
-      if (pickedPhoto) {
-        const dataUrl = await fetchPhotoAsDataUrl(pickedPhoto.full)
-        images.push({
-          id: crypto.randomUUID(),
-          kind: 'image',
-          filename: `benchmark-${Date.now()}.jpg`,
-          mime_type: 'image/jpeg',
-          size: dataUrl.length,
-          data_url: dataUrl,
-          note: `Pexels 무료 스톡사진 (검색어: ${draft.photoQuery}, 촬영: ${pickedPhoto.photographer})`,
-          created_at: new Date().toISOString(),
-        })
-        await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '완료', `"${draft.title}" 스톡사진 사용 완료 (${pickedPhoto.photographer})`)
+      if (pickedPhotos.length > 0) {
+        for (const photo of pickedPhotos) {
+          const dataUrl = await fetchPhotoAsDataUrl(photo.full)
+          images.push({
+            id: crypto.randomUUID(),
+            kind: 'image',
+            filename: `benchmark-${Date.now()}-${images.length}.jpg`,
+            mime_type: 'image/jpeg',
+            size: dataUrl.length,
+            data_url: dataUrl,
+            note: `Pexels 무료 스톡사진 (검색어: ${draft.photoQuery}, 촬영: ${photo.photographer})`,
+            created_at: new Date().toISOString(),
+          })
+        }
+        await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '완료', `"${draft.title}" 스톡사진 ${images.length}장 사용 완료`)
       } else {
         const imagePrompt = `"${draft.title}"라는 SNS 게시물에 어울리는 사진 스타일 이미지. ${category.label} 분위기.
 실존 인물의 얼굴을 클로즈업으로 그리지 말고, 사물·반려동물·풍경·소품 중심의 따뜻하고 감성적인 구도로.
 저작권 문제 없는 완전히 새로운 창작 이미지여야 함.`
-        const dataUrl = await generateImage({ prompt: imagePrompt })
-        images.push({
-          id: crypto.randomUUID(),
-          kind: 'image',
-          filename: `benchmark-${Date.now()}.png`,
-          mime_type: 'image/png',
-          size: dataUrl.length,
-          data_url: dataUrl,
-          note: `해외 벤치마킹(${category.label}) 기반 AI 생성 이미지 (Pexels 검색 결과 없음)`,
-          created_at: new Date().toISOString(),
-        })
-        await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '완료', `"${draft.title}" 이미지 생성 완료`)
+        for (let i = 0; i < MAX_IMAGES_PER_POST; i++) {
+          const dataUrl = await generateImage({ prompt: imagePrompt })
+          images.push({
+            id: crypto.randomUUID(),
+            kind: 'image',
+            filename: `benchmark-${Date.now()}-${i}.png`,
+            mime_type: 'image/png',
+            size: dataUrl.length,
+            data_url: dataUrl,
+            note: `해외 벤치마킹(${category.label}) 기반 AI 생성 이미지 (Pexels 검색 결과 없음)`,
+            created_at: new Date().toISOString(),
+          })
+        }
+        await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '완료', `"${draft.title}" 이미지 ${images.length}장 생성 완료`)
       }
     } catch (imgErr) {
       console.error('[benchmark/content-run] 이미지 준비 실패, 이미지 없이 저장:', imgErr.message)
@@ -311,8 +327,7 @@ router.post('/benchmark/content-run', async (req, res) => {
             body: draft.body,
             hashtags: draft.hashtags,
           })
-          const trText = await callClaude({ system: trSystem, messages: trMessages, maxTokens: 2000 })
-          const trDraft = parseDraftResponse(trText)
+          const trDraft = await callClaudeJson({ system: trSystem, messages: trMessages, maxTokens: 2000, parse: parseDraftResponse })
 
           const trInitialReview = await runReviewStages({ title: trDraft.title, body: trDraft.body, channel: targetLangChannel })
           const trResult = await reviseUntilPassOrGiveUp({

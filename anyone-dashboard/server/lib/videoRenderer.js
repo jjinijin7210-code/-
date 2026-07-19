@@ -98,7 +98,12 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
     if (!scene.text) return ''
     const textFile = path.join(tmpDir, `text_${idx}.txt`)
     fs.writeFileSync(textFile, scene.text, 'utf8')
-    return `,drawtext=font='Noto Sans CJK KR':textfile='${textFile}':fontcolor=white:fontsize=${(h * 0.045) | 0}:x=(w-text_w)/2:y=h-h*0.12:box=1:boxcolor=black@0.45:boxborderw=16`
+    // ffmpeg 필터그래프 문법에서 ':'는 옵션 구분자라 경로 안에 그대로 들어가면 파싱이 깨짐
+    // (Windows 경로 "C:\Users\..."는 드라이브 콜론 때문에 특히 문제) - 콜론/백슬래시를 이스케이프.
+    // 로컬 개발 검증(scripts/test-*)에서 실제로 발견된 버그(2026-07-19) - Render(Linux)는 경로에
+    // 콜론이 없어서 지금까지 드러나지 않았을 뿐, 어느 OS에서든 안전하도록 항상 이스케이프함.
+    const escapedPath = textFile.replace(/\\/g, '/').replace(/:/g, '\\:')
+    return `,drawtext=font='Noto Sans CJK KR':textfile='${escapedPath}':fontcolor=white:fontsize=${(h * 0.045) | 0}:x=(w-text_w)/2:y=h-h*0.12:box=1:boxcolor=black@0.45:boxborderw=16`
   })()
 
   const out = path.join(tmpDir, `clip_${idx}.mp4`)

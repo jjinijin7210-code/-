@@ -416,6 +416,10 @@ export default function ContentDrafts() {
   const [translateChannel, setTranslateChannel] = useState('')
   const [translateLoading, setTranslateLoading] = useState(false)
   const [translateMessage, setTranslateMessage] = useState(null)
+  // 이미지에 글자가 박혀있는 썸네일(예: "TOP5" 랭킹형)을 그대로 복사하면 언어가 안 맞는 문제가
+  // 생겨서(2026-07-19 피드백) - 텍스트 없는 사진/영상일 땐 그대로 가져오는 게 편하니 기본은
+  // 켜두고, 텍스트 박힌 이미지일 땐 꺼서 새로 만들도록 선택할 수 있게 함.
+  const [translateCopyImages, setTranslateCopyImages] = useState(true)
   const handleTranslate = async () => {
     setTranslateMessage(null)
     if (!translateChannel) {
@@ -441,7 +445,7 @@ export default function ContentDrafts() {
         hashtags: translated.hashtags,
         platform: translateChannel,
         category: getCategoryForChannel(translateChannel),
-        images: form.images,
+        images: translateCopyImages ? form.images : [],
         source: `${form.title} (초안 번역, 원본 채널: ${form.platform})`,
         author_name: 'AI 번역',
       })
@@ -1319,7 +1323,7 @@ export default function ContentDrafts() {
             <div className="my-3 rounded-lg border border-stamp-amber/30 bg-stamp-amber/5 p-3">
               <p className="mb-2 text-xs font-bold text-stamp-amber">🌐 다른 언어로 번역해서 새 초안 만들기</p>
               <p className="mb-2 text-[11px] text-ink/50">
-                직역이 아니라 그 언어권 20대가 자연스럽게 느끼도록 다시 써요. 원본은 그대로 두고, 이미지는 그대로 가져간 새 초안이 만들어져요.
+                직역이 아니라 그 언어권 20대가 자연스럽게 느끼도록 다시 써요.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <FormField
@@ -1337,6 +1341,14 @@ export default function ContentDrafts() {
                   {translateLoading ? '번역 중...' : '번역해서 새 초안 만들기'}
                 </button>
               </div>
+              <label className="mt-2 flex items-center gap-1.5 text-[11px] text-ink/60">
+                <input
+                  type="checkbox"
+                  checked={translateCopyImages}
+                  onChange={(e) => setTranslateCopyImages(e.target.checked)}
+                />
+                이미지도 그대로 가져오기 (썸네일에 글자가 박혀있으면 체크 해제 - 언어가 안 맞게 돼요)
+              </label>
               {translateMessage && (
                 <p className={`mt-1 text-[11px] ${translateMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
                   {translateMessage.text}
