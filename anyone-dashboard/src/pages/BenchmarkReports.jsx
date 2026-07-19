@@ -193,6 +193,11 @@ export default function BenchmarkReports() {
 [필수 지시사항] 게시물 마지막 부분에 "댓글에 '정보'라고 남겨주시면 구매 링크 보내드릴게요!" 같은
 자연스러운 유도 문구를 반드시 포함해서 작성해줘. 이게 없으면 안 돼.`
       const draft = await generateDraft({ channel, topic })
+      // AI가 링크를 빼먹거나 다르게 적었을 가능성에 대비 - 검증된 쿠팡 링크가 본문에 정확히
+      // 없으면 직접 붙여넣어서, 진희님이 콘텐츠 관리에서 확인하실 링크가 항상 맞게 만듦.
+      if (channel.startsWith('블로그') && !draft.body.includes(match.productUrl)) {
+        draft.body = `${draft.body}\n\n👉 구매 링크: ${match.productUrl}`
+      }
       const review = await reviewDraftWithAi({ title: draft.title, body: draft.body, channel })
 
       const images = []
