@@ -62,6 +62,73 @@ export async function searchPopularVideos({ query, minLikes = 10000, maxResults 
     .sort((a, b) => b.viewCount - a.viewCount)
 }
 
+// ISO8601 재생시간(PT4M13S 등)을 초 단위 숫자로 변환
+function parseIso8601Duration(iso) {
+  if (!iso) return null
+  const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso)
+  if (!match) return null
+  const [, h, m, s] = match
+  return (Number(h) || 0) * 3600 + (Number(m) || 0) * 60 + (Number(s) || 0)
+}
+
+// 급상승 트렌드 스캔용 - minLikes 필터 없이(조회수는 적어도 성장 속도가 빠른 영상을 놓치지
+// 않기 위함) 키워드+지역+게시일 이후 조건으로 검색하고, 점수 계산에 필요한 필드를 다 채워서 돌려줌.
+export async function searchVideosForTrendScan({ query, regionCode = 'KR', publishedAfter, maxResults = 15, order = 'viewCount' }) {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  if (!apiKey) {
+    throw new Error('YOUTUBE_API_KEY가 서버 .env에 설정되어 있지 않아요.')
+  }
+  if (!query) {
+    throw new Error('검색어(query)가 필요해요.')
+  }
+
+  const searchParams = new URLSearchParams({
+    part: 'snippet',
+    q: query,
+    type: 'video',
+    order,
+    regionCode,
+    maxResults: String(Math.min(maxResults, 50)),
+    key: apiKey,
+  })
+  if (publishedAfter) searchParams.set('publishedAfter', publishedAfter)
+
+  const searchRes = await fetch(`${SEARCH_URL}?${searchParams.toString()}`)
+  if (!searchRes.ok) {
+    const errText = await searchRes.text().catch(() => '')
+    throw new Error(`YouTube 검색 API 오류 (${searchRes.status}): ${errText.slice(0, 300)}`)
+  }
+  const searchData = await searchRes.json()
+  const videoIds = (searchData.items || []).map((item) => item.id.videoId).filter(Boolean)
+  if (videoIds.length === 0) return []
+
+  const videosParams = new URLSearchParams({
+    part: 'snippet,statistics,contentDetails',
+    id: videoIds.join(','),
+    key: apiKey,
+  })
+  const videosRes = await fetch(`${VIDEOS_URL}?${videosParams.toString()}`)
+  if (!videosRes.ok) {
+    const errText = await videosRes.text().catch(() => '')
+    throw new Error(`YouTube 영상 정보 API 오류 (${videosRes.status}): ${errText.slice(0, 300)}`)
+  }
+  const videosData = await videosRes.json()
+
+  return (videosData.items || []).map((v) => ({
+    videoId: v.id,
+    title: v.snippet.title,
+    description: v.snippet.description || '',
+    channelTitle: v.snippet.channelTitle,
+    publishedAt: v.snippet.publishedAt,
+    thumbnail: v.snippet.thumbnails?.medium?.url || v.snippet.thumbnails?.default?.url,
+    durationSeconds: parseIso8601Duration(v.contentDetails?.duration),
+    viewCount: Number(v.statistics?.viewCount || 0),
+    likeCount: Number(v.statistics?.likeCount || 0),
+    commentCount: Number(v.statistics?.commentCount || 0),
+    url: `https://www.youtube.com/watch?v=${v.id}`,
+  }))
+}
+
 // 유튜브 URL(watch?v=, youtu.be/, shorts/ 등 다양한 형식)에서 영상 ID만 뽑아냄
 export function extractYoutubeVideoId(urlOrId) {
   const s = (urlOrId || '').trim()

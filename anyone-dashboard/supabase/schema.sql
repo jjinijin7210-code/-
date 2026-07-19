@@ -315,6 +315,53 @@ create table automation_runs (
   finished_at timestamptz
 );
 
+-- ------------------------------------------------------------
+-- 15. 유튜브 트렌드 스캔 (youtube_trend_scan)
+-- 한국 개인 채널 기획용 - 장르별 급상승 영상을 "상승 속도" 기준으로 채점하고 AI가 분석
+-- ------------------------------------------------------------
+create table youtube_trend_scan (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  genre text not null,              -- 트로트 / 감동사연 / AI영상 / 쇼핑쇼츠 등
+  video_id text not null,
+  title text not null,
+  description text,
+  thumbnail_url text,
+  channel_title text,
+  published_at timestamptz,
+  duration_seconds int,
+  view_count bigint,
+  like_count bigint,
+  comment_count bigint,
+  hours_since_published numeric,
+  views_per_hour numeric,
+  like_rate numeric,
+  comment_rate numeric,
+  trend_score numeric,
+  is_rising_24h boolean default false,
+  is_rising_7d boolean default false,
+  is_low_view_fast_growth boolean default false,
+  ai_emotion text,
+  ai_hook text,
+  ai_topic text,
+  ai_expected_audience text,
+  video_url text,
+  scanned_at timestamptz not null default now()
+);
+
+-- ------------------------------------------------------------
+-- 16. 유튜브 트렌드 스캔 리포트 (youtube_trend_report)
+-- 스캔 1회당 종합 리포트(급상승 주제/주목할 영상/공통 패턴/신규 아이디어) 하나
+-- ------------------------------------------------------------
+create table youtube_trend_report (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null default auth.uid() references auth.users(id) on delete cascade,
+  genre text not null,
+  report text not null,
+  error_message text,   -- API 오류/할당량 초과/데이터 없음 등을 명확히 남기기 위함
+  created_at timestamptz not null default now()
+);
+
 -- ============================================================
 -- RLS (Row Level Security) 설정
 -- 개인 도구지만, 계정 단위로 데이터를 분리해두어 안전하게 사용
@@ -334,6 +381,8 @@ alter table brands enable row level security;
 alter table assets enable row level security;
 alter table briefings enable row level security;
 alter table automation_runs enable row level security;
+alter table youtube_trend_scan enable row level security;
+alter table youtube_trend_report enable row level security;
 
 -- 각 테이블에 대해 "본인 데이터만 조회/수정" 정책 적용
 do $$
@@ -342,7 +391,8 @@ declare
   tables text[] := array[
     'employee_status', 'content_drafts', 'review_log', 'benchmark_reports',
     'cs_links', 'analytics_data', 'qa_pipeline', 'qa_review_steps',
-    'luna_requests', 'luna_staff', 'june_character', 'brands', 'assets', 'briefings', 'automation_runs'
+    'luna_requests', 'luna_staff', 'june_character', 'brands', 'assets', 'briefings', 'automation_runs',
+    'youtube_trend_scan', 'youtube_trend_report'
   ];
 begin
   foreach t in array tables loop

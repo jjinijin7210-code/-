@@ -206,6 +206,11 @@ export async function renderVideoStudio(formData) {
   return data
 }
 
+// 유튜브 트렌드 분석 - 장르별 급상승 영상을 상승 속도 기준으로 채점 + AI 분석/리포트
+export async function scanYoutubeTrend({ genre, keywords, days }) {
+  return postJson('/api/youtube-trend/scan', { genre, keywords, days })
+}
+
 // 자동화 실행 로그에서 "이슈발생" 난 항목을 버튼 하나로 재시도 (같은 내부 파이프라인을 다시 호출)
 export function retryAutomationRun(runId) {
   return postJson('/api/automation/retry', { runId })
