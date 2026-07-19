@@ -6,8 +6,8 @@ import { tokenStore } from './auth.js'
 const router = Router()
 
 // 프론트엔드가 "구글 계정이 연결되어 있는지" 확인할 때 사용
-router.get('/blogger/status', (req, res) => {
-  res.json({ connected: tokenStore.isConnected() })
+router.get('/blogger/status', async (req, res) => {
+  res.json({ connected: await tokenStore.isConnected() })
 })
 
 router.post('/blogger/publish', async (req, res) => {
@@ -16,7 +16,7 @@ router.post('/blogger/publish', async (req, res) => {
     return res.status(400).json({ error: '제목(title)과 본문(content)이 필요해요.' })
   }
 
-  const tokens = tokenStore.read()
+  const tokens = await tokenStore.read()
   if (!tokens || !tokens.access_token) {
     return res.status(401).json({ error: '구글 계정이 연결되어 있지 않아요. 먼저 설정에서 연결해주세요.' })
   }
@@ -34,7 +34,7 @@ router.post('/blogger/publish', async (req, res) => {
         clientId: process.env.GOOGLE_CLIENT_ID,
         clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       })
-      tokenStore.save(refreshed)
+      await tokenStore.save(refreshed)
       accessToken = refreshed.access_token
       result = await publishToBloggerApi({ accessToken, blogId: process.env.BLOGGER_BLOG_ID, title, content, isDraft })
     }

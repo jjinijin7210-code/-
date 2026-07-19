@@ -13,6 +13,7 @@ import {
   isAiDraftChannel,
   isLocalizationChannel,
   isBloggerChannel,
+  isYoutubeChannel,
 } from '../src/lib/contentPreview.js'
 
 let passed = 0
@@ -67,6 +68,10 @@ check('해외 트렌드 재구성 원칙은 인스타/틱톡에서만 적용', (
 check('구글 Blogger 발행 대상 채널 판별', () => {
   assert.equal(isBloggerChannel('블로그(구글 Blogger)'), true)
   assert.equal(isBloggerChannel('블로그(네이버)-푸드'), false)
+})
+check('유튜브 업로드 대상 채널 판별', () => {
+  assert.equal(isYoutubeChannel('유튜브(일본어)'), true)
+  assert.equal(isYoutubeChannel('블로그(구글 Blogger)'), false)
 })
 
 console.log('=== 3. 해시태그 파싱 ===')

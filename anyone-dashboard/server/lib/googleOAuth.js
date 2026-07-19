@@ -8,6 +8,10 @@
 // ============================================================
 
 export const BLOGGER_SCOPE = 'https://www.googleapis.com/auth/blogger'
+// 2026-07-19: 유튜브 영상 자동 업로드 기능 추가하면서 같은 구글 계정 연결 흐름에 업로드 권한도
+// 같이 요청하게 함 - 사용자가 "구글 계정 연결하기"를 한 번만 눌러도 블로거+유튜브 둘 다 되게.
+export const YOUTUBE_UPLOAD_SCOPE = 'https://www.googleapis.com/auth/youtube.upload'
+export const GOOGLE_SCOPES = `${BLOGGER_SCOPE} ${YOUTUBE_UPLOAD_SCOPE}`
 const GOOGLE_AUTH_BASE = 'https://accounts.google.com/o/oauth2/v2/auth'
 
 /**
@@ -25,7 +29,7 @@ export function buildGoogleAuthUrl({ clientId, redirectUri, state }) {
     client_id: clientId,
     redirect_uri: redirectUri,
     response_type: 'code',
-    scope: BLOGGER_SCOPE,
+    scope: GOOGLE_SCOPES,
     access_type: 'offline', // refresh_token을 받기 위해 필요
     prompt: 'consent',
   })

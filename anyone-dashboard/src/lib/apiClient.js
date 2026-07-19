@@ -55,6 +55,18 @@ export function getGoogleConnectUrl() {
   return `${API_BASE}/auth/google`
 }
 
+// 유튜브 업로드용 구글 계정 연결 여부 확인 (Blogger와 같은 연결을 공유함)
+export async function getYoutubeUploadStatus() {
+  const res = await fetch(`${API_BASE}/api/youtube/upload-status`)
+  if (!res.ok) return { connected: false }
+  return res.json()
+}
+
+// 유튜브로 실제 영상 업로드
+export function uploadToYoutube({ title, description, videoUrl, tags, privacyStatus }) {
+  return postJson('/api/youtube/upload', { title, description, videoUrl, tags, privacyStatus })
+}
+
 // 유튜브 인기 영상 검색 (조회수순, 좋아요 minLikes 이상만)
 // 검색이 아니라 직접 찾은 유튜브 영상 URL을 바로 가져올 때 씀
 export async function lookupYoutubeVideo(url) {

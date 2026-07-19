@@ -2,7 +2,7 @@
 // 실행: node scripts/test-google-oauth.mjs
 
 import assert from 'node:assert/strict'
-import { buildGoogleAuthUrl, isValidTokenResponse, BLOGGER_SCOPE } from '../server/lib/googleOAuth.js'
+import { buildGoogleAuthUrl, isValidTokenResponse, GOOGLE_SCOPES } from '../server/lib/googleOAuth.js'
 
 let passed = 0
 function check(name, fn) {
@@ -25,7 +25,13 @@ check('필수 파라미터(client_id, redirect_uri, scope, response_type)가 전
   assert.equal(parsed.searchParams.get('client_id'), 'abc123')
   assert.equal(parsed.searchParams.get('redirect_uri'), 'http://localhost:3001/auth/google/callback')
   assert.equal(parsed.searchParams.get('response_type'), 'code')
-  assert.equal(parsed.searchParams.get('scope'), BLOGGER_SCOPE)
+  assert.equal(parsed.searchParams.get('scope'), GOOGLE_SCOPES)
+})
+check('scope에 블로거와 유튜브 업로드 권한이 둘 다 포함됨 (한 번 연결로 둘 다 사용)', () => {
+  const url = buildGoogleAuthUrl({ clientId: 'abc', redirectUri: 'http://x' })
+  const scope = new URL(url).searchParams.get('scope')
+  assert.ok(scope.includes('auth/blogger'))
+  assert.ok(scope.includes('auth/youtube.upload'))
 })
 check('access_type=offline이 포함됨 (refresh_token을 받기 위해 꼭 필요)', () => {
   const url = buildGoogleAuthUrl({ clientId: 'abc', redirectUri: 'http://x' })

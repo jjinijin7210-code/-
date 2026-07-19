@@ -17,6 +17,7 @@ import {
   isAiDraftChannel,
   isLocalizationChannel,
   isBloggerChannel,
+  isYoutubeChannel,
   parseHashtags,
 } from '../lib/contentPreview'
 import {
@@ -27,6 +28,8 @@ import {
   getBloggerStatus,
   publishToBlogger,
   getGoogleConnectUrl,
+  getYoutubeUploadStatus,
+  uploadToYoutube,
   generateAiImage,
   generateSimilarImage,
   searchPexelsPhotos,
@@ -275,6 +278,11 @@ export default function ContentDrafts() {
   const [publishLoading, setPublishLoading] = useState(false)
   const [publishMessage, setPublishMessage] = useState(null)
 
+  // 유튜브 업로드 (구글 계정 연결은 Blogger와 공유함)
+  const [youtubeConnected, setYoutubeConnected] = useState(false)
+  const [youtubeUploadLoading, setYoutubeUploadLoading] = useState(false)
+  const [youtubeUploadMessage, setYoutubeUploadMessage] = useState(null)
+
   // 인스타그램 자동 입력 (진희님 컴퓨터에서만 동작 - 실제 크롬 브라우저를 조작)
   const [igLoading, setIgLoading] = useState(false)
   const [igMessage, setIgMessage] = useState(null) // { type: 'success' | 'error', text }
@@ -453,6 +461,9 @@ export default function ContentDrafts() {
     if (modalOpen && isBloggerChannel(form.platform)) {
       getBloggerStatus().then((s) => setBloggerConnected(s.connected))
     }
+    if (modalOpen && isYoutubeChannel(form.platform)) {
+      getYoutubeUploadStatus().then((s) => setYoutubeConnected(s.connected))
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [modalOpen, form.platform])
 
@@ -467,6 +478,7 @@ export default function ContentDrafts() {
     setIgMessage(null)
     setTtMessage(null)
     setMarkPublishedMessage(null)
+    setYoutubeUploadMessage(null)
   }
 
   const openAdd = () => {
@@ -615,6 +627,42 @@ export default function ContentDrafts() {
       setPublishMessage({ type: 'error', text: err.message })
     } finally {
       setPublishLoading(false)
+    }
+  }
+
+  const handleUploadToYoutube = async () => {
+    const video = (form.images || []).find((a) => a.kind === 'video')
+    if (!video) {
+      setYoutubeUploadMessage({ type: 'error', text: '업로드할 영상이 없어요. 먼저 영상을 첨부해주세요.' })
+      return
+    }
+    setYoutubeUploadLoading(true)
+    setYoutubeUploadMessage(null)
+    try {
+      const result = await uploadToYoutube({
+        title: form.title,
+        description: form.body,
+        videoUrl: video.data_url,
+        tags: parseHashtags(form.hashtags).map((h) => h.replace(/^#/, '')),
+      })
+      const safetyChecked = form.checked_no_real_person_image && form.checked_no_overseas_reuse
+      const published = {
+        published_url: result.url || form.published_url,
+        // 안전 원칙 체크가 안 되어 있으면 "발행완료"로 자동 전환하지 않음 (Blogger 발행과 동일한 기준)
+        status: safetyChecked ? '발행완료' : form.status,
+      }
+      setForm((f) => ({ ...f, ...published }))
+      if (editing) await updateRow(editing.id, { ...form, ...published })
+      setYoutubeUploadMessage({
+        type: 'success',
+        text: safetyChecked
+          ? '유튜브에 업로드했고, 상태도 "발행완료"로 바로 저장했어요.'
+          : '유튜브에 업로드했어요. (안전 원칙 체크를 안 하셔서 상태는 자동으로 안 바뀌었어요 - 체크 후 저장해주세요)',
+      })
+    } catch (err) {
+      setYoutubeUploadMessage({ type: 'error', text: err.message })
+    } finally {
+      setYoutubeUploadLoading(false)
     }
   }
 
@@ -1094,6 +1142,45 @@ export default function ContentDrafts() {
               {publishMessage && (
                 <p className={`mt-2 text-[11px] ${publishMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
                   {publishMessage.text}
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* 유튜브 업로드 (구글 계정 연결은 Blogger와 공유함) */}
+          {isYoutubeChannel(form.platform) && (
+            <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
+              <p className="mb-2 text-xs font-bold text-ink/70">▶️ 유튜브 업로드</p>
+              {youtubeConnected ? (
+                <>
+                  <p className="mb-2 text-[11px] text-stamp-pass">🟢 구글 계정이 연결되어 있어요.</p>
+                  <button
+                    type="button"
+                    onClick={handleUploadToYoutube}
+                    disabled={youtubeUploadLoading || !form.title || !(form.images || []).some((a) => a.kind === 'video')}
+                    className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                  >
+                    {youtubeUploadLoading ? '업로드 중...' : '📤 유튜브로 업로드'}
+                  </button>
+                  {!(form.images || []).some((a) => a.kind === 'video') && (
+                    <p className="mt-2 text-[11px] text-ink/50">첨부된 영상이 없어요 - 먼저 영상을 첨부해주세요.</p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="mb-2 text-[11px] text-ink/50">아직 구글 계정이 연결되어 있지 않아요.</p>
+                  <button
+                    type="button"
+                    onClick={handleConnectGoogle}
+                    className="rounded-md border border-ink/15 px-4 py-2 text-sm font-semibold text-ink hover:bg-ink/5"
+                  >
+                    구글 계정 연결하기
+                  </button>
+                </>
+              )}
+              {youtubeUploadMessage && (
+                <p className={`mt-2 text-[11px] ${youtubeUploadMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {youtubeUploadMessage.text}
                 </p>
               )}
             </div>

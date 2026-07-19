@@ -57,6 +57,11 @@ export function isBloggerChannel(channel) {
   return channel === '블로그(구글 Blogger)'
 }
 
+// 유튜브로 실제 업로드 가능한 채널인지 (구글 계정 연결은 Blogger와 공유함)
+export function isYoutubeChannel(channel) {
+  return channel === '유튜브(일본어)'
+}
+
 // 자유롭게 입력한 해시태그 문자열(쉼표/공백/줄바꿈 혼용)을 "#태그" 배열로 정리
 // - 중복 제거, 앞에 #이 없으면 붙여줌, 빈 값 제거
 export function parseHashtags(raw) {

@@ -1,12 +1,9 @@
 import { Router } from 'express'
-import path from 'node:path'
-import { fileURLToPath } from 'node:url'
 import { buildGoogleAuthUrl } from '../lib/googleOAuth.js'
 import { exchangeCodeForTokens } from '../lib/googleTokenClient.js'
 import { createTokenStore } from '../lib/tokenStore.js'
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url))
-const tokenStore = createTokenStore(path.join(__dirname, '..', '.data', 'google-tokens.json'))
+const tokenStore = createTokenStore(process.env.AUTO_TARGET_USER_ID)
 
 const router = Router()
 
@@ -36,7 +33,7 @@ router.get('/google/callback', async (req, res) => {
       clientSecret: process.env.GOOGLE_CLIENT_SECRET,
       redirectUri: process.env.GOOGLE_REDIRECT_URI,
     })
-    tokenStore.save(tokens)
+    await tokenStore.save(tokens)
     res.send('구글 계정 연결이 완료됐어요! 이 창을 닫고 대시보드로 돌아가주세요.')
   } catch (err) {
     res.status(500).send(`토큰 교환 실패: ${err.message}`)

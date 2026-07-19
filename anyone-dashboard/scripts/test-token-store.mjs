@@ -1,11 +1,10 @@
-// tokenStore.js를 Node.js에서 실제 파일 I/O로 실행해서 검증.
+// mergeTokenRow()(tokenStore.js) 병합 규칙을 네트워크 없이 검증.
+// 2026-07-19: 토큰 저장을 로컬 파일 -> Supabase(google_tokens)로 옮기면서, 실제 DB 호출은
+// 네트워크가 필요해 여기서 테스트할 수 없음 - 병합 로직만 순수 함수로 뽑아서 검증함.
 // 실행: node scripts/test-token-store.mjs
 
 import assert from 'node:assert/strict'
-import { mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import path from 'node:path'
-import { createTokenStore } from '../server/lib/tokenStore.js'
+import { mergeTokenRow } from '../server/lib/tokenStore.js'
 
 let passed = 0
 function check(name, fn) {
@@ -20,45 +19,40 @@ function check(name, fn) {
   }
 }
 
-const tmpDir = mkdtempSync(path.join(tmpdir(), 'token-store-'))
-const filePath = path.join(tmpDir, 'nested', 'google-tokens.json')
+console.log('=== 토큰 저장소 병합 규칙 (mergeTokenRow) ===')
 
-console.log('=== 토큰 저장소 (실제 파일 I/O) ===')
-
-check('파일이 아직 없으면 read()는 null, isConnected()는 false', () => {
-  const store = createTokenStore(filePath)
-  assert.equal(store.read(), null)
-  assert.equal(store.isConnected(), false)
+check('기존 값이 없으면 들어온 값 그대로 user_id와 함께 저장됨', () => {
+  const row = mergeTokenRow('user-1', null, { access_token: 'tok-123', refresh_token: 'refresh-abc' })
+  assert.equal(row.user_id, 'user-1')
+  assert.equal(row.access_token, 'tok-123')
+  assert.equal(row.refresh_token, 'refresh-abc')
+  assert.ok(row.updated_at)
 })
 
-check('save() 하면 중첩 폴더까지 자동으로 만들어지고 실제 파일에 저장됨', () => {
-  const store = createTokenStore(filePath)
-  store.save({ access_token: 'tok-123', refresh_token: 'refresh-abc' })
-  const read = store.read()
-  assert.equal(read.access_token, 'tok-123')
-  assert.equal(read.refresh_token, 'refresh-abc')
-  assert.ok(read.updated_at)
+check('refresh_token이 새로 안 오면 기존 값을 유지함 (구글은 재발급 시 보통 refresh_token을 안 줌)', () => {
+  const current = { access_token: 'old-token', refresh_token: 'refresh-abc' }
+  const row = mergeTokenRow('user-1', current, { access_token: 'new-token' })
+  assert.equal(row.access_token, 'new-token')
+  assert.equal(row.refresh_token, 'refresh-abc')
 })
 
-check('save()는 기존 값과 병합됨 (refresh_token은 유지하고 access_token만 갱신 가능)', () => {
-  const store = createTokenStore(filePath)
-  store.save({ access_token: 'new-token' })
-  const read = store.read()
-  assert.equal(read.access_token, 'new-token')
-  assert.equal(read.refresh_token, 'refresh-abc') // 이전 값 유지됨
+check('expires_in이 오면 expires_at을 미래 시각으로 계산함', () => {
+  const before = Date.now()
+  const row = mergeTokenRow('user-1', null, { access_token: 'tok', expires_in: 3600 })
+  const expiresAt = new Date(row.expires_at).getTime()
+  assert.ok(expiresAt > before + 3500 * 1000 && expiresAt <= before + 3700 * 1000)
 })
 
-check('저장 후 isConnected()는 true', () => {
-  const store = createTokenStore(filePath)
-  assert.equal(store.isConnected(), true)
+check('expires_in이 없으면 기존 expires_at을 유지함', () => {
+  const current = { expires_at: '2026-01-01T00:00:00.000Z' }
+  const row = mergeTokenRow('user-1', current, { access_token: 'tok' })
+  assert.equal(row.expires_at, '2026-01-01T00:00:00.000Z')
 })
 
-check('clear() 하면 다시 연결 안 된 상태로 돌아감', () => {
-  const store = createTokenStore(filePath)
-  store.clear()
-  assert.equal(store.isConnected(), false)
+check('scope도 같은 방식으로 새 값이 없으면 기존 값 유지', () => {
+  const current = { scope: 'blogger youtube.upload' }
+  const row = mergeTokenRow('user-1', current, { access_token: 'tok' })
+  assert.equal(row.scope, 'blogger youtube.upload')
 })
-
-rmSync(tmpDir, { recursive: true, force: true })
 
 console.log(`\n총 ${passed}개 테스트 통과`)
