@@ -7,13 +7,19 @@ name: 애니원 자동 파이프라인 (일본 벤치마킹→초안→검수)
 #
 # 참고: 이전에는 1688 상품 소싱 기반(/api/auto/run)이었으나, 2026-07-15부로 일본 벤치마킹
 # 기반으로 교체했다. 1688 파이프라인 코드는 그대로 남아있어 필요하면 다시 전환 가능.
+#
+# 2026-07-19: BENCHMARK_CATEGORIES의 "상품소싱" 카테고리는 실제 상품이 아니라 해시태그
+# 트렌드만 보고 AI가 상상해서 쓴 콘텐츠라, 실제로 어떤 상품인지 알 수 없어 구매 링크를
+# 만들 수 없다는 문제가 있었다(사용자 보고). 그래서 이 카테고리는 자동 스케줄에서 빼고
+# 여행지/패션뷰티소품처럼 실제 상품 연결이 필요 없는 카테고리로만 자동 발행하도록 바꿨다.
+# 진짜 상품 소싱(1688→쿠팡 존재 확인→승인)은 BenchmarkReports.jsx의 수동 승인 흐름으로만 한다.
 on:
   schedule:
     - cron: '0 0 * * *'  # 매일 UTC 00:00 = 한국시간(KST) 오전 9시 - 벤치마킹 수집 + 여행지
-    - cron: '0 3 * * *'  # 매일 UTC 03:00 = 한국시간(KST) 낮 12시 - 상품소싱
+    - cron: '0 3 * * *'  # 매일 UTC 03:00 = 한국시간(KST) 낮 12시 - 패션뷰티소품
     - cron: '0 6 * * *'  # 매일 UTC 06:00 = 한국시간(KST) 오후 3시 - 패션뷰티소품
     - cron: '0 9 * * *'  # 매일 UTC 09:00 = 한국시간(KST) 오후 6시 - 여행지
-    - cron: '0 12 * * *' # 매일 UTC 12:00 = 한국시간(KST) 오후 9시 - 상품소싱
+    - cron: '0 12 * * *' # 매일 UTC 12:00 = 한국시간(KST) 오후 9시 - 여행지
   workflow_dispatch:
     inputs:
       category:
@@ -35,10 +41,10 @@ jobs:
           COLLECT=false
           case "${{ github.event.schedule }}" in
             '0 0 * * *') CATEGORY='여행지'; COLLECT=true ;;
-            '0 3 * * *') CATEGORY='상품소싱' ;;
+            '0 3 * * *') CATEGORY='패션뷰티소품' ;;
             '0 6 * * *') CATEGORY='패션뷰티소품' ;;
             '0 9 * * *') CATEGORY='여행지' ;;
-            '0 12 * * *') CATEGORY='상품소싱' ;;
+            '0 12 * * *') CATEGORY='여행지' ;;
             *)
               CATEGORY="${{ github.event.inputs.category }}"
               if [ -z "$CATEGORY" ]; then CATEGORY='여행지'; fi
