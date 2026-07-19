@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
@@ -45,6 +46,14 @@ export default function AutomationLog() {
             </div>
             {row.summary && <p className="mt-1 text-xs text-ink/60">{row.summary}</p>}
             {row.error_message && <p className="mt-1 text-xs text-stamp-reject">⚠️ {row.error_message}</p>}
+            {row.draft_id && (
+              <Link
+                to={`/drafts?id=${row.draft_id}`}
+                className="mt-2 inline-block text-xs font-semibold text-stamp-amber hover:underline"
+              >
+                이 실행이 만든 초안 보기 →
+              </Link>
+            )}
           </div>
         ))}
       </div>

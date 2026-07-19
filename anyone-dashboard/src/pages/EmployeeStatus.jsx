@@ -181,7 +181,7 @@ export default function EmployeeStatus() {
             </div>
           )}
 
-          {grouped.length === 0 && uncategorized.length === 0 && (
+          {teamGroups.length === 0 && uncategorized.length === 0 && (
             <p className="rounded-lg border border-dashed border-ink/15 py-8 text-center text-sm text-ink/40">
               직원 목록을 불러오는 중이에요...
             </p>

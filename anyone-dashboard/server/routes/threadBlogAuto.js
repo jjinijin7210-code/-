@@ -97,6 +97,7 @@ router.post('/thread-blog/auto-run', async (req, res) => {
     await finishAutomationRun(supabase, run?.id, {
       status: passed ? '완료' : '이슈발생',
       summary: `"${finalTitle}" (${passed ? '통과' : '반려'}${attempts > 0 ? `, AI 자동 수정 ${attempts}회` : ''})`,
+      draftId: savedDraft.id,
     })
     await sendTelegramMessage(
       `🤖 스레드/블로그팀 자동 생성 (${channel})\n\n"${finalTitle}"\n${passed ? '✅ 통과 - 발행 대기 중' : `⚠️ 반려 - ${review.reasons[0] || '사유 미기재'}`}`

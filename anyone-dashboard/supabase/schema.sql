@@ -308,6 +308,7 @@ create table automation_runs (
   status text not null default '진행중', -- 진행중 / 완료 / 이슈발생
   summary text,
   error_message text,
+  draft_id uuid references content_drafts(id) on delete set null, -- 이 실행이 만든 초안 (있으면) - 로그에서 바로 초안으로 이동하기 위함
   started_at timestamptz not null default now(),
   finished_at timestamptz
 );

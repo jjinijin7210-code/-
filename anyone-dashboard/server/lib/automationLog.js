@@ -16,11 +16,17 @@ export async function startAutomationRun(supabase, userId, runType) {
   return data
 }
 
-export async function finishAutomationRun(supabase, runId, { status, summary, errorMessage }) {
+export async function finishAutomationRun(supabase, runId, { status, summary, errorMessage, draftId }) {
   if (!runId) return
   const { error } = await supabase
     .from('automation_runs')
-    .update({ status, summary: summary || null, error_message: errorMessage || null, finished_at: new Date().toISOString() })
+    .update({
+      status,
+      summary: summary || null,
+      error_message: errorMessage || null,
+      draft_id: draftId || null,
+      finished_at: new Date().toISOString(),
+    })
     .eq('id', runId)
   if (error) console.error('[automationLog] 실행 로그 종료 실패:', error.message)
 }

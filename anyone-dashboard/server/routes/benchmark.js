@@ -333,6 +333,7 @@ router.post('/benchmark/content-run', async (req, res) => {
     await finishAutomationRun(supabase, run?.id, {
       status: passed ? '완료' : '이슈발생',
       summary: `"${draft.title}" (${passed ? '통과' : '반려'}${attempts > 0 ? `, AI 자동 수정 ${attempts}회` : ''})`,
+      draftId: savedDraft.id,
     })
 
     const resultLine = passed
