@@ -17,6 +17,7 @@ export const PREVIEW_PLATFORMS = [
   '인스타/틱톡',
   '인스타/틱톡(영어)',
   '인스타/틱톡(일본어)',
+  '유튜브(일본어)',
 ]
 
 // 플랫폼별 미리보기 스타일 힌트 (본문 길이 제한, 비율 등 - 실제 각 서비스 사양의 대략적인 참고값)
@@ -29,12 +30,14 @@ export const PLATFORM_PREVIEW_SPECS = {
   '인스타/틱톡': { bodyMaxLen: 100, aspect: 'vertical', showHashtagsInline: true },
   '인스타/틱톡(영어)': { bodyMaxLen: 100, aspect: 'vertical', showHashtagsInline: true },
   '인스타/틱톡(일본어)': { bodyMaxLen: 100, aspect: 'vertical', showHashtagsInline: true },
+  '유튜브(일본어)': { bodyMaxLen: 150, aspect: 'vertical', showHashtagsInline: false },
 }
 
 // 채널별로 어떤 카테고리(기존 CS링크/벤치마킹 등에서 쓰는 인테리어·생활 / 푸드쇼핑 구분)에 해당하는지
 export function getCategoryForChannel(channel) {
   if (channel === '블로그(네이버)-푸드') return '푸드쇼핑'
   if (channel === '블로그(네이버)-여행') return '여행지'
+  if (channel === '유튜브(일본어)') return '심리학'
   return '인테리어/생활용품'
 }
 
