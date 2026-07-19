@@ -32,6 +32,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url))
 dotenv.config({ path: path.join(__dirname, '..', '.env') })
 
 const app = express()
+// Render는 요청을 프록시 뒤에서 HTTP로 넘겨주기 때문에 이게 없으면 req.protocol이 항상
+// 'http'로 잡혀서, 자동 생성 영상 URL(req.protocol 기반)이 http://로 저장되고 실제 사이트는
+// https://라서 "혼합 콘텐츠"로 브라우저가 재생을 막는 문제가 있었다(2026-07-19 발견 - "영상이
+// 플레이가 안 되네"). trust proxy를 켜면 Render가 보내주는 X-Forwarded-Proto를 그대로 믿는다.
+app.set('trust proxy', true)
 // 로컬 개발 환경(preview 도구 등)이 프론트엔드용 포트를 잡아두려고 PORT를 자동으로
 // 미리 설정해두는 경우가 있어서, 그게 이 백엔드 서버까지 덮어써버리는 걸 막기 위해
 // BACKEND_PORT를 PORT보다 먼저 확인함 (Render 배포 환경엔 BACKEND_PORT가 없으니 기존처럼 PORT를 그대로 씀).
