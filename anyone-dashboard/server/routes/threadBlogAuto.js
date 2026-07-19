@@ -11,6 +11,7 @@ import { callClaude } from '../lib/anthropicClient.js'
 import { buildDraftMessages, parseDraftResponse } from '../lib/promptBuilder.js'
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { sendTelegramMessage } from '../lib/telegramClient.js'
+import { getLatestMarketInsight } from '../lib/marketInsights.js'
 import { pickTrendingTopic } from '../lib/threadsSearchClient.js'
 import { compareSearchTrend } from '../lib/naverDatalabClient.js'
 
@@ -118,7 +119,11 @@ router.post('/thread-blog/auto-run', async (req, res) => {
   await setEmployeeStatus(supabase, targetUserId, WRITER_ROLE, '작업중', `"${topic}" 주제로 ${channel} 초안 작성 중`)
 
   try {
-    const { system, messages } = buildDraftMessages({ channel, topic })
+    // 국가별 트렌드 비교 분석(있으면) 참고자료로 반영 - 전 채널이 공유하는 인사이트(2026-07-19)
+    const marketNote = await getLatestMarketInsight(supabase, targetUserId)
+    const referenceNote = marketNote ? `[국가별 트렌드 비교]\n${marketNote}` : undefined
+
+    const { system, messages } = buildDraftMessages({ channel, topic, referenceNote })
     const draftText = await callClaude({ system, messages, maxTokens: channel.startsWith('블로그') ? 3000 : 1024 })
     const draft = parseDraftResponse(draftText)
 

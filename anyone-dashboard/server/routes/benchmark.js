@@ -12,6 +12,7 @@ import { buildDraftMessages, buildTranslateMessages, parseDraftResponse } from '
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { generateImage } from '../lib/imageClient.js'
 import { sendTelegramMessage } from '../lib/telegramClient.js'
+import { getLatestMarketInsight } from '../lib/marketInsights.js'
 
 const TOP_PER_HASHTAG = 3 // 해시태그마다 상위 몇 개만 저장할지 (Apify 사용량/비용 절감)
 const SOURCING_ROLE = '소싱 담당 (1688 · 쿠팡 교차 확인)'
@@ -148,10 +149,13 @@ router.post('/benchmark/content-run', async (req, res) => {
       .order('popularity_score', { ascending: false })
       .limit(3)
 
-    const referenceNote =
+    const benchmarkNote =
       benchmarks && benchmarks.length > 0
         ? benchmarks.map((b) => `[${b.platform} ${b.keyword}] ${b.note}`).join('\n')
         : `(오늘 수집된 벤치마킹 자료 없음 - "${category.label}" 카테고리 일반적인 특징으로 작성)`
+    // 국가별 트렌드 비교 분석(있으면)도 같이 참고자료로 - 전 채널이 공유하는 인사이트(2026-07-19)
+    const marketNote = await getLatestMarketInsight(supabase, targetUserId)
+    const referenceNote = marketNote ? `${benchmarkNote}\n\n[국가별 트렌드 비교]\n${marketNote}` : benchmarkNote
 
     // 2) AI 초안 생성 - 참고 자료를 그대로 번역/복제하지 않고 "왜 인기 있는지"만 반영해 새로 재구성
     // (buildDraftUserPrompt의 LOCALIZATION_RULES가 이 원칙을 이미 강제함)

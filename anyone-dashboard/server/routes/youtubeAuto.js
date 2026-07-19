@@ -16,11 +16,16 @@ import { searchPopularVideosMultiRegion } from '../lib/youtubeClient.js'
 import { sendTelegramMessage } from '../lib/telegramClient.js'
 import { generatePsychologyVideo } from '../lib/psychologyVideoGenerator.js'
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
+import { callClaude } from '../lib/anthropicClient.js'
+import { buildMarketAnalysisMessages } from '../lib/marketAnalysis.js'
+import { saveMarketInsight, getLatestMarketInsight } from '../lib/marketInsights.js'
 
 const router = Router()
 const RESEARCHER_ROLE = '심리학 콘텐츠 리서처 (일본 채널 · 다지역 인기 영상 검색)'
 const VIDEO_ROLE = '영상 제작 담당 (심리학 유튜브)'
-const REGIONS = ['US', 'KR', 'JP']
+// 2026-07-19: 크로스마켓 비교는 우선 미국·일본으로 한정 - 상용화 단계에서 한국/영국/프랑스 등
+// 더 많은 나라로 넓히기로 함(사용자 결정, 지금은 스코프 최소화).
+const REGIONS = ['US', 'JP']
 const YOUTUBE_CHANNEL = '유튜브(일본어)'
 
 // 소재가 마르지 않도록 돌아가면서 검색할 주제 후보 (매번 랜덤으로 하나 고름)
@@ -78,13 +83,31 @@ router.post('/youtube/auto-research', async (req, res) => {
       })
     }
 
-    await setEmployeeStatus(supabase, targetUserId, RESEARCHER_ROLE, '완료', `"${query}" 검색 완료 - 상위 ${top.length}건 저장`)
-    await finishAutomationRun(supabase, run?.id, { status: '완료', summary: `"${query}" - ${top.length}건 저장` })
+    // 나라별 비교 분석 - "미국은 지금 어떤 형식이 인기인가", "일본 썸네일 스타일" 같은 인사이트를
+    // 뽑아서 전 채널(인스타틱톡/스레드블로그/유튜브) 콘텐츠 생성에 참고자료로 쓸 수 있게 저장.
+    let insightNote = null
+    try {
+      const videosByRegion = {}
+      for (const region of REGIONS) {
+        videosByRegion[region] = videos.filter((v) => v.region === region).slice(0, 10)
+      }
+      const hasEnoughData = Object.values(videosByRegion).some((list) => list.length > 0)
+      if (hasEnoughData) {
+        const { system: maSystem, messages: maMessages } = buildMarketAnalysisMessages({ videosByRegion })
+        insightNote = await callClaude({ system: maSystem, messages: maMessages, maxTokens: 800 })
+        await saveMarketInsight(supabase, targetUserId, insightNote)
+      }
+    } catch (insightErr) {
+      console.error('[youtube/auto-research] 크로스마켓 분석 실패, 리서치 결과는 그대로 저장:', insightErr.message)
+    }
+
+    await setEmployeeStatus(supabase, targetUserId, RESEARCHER_ROLE, '완료', `"${query}" 검색 완료 - 상위 ${top.length}건 저장${insightNote ? ' + 국가 비교 분석 완료' : ''}`)
+    await finishAutomationRun(supabase, run?.id, { status: '완료', summary: `"${query}" - ${top.length}건 저장${insightNote ? ' + 비교 분석' : ''}` })
     await sendTelegramMessage(
-      `🤖 유튜브팀 트렌드 리서치 (${query})\n\n✅ ${top.length}건 저장됨\n${top.map((v) => `- ${v.title} (${v.region})`).join('\n')}`
+      `🤖 유튜브팀 트렌드 리서치 (${query})\n\n✅ ${top.length}건 저장됨\n${top.map((v) => `- ${v.title} (${v.region})`).join('\n')}${insightNote ? `\n\n📊 국가 비교 분석\n${insightNote}` : ''}`
     )
 
-    res.json({ ok: true, query, savedCount: top.length })
+    res.json({ ok: true, query, savedCount: top.length, insightNote })
   } catch (err) {
     await setEmployeeStatus(supabase, targetUserId, RESEARCHER_ROLE, '이슈발생', err.message)
     await finishAutomationRun(supabase, run?.id, { status: '이슈발생', errorMessage: err.message })
@@ -127,7 +150,10 @@ router.post('/youtube/psychology-video-run', async (req, res) => {
       .eq('category', '심리학')
       .order('collected_at', { ascending: false })
       .limit(5)
-    const referenceNote = references?.length ? references.map((r) => `- ${r.keyword}: ${r.note}`).join('\n') : undefined
+    const linkNote = references?.length ? references.map((r) => `- ${r.keyword}: ${r.note}`).join('\n') : ''
+    // 국가별 비교 분석(있으면)도 같이 참고자료로 넣어서 포맷/스타일 결정에 반영
+    const marketNote = await getLatestMarketInsight(supabase, targetUserId)
+    const referenceNote = [linkNote, marketNote ? `[국가별 트렌드 비교]\n${marketNote}` : ''].filter(Boolean).join('\n\n') || undefined
 
     const { fileName, title, hook, hasMusic } = await generatePsychologyVideo({ topic, format: videoFormat, referenceNote })
     const videoUrl = `${req.protocol}://${req.get('host')}/generated/${fileName}`
