@@ -1,0 +1,19 @@
+name: 애니원 서버 깨어있게 유지
+
+# Render 무료 서버는 15분 정도 요청이 없으면 잠들고, 다음 접속 때 30초~1분 정도
+# "깨어나는 중" 화면을 거쳐야 한다. 진희님이 대시보드를 열 때마다 이 화면을 보지
+# 않도록, 10분마다 가벼운 /health 엔드포인트를 호출해서 서버를 계속 깨워둔다.
+# (기존 anyone-auto-pipeline.yml도 부수적으로 깨우는 효과가 있지만 3시간 간격이라
+# 그 사이에 다시 잠들어버린다 — 이 워크플로가 그 공백을 메운다.)
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: /health 핑
+        run: curl -sS -o /dev/null -w "status=%{http_code}\n" https://anyone-dashboard-p3an.onrender.com/health
