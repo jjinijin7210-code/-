@@ -99,7 +99,7 @@ export default function EmployeeStatus() {
       <PageHeader
         title="직원 현황 — AnyOne 팀"
         emoji="🧑‍💼"
-        description="총괄 팀장 아래 채널별 3개 팀(인스타/틱톡·스레드/블로그·유튜브)의 현재 작업 상태"
+        description="루나(총괄 팀장) 아래 채널별 3개 팀(인스타/틱톡·스레드/블로그·유튜브)의 현재 작업 상태"
         onAddClick={openAdd}
         addLabel="직원 추가"
       />

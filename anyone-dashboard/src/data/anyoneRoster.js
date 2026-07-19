@@ -3,7 +3,7 @@
 // department 필드에 "팀 · 부서" 형식으로 팀 구분을 같이 넣어서(DB 스키마 변경 없이) 그룹핑에 씀.
 
 export const DEFAULT_ANYONE_ROSTER = [
-  { department: '총괄', role_name: '총괄 팀장 (전체 진행 확인·브리핑)', role_emoji: '🧑‍💼' },
+  { department: '총괄', role_name: '루나 (총괄 팀장 - 전체 진행 확인·브리핑)', role_emoji: '🌙' },
 
   { department: '인스타틱톡팀 · 리서치', role_name: '리서처', role_emoji: '🔍' },
   { department: '인스타틱톡팀 · 콘텐츠제작', role_name: '작성자 (AI 초안 생성)', role_emoji: '✍️' },
