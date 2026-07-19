@@ -150,6 +150,7 @@ export default function BenchmarkReports() {
   // 파트너스 링크는 진희님이 직접 상품을 등록해서 만드는 구조라, 쿠팡에 없는 상품은
   // 애초에 진행하면 안 되고, 있는 상품도 자동으로 바로 게시하지 않고 승인을 거쳐야 함).
   const [coupangKeyword, setCoupangKeyword] = useState('')
+  const [sourcingChannel, setSourcingChannel] = useState('인스타/틱톡')
   const [coupangCheckState, setCoupangCheckState] = useState({}) // key -> { loading, error, notFound, match, creatingDraft, imageChoice }
 
   const checkCoupang = async (product, key) => {
@@ -178,11 +179,19 @@ export default function BenchmarkReports() {
     try {
       const { match, imageChoice } = state
       const priceText = match.price ? `${Number(match.price).toLocaleString('ko-KR')}원` : '정보 없음'
-      const topic = `상품명: ${product.title} (가격대: ${priceText})
+      const channel = sourcingChannel
+      // 블로그는 본문에 실제 구매 링크를 바로 넣을 수 있지만(캡션만 되는 인스타/틱톡과 다름),
+      // 링크가 실제로 있어야 의미가 있어서 쿠팡에 없는 상품은 애초에 이 흐름에 못 들어옴
+      // (승인 게이트가 이미 막아줌) - 2026-07-19 요청, 상품소싱 블로그 글에 쿠팡 링크 기재.
+      const topic = channel.startsWith('블로그')
+        ? `상품명: ${product.title} (가격대: ${priceText})
+
+[필수 지시사항] 본문 중 자연스러운 위치에 아래 구매 링크를 안내하는 문장을 반드시 포함해서 작성해줘
+(링크 자체를 지어내지 말고 정확히 이 URL을 그대로 써): ${match.productUrl}`
+        : `상품명: ${product.title} (가격대: ${priceText})
 
 [필수 지시사항] 게시물 마지막 부분에 "댓글에 '정보'라고 남겨주시면 구매 링크 보내드릴게요!" 같은
 자연스러운 유도 문구를 반드시 포함해서 작성해줘. 이게 없으면 안 돼.`
-      const channel = '인스타/틱톡'
       const draft = await generateDraft({ channel, topic })
       const review = await reviewDraftWithAi({ title: draft.title, body: draft.body, channel })
 
@@ -436,8 +445,19 @@ export default function BenchmarkReports() {
             value={coupangKeyword}
             onChange={(e) => setCoupangKeyword(e.target.value)}
           />
+          <div className="mt-2 flex items-center gap-2">
+            <label className="text-[11px] font-semibold text-ink/60">승인 시 만들 채널</label>
+            <select
+              className="rounded-md border border-ink/15 px-2 py-1 text-xs"
+              value={sourcingChannel}
+              onChange={(e) => setSourcingChannel(e.target.value)}
+            >
+              <option value="인스타/틱톡">인스타/틱톡 (댓글 트리거 유도 문구)</option>
+              <option value="블로그(네이버)-생활">블로그(네이버)-생활 (본문에 쿠팡 링크 직접 기재)</option>
+            </select>
+          </div>
           <p className="mt-1 text-[11px] text-ink/40">
-            쿠팡에서 실제로 파는 상품인지 먼저 확인하고, 승인해야만 AI 초안이 만들어져요 — 인포크 파트너스 링크는 직접 상품을 등록해서 만드셔야 하니, 그것부터 먼저 하고 오셔도 돼요.
+            쿠팡에서 실제로 파는 상품인지 먼저 확인하고, 승인해야만 AI 초안이 만들어져요 — 인포크 파트너스 링크는 직접 상품을 등록해서 만드셔야 하니, 그것부터 먼저 하고 오셔도 돼요. 블로그를 고르면 본문에 쿠팡 상품 링크가 바로 들어가요.
           </p>
         </div>
 
