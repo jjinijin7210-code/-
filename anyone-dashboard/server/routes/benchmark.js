@@ -11,6 +11,7 @@ import { callClaude } from '../lib/anthropicClient.js'
 import { buildDraftMessages, buildTranslateMessages, parseDraftResponse } from '../lib/promptBuilder.js'
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { generateImage } from '../lib/imageClient.js'
+import { searchPhotos, fetchPhotoAsDataUrl } from '../lib/pexelsClient.js'
 import { sendTelegramMessage } from '../lib/telegramClient.js'
 import { getLatestMarketInsight } from '../lib/marketInsights.js'
 
@@ -43,7 +44,9 @@ function checkAuth(req, res) {
 
 const router = Router()
 
-// 하루 1번 호출 - 일본 인스타/틱톡 인기 게시물을 카테고리별로 수집해 benchmark_reports에 저장.
+// 하루 1번 호출 - 인스타/틱톡 인기 게시물을 카테고리별로 수집해 benchmark_reports에 저장.
+// 2026-07-19: 동물/재밌는영상 카테고리는 일본 한정이 아니라 해외 전반에서 검색(해시태그가 영어)
+// - 최종 게시물은 일본어로 번역돼 일본 채널에 올라감.
 router.post('/benchmark/collect', async (req, res) => {
   const targetUserId = checkAuth(req, res)
   if (!targetUserId) return
@@ -138,6 +141,9 @@ router.post('/benchmark/content-run', async (req, res) => {
 
   try {
     // 1) 오늘 수집된 벤치마킹 결과 중 이 카테고리에서 인기도 상위 몇 개를 참고 자료로 사용
+    // 2026-07-19: 동물/재밌는영상 카테고리로 바뀌면서 "인기 많고 좋아요 1만 이상"만 참고하기로
+    // 함(사용자 결정) - 기준 미달이면 아래 fallback 문구로 "오늘 자료 없음" 처리됨.
+    const MIN_POPULARITY_SCORE = 10000
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
     const { data: benchmarks } = await supabase
@@ -146,13 +152,14 @@ router.post('/benchmark/content-run', async (req, res) => {
       .eq('user_id', targetUserId)
       .eq('category', category.label)
       .gte('collected_at', todayStart.toISOString())
+      .gte('popularity_score', MIN_POPULARITY_SCORE)
       .order('popularity_score', { ascending: false })
       .limit(3)
 
     const benchmarkNote =
       benchmarks && benchmarks.length > 0
         ? benchmarks.map((b) => `[${b.platform} ${b.keyword}] ${b.note}`).join('\n')
-        : `(오늘 수집된 벤치마킹 자료 없음 - "${category.label}" 카테고리 일반적인 특징으로 작성)`
+        : `(오늘 수집된 좋아요 ${MIN_POPULARITY_SCORE.toLocaleString()}건 이상 벤치마킹 자료 없음 - "${category.label}" 카테고리 일반적인 특징으로 작성)`
     // 국가별 트렌드 비교 분석(있으면)도 같이 참고자료로 - 전 채널이 공유하는 인사이트(2026-07-19)
     const marketNote = await getLatestMarketInsight(supabase, targetUserId)
     const referenceNote = marketNote ? `${benchmarkNote}\n\n[국가별 트렌드 비교]\n${marketNote}` : benchmarkNote
@@ -167,6 +174,7 @@ router.post('/benchmark/content-run', async (req, res) => {
       channel: targetChannel,
       topic,
       referenceNote,
+      needsPhotoQuery: true,
     })
     // 1024로는 카테고리에 따라(특히 여행지처럼 서술이 길어지는 주제) JSON이 중간에 잘려서
     // 파싱 실패("AI 응답을 JSON으로 해석하지 못했어요")가 나는 게 실제 운영 중 확인됨(2026-07-18,
@@ -198,44 +206,55 @@ router.post('/benchmark/content-run', async (req, res) => {
       await setEmployeeStatus(supabase, targetUserId, roleName, passed ? '완료' : '이슈발생', task)
     }
 
-    // 4) 실제 스크래핑한 원본 사진을 그대로 쓰지 않기 위해, 주제에 맞는 완전히 새로운 이미지를 AI로 생성
-    // (실존 인물 얼굴 클로즈업 없이, 사물/반려동물/풍경/소품 중심으로 그려달라고 명시)
-    // 상품소싱·여행지는 실제 일본 인기 콘텐츠 리서치 결과 "TOP5"/"○○選" 같은 굵은 텍스트가
-    // 박힌 화려한 랭킹형 썸네일이 잘 먹히는 걸 확인해서(2026-07-18) 이 두 카테고리만 그 스타일로,
-    // 나머지 카테고리는 기존처럼 텍스트 없는 깔끔한 사진 스타일 그대로 유지함.
-    const THUMBNAIL_STYLE_CATEGORIES = ['상품소싱', '여행지']
-    await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '작업중', `"${draft.title}" 이미지 생성 중`)
+    // 4) 이미지 준비 - 2026-07-19(사용자 결정: "그 동물의 다른 사진을 찾아서 올리면 되니까"):
+    // 실제로 화제가 된 동물/장면을 Pexels(무료 라이선스 스톡사진)에서 검색해서 진짜 사진을 우선
+    // 사용함 - 원본 바이럴 게시물을 그대로 퍼가는 게 아니라 같은 동물의 "다른" 정식 라이선스
+    // 사진을 쓰는 방식이라 저작권 문제가 없음. Pexels에서 못 찾으면 기존처럼 AI가 완전히 새로운
+    // 이미지를 창작하는 방식으로 대체함.
+    await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '작업중', `"${draft.title}" 이미지 준비 중`)
     const images = []
+    let pickedPhoto = null
+    if (draft.photoQuery) {
+      try {
+        const photos = await searchPhotos({ query: draft.photoQuery, perPage: 5 })
+        if (photos.length > 0) pickedPhoto = photos[Math.floor(Math.random() * Math.min(photos.length, 3))]
+      } catch (pexelsErr) {
+        console.error('[benchmark/content-run] Pexels 검색 실패, AI 이미지 생성으로 대체:', pexelsErr.message)
+      }
+    }
     try {
-      const imagePrompt = THUMBNAIL_STYLE_CATEGORIES.includes(category.label)
-        ? `일본 SNS(인스타/틱톡)에서 잘 먹히는 화려한 랭킹형 썸네일 이미지. 배경은 "${draft.title}"
-주제에 어울리는 상품/장소 사진, 그 위에 굵고 큼직한 일본어 텍스트로 임팩트 있게 제목을 얹은
-스타일 (예: "TOP5", "○○選" 같은 리스트형 썸네일). 텍스트는 눈에 확 띄게 크고 두꺼운 폰트,
-배경보다 텍스트가 먼저 보이도록. 실존 인물의 얼굴을 클로즈업으로 그리지 말 것.
-저작권 문제 없는 완전히 새로운 창작 이미지여야 함.`
-        : `"${draft.title}"라는 SNS 게시물에 어울리는 사진 스타일 이미지. ${category.label} 분위기.
+      if (pickedPhoto) {
+        const dataUrl = await fetchPhotoAsDataUrl(pickedPhoto.full)
+        images.push({
+          id: crypto.randomUUID(),
+          kind: 'image',
+          filename: `benchmark-${Date.now()}.jpg`,
+          mime_type: 'image/jpeg',
+          size: dataUrl.length,
+          data_url: dataUrl,
+          note: `Pexels 무료 스톡사진 (검색어: ${draft.photoQuery}, 촬영: ${pickedPhoto.photographer})`,
+          created_at: new Date().toISOString(),
+        })
+        await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '완료', `"${draft.title}" 스톡사진 사용 완료 (${pickedPhoto.photographer})`)
+      } else {
+        const imagePrompt = `"${draft.title}"라는 SNS 게시물에 어울리는 사진 스타일 이미지. ${category.label} 분위기.
 실존 인물의 얼굴을 클로즈업으로 그리지 말고, 사물·반려동물·풍경·소품 중심의 따뜻하고 감성적인 구도로.
 저작권 문제 없는 완전히 새로운 창작 이미지여야 함.`
-      const dataUrl = await generateImage({ prompt: imagePrompt })
-      images.push({
-        id: crypto.randomUUID(),
-        kind: 'image',
-        filename: `benchmark-${Date.now()}.png`,
-        mime_type: 'image/png',
-        size: dataUrl.length,
-        data_url: dataUrl,
-        note: `일본 벤치마킹(${category.label}) 기반 AI 생성 이미지`,
-        created_at: new Date().toISOString(),
-      })
-      await setEmployeeStatus(
-        supabase,
-        targetUserId,
-        IMAGE_ROLE,
-        '완료',
-        `"${draft.title}" ${THUMBNAIL_STYLE_CATEGORIES.includes(category.label) ? '랭킹형 썸네일' : '이미지'} 생성 완료`
-      )
+        const dataUrl = await generateImage({ prompt: imagePrompt })
+        images.push({
+          id: crypto.randomUUID(),
+          kind: 'image',
+          filename: `benchmark-${Date.now()}.png`,
+          mime_type: 'image/png',
+          size: dataUrl.length,
+          data_url: dataUrl,
+          note: `해외 벤치마킹(${category.label}) 기반 AI 생성 이미지 (Pexels 검색 결과 없음)`,
+          created_at: new Date().toISOString(),
+        })
+        await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '완료', `"${draft.title}" 이미지 생성 완료`)
+      }
     } catch (imgErr) {
-      console.error('[benchmark/content-run] 이미지 생성 실패, 이미지 없이 저장:', imgErr.message)
+      console.error('[benchmark/content-run] 이미지 준비 실패, 이미지 없이 저장:', imgErr.message)
       await setEmployeeStatus(supabase, targetUserId, IMAGE_ROLE, '이슈발생', imgErr.message)
     }
 

@@ -4,10 +4,15 @@
 
 // 2026-07-18: "일상공감·개그"/"브이로그·힐링"(고양이·강아지 위주)이 식상하다는 피드백으로
 // 제외하고, 여행지 비중을 늘리고 상품 소싱 카테고리를 새로 추가함.
+
+// 2026-07-19: 패션뷰티소품(그림체가 계속 반복되고 반응도 약함)·상품소싱(채널이 더 커진 뒤 재개
+// 예정)·여행지(블로그팀으로 이관)를 전부 빼고, "해외에서 좋아요 1만 이상 받은 신기한 동물/재밌는
+// 영상"만 집중적으로 벤치마킹하는 걸로 전면 교체(사용자 결정). 실제 영상을 그대로 재사용하지
+// 않고(저작권 리스크) 트렌드 포인트만 참고해 AI가 새로 창작하는 기존 원칙은 유지 - 해시태그도
+// 일본이 아니라 전세계 콘텐츠를 넓게 잡기 위해 영어로 검색.
 export const BENCHMARK_CATEGORIES = [
-  { label: '패션뷰티소품', hashtags: ['かわいい', 'プチプラ', '韓国コスメ'] },
-  { label: '여행지', hashtags: ['旅行', '絶景', '穴場スポット', '国内旅行'] },
-  { label: '상품소싱', hashtags: ['便利グッズ', '買ってよかった', '神アイテム', '100均'] },
+  { label: '신기한동물', hashtags: ['wildanimals', 'weirdanimals', 'amazinganimals', 'animalfacts'] },
+  { label: '해외재밌는영상', hashtags: ['funnyvideos', 'viralvideos', 'oddlysatisfying', 'wow'] },
 ]
 
 export function getCategoryByLabel(label) {

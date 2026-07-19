@@ -5,6 +5,10 @@
 //
 // 2026-07-19: 일본 유튜브 채널 컨텐츠 방향을 "심리학"으로 확정 (사용자 결정) - 검색어 풀을
 // 심리학 콘텐츠 위주로 바꾸고, 담당 리서처도 심리학 특화로 이름 변경.
+//
+// 2026-07-19 (같은 날 추가 변경, 사용자 결정): 심리학 안에서도 시니어 세대가 공감할 만한
+// "가족 간 심리"(자식과의 관계, 부부/배우자와의 관계 등)로 더 좁힘 - 범용 심리학 팩트보다
+// 반응이 좋을 거라 판단.
 // ============================================================
 
 import { Router } from 'express'
@@ -29,37 +33,41 @@ const REGIONS = ['US', 'JP']
 const YOUTUBE_CHANNEL = '유튜브(일본어)'
 
 // 소재가 마르지 않도록 돌아가면서 검색할 주제 후보 (매번 랜덤으로 하나 고름)
+// 2026-07-19: 범용 심리학 팩트 대신 "가족 간 심리"(자식·배우자와의 관계)로 좁힘(사용자 결정)
 const QUERY_POOL = [
-  'psychology facts about human behavior',
-  'dark psychology tricks explained',
-  'why people do this psychology',
-  'relationship psychology tips',
-  'body language psychology signs',
-  'mind tricks psychology facts',
+  'family relationship psychology',
+  'parents and adult children psychology',
+  'marriage relationship psychology advice',
+  'why adult children distance from parents psychology',
+  'psychology of aging parents relationship',
+  'wife husband relationship psychology',
 ]
 
 // 일본은 한국이랑 생활상이 비슷한 부분이 많다는 판단(사용자 결정, 2026-07-19)으로, 일본 자료가
 // 부족해도 한국에서 사람들이 실제로 많이 겪는 고민/걱정 콘텐츠를 벤치마킹 삼아 심리학 채널
 // 주제를 잡는다. 이 결과도 category='심리학'으로 저장되어 psychology-video-run의 참고자료에
 // 자동으로 같이 실린다.
+// 2026-07-19: 가족/부부 관계 고민으로 좁힘(사용자 결정)
 const KR_WORRY_QUERY_POOL = [
-  '요즘 고민 많은 사람들 심리',
-  '인간관계 고민 심리학',
-  '스트레스 원인 심리학',
-  '자존감 낮은 이유 심리',
-  '불안한 마음 다스리는 법',
-  '번아웃 심리학',
+  '자식과 소통 안되는 부모 심리',
+  '노후 부부관계 심리',
+  '자녀와의 갈등 심리학',
+  '황혼이혼 부부 심리',
+  '부모 자식 갈등 심리학',
+  '아내 남편 서운한 마음 심리',
 ]
 
 // 실제 영상 제작용 주제 후보 (스크립트 작성 지시문이라 한글로 구체적으로)
+// 2026-07-19: 시니어 대상 "자식과의 심리", "가족 간 심리", "아내와의 심리" 등 공감형 주제로
+// 전면 교체(사용자 결정) - psychologyScript.js의 대본 톤도 이 방향에 맞춰 함께 조정함.
 const VIDEO_TOPIC_POOL = [
-  '첫인상이 왜 그렇게 오래 가는지에 대한 심리학',
-  '거짓말할 때 사람들이 무의식적으로 보이는 신호',
-  '손해를 더 크게 느끼는 심리 - 손실 회피 편향',
-  '사람을 끌어당기는 대화법의 심리학',
-  '스트레스를 받을 때 뇌와 몸에서 일어나는 일',
-  '단순히 자주 보기만 해도 호감이 생기는 이유 (단순노출 효과)',
-  '왜 우리는 남과 비교하면 불행해질까',
+  '자식이 연락을 잘 안 하는 이유 - 부모 자녀 심리',
+  '나이 들수록 부부 사이가 멀어지는 심리적 이유',
+  '자녀에게 서운함을 느끼는 부모의 심리',
+  '오래된 부부일수록 대화가 줄어드는 이유',
+  '자식 독립 후 찾아오는 빈둥지 증후군 심리',
+  '배우자에게 인정받고 싶은 마음의 심리학',
+  '가족인데도 자꾸 서운한 이유 - 기대와 애착의 심리',
 ]
 
 router.post('/youtube/auto-research', async (req, res) => {

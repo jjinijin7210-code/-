@@ -30,6 +30,8 @@ const TRAVEL_BLOG_TONE = `[여행지 블로그 전용 지침] 소개하는 장�
 const CHANNEL_TONE = {
   스레드: '스레드용 톤: 블로그보다 훨씬 캐주얼하게, 짧고 리듬감 있게 써줘.',
   '블로그(네이버)-여행': `${BLOG_TONE}\n\n${TRAVEL_BLOG_TONE}`,
+  // 구글 블로그(한국 숨은 여행지 → 영어 번역용 한국어 소스)도 여행 블로그와 같은 톤 사용
+  '블로그(구글 Blogger)': `${BLOG_TONE}\n\n${TRAVEL_BLOG_TONE}`,
 }
 // 인스타/틱톡은 번역/현지화 담당(한국어·영어·일본어)이 언어별로 분리되어 있어서 접두 매칭으로 처리
 const INSTA_TIKTOK_TONE = '인스타/틱톡용 톤: 캐주얼하고 임팩트 있게, 짧은 문장 위주로 써줘.'
@@ -58,11 +60,22 @@ function getTargetLanguage(channel) {
   return '한국어'
 }
 
+// 2026-07-19: 동물/재밌는영상 카테고리는 실제로 화제가 된 동물 사진을 Pexels(무료 스톡사진)에서
+// 찾아 붙이기로 함(사용자 결정: "그 동물의 다른 사진을 찾아서 올리면 되니까") - AI가 참고자료
+// 속 실제 동물/장면을 영어 키워드로 뽑아내야 검색이 가능해서, 그 키워드를 초안 JSON에 같이 담게 함.
+const PHOTO_QUERY_RULE = `[사진 검색어] 위 참고자료에서 실제로 다뤄진 동물/장면이 뭔지 파악해서, 무료
+스톡사진 사이트에서 검색할 영어 키워드 2~3단어를 "photoQuery" 필드에 추가로 담아줘
+(예: "red panda snow", "golden retriever puppy", "capybara hot spring"). 특정 브랜드·장소 이름
+없이 동물 종류·행동 중심으로. 참고자료에 특정 동물이 안 나와 있으면 카테고리 분위기에 맞는
+일반적인 키워드로 대신 채워.`
+
 /**
  * 초안 생성 요청의 system prompt를 만듭니다.
  * @param {string} channel - '스레드' | '인스타/틱톡' 등
+ * @param {object} [opts]
+ * @param {boolean} [opts.needsPhotoQuery] - true면 JSON 응답에 photoQuery 필드도 요구함
  */
-export function buildDraftSystemPrompt(channel) {
+export function buildDraftSystemPrompt(channel, { needsPhotoQuery = false } = {}) {
   const parts = [
     '너는 애니원(AnyOne)의 콘텐츠 작성자야. 실제 사람이 쓴 것처럼 자연스러운 SNS 게시물 초안을 써줘.',
     COMMON_TONE_RULES,
@@ -75,8 +88,9 @@ export function buildDraftSystemPrompt(channel) {
     parts.push(`[언어] title/body/hashtags 전부 반드시 ${lang}로만 작성해. 다른 언어를 섞지 마.`)
     if (lang === '일본어') parts.push(JAPANESE_NATURALNESS_RULES)
   }
+  if (needsPhotoQuery) parts.push(PHOTO_QUERY_RULE)
   parts.push(
-    '반드시 아래 JSON 형식으로만 응답해 (다른 설명 없이 JSON만): {"title": "제목", "body": "본문", "hashtags": "해시태그 공백으로 구분"}'
+    `반드시 아래 JSON 형식으로만 응답해 (다른 설명 없이 JSON만): {"title": "제목", "body": "본문", "hashtags": "해시태그 공백으로 구분"${needsPhotoQuery ? ', "photoQuery": "영어 검색 키워드"' : ''}}`
   )
   return parts.join('\n\n')
 }
@@ -97,9 +111,9 @@ export function buildDraftUserPrompt({ channel, topic, referenceNote }) {
   return lines.join('\n')
 }
 
-export function buildDraftMessages({ channel, topic, referenceNote }) {
+export function buildDraftMessages({ channel, topic, referenceNote, needsPhotoQuery }) {
   return {
-    system: buildDraftSystemPrompt(channel),
+    system: buildDraftSystemPrompt(channel, { needsPhotoQuery }),
     messages: [{ role: 'user', content: buildDraftUserPrompt({ channel, topic, referenceNote }) }],
   }
 }
@@ -185,7 +199,8 @@ export function buildTranslateMessages({ targetChannel, title, body, hashtags })
 
 /**
  * Claude 응답 텍스트(JSON 또는 ```json 코드펜스로 감싼 JSON)를 파싱해서
- * { title, body, hashtags } 형태로 돌려줍니다. 형식이 이상하면 명확한 에러를 던집니다.
+ * { title, body, hashtags, photoQuery } 형태로 돌려줍니다. photoQuery는 needsPhotoQuery로 요청한
+ * 경우에만 채워지고, 그 외엔 빈 문자열입니다. 형식이 이상하면 명확한 에러를 던집니다.
  */
 export function parseDraftResponse(text) {
   if (!text || !text.trim()) {
@@ -213,5 +228,6 @@ export function parseDraftResponse(text) {
     title: String(parsed.title),
     body: String(parsed.body),
     hashtags: parsed.hashtags ? String(parsed.hashtags) : '',
+    photoQuery: parsed.photoQuery ? String(parsed.photoQuery) : '',
   }
 }
