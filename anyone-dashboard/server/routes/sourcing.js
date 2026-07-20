@@ -41,10 +41,10 @@ router.get('/sourcing/coupang', async (req, res) => {
   }
 })
 
-// 네이버 쇼핑(클립 포함) 상품 검색 - 공식 API라 결과에 실제 구매 링크가 바로 포함됨
+// 네이버 쇼핑(스마트스토어) 상품 검색 - Apify 스크래핑, 결과에 실제 구매 링크가 바로 포함됨
 // (1688처럼 이후에 쿠팡 확인 같은 별도 존재 확인 단계가 필요 없음)
 router.get('/sourcing/naver-shopping', async (req, res) => {
-  const { q, display, sort } = req.query
+  const { q, maxCrawlPages } = req.query
 
   if (!q || !String(q).trim()) {
     return res.status(400).json({ error: '검색어(q)는 필수예요.' })
@@ -53,8 +53,7 @@ router.get('/sourcing/naver-shopping', async (req, res) => {
   try {
     const products = await searchNaverShoppingProducts({
       query: q,
-      display: display ? Number(display) : undefined,
-      sort: sort || undefined,
+      maxCrawlPages: maxCrawlPages ? Number(maxCrawlPages) : undefined,
     })
     res.json({ products })
   } catch (err) {

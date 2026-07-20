@@ -239,8 +239,10 @@ export default function BenchmarkReports() {
     }
   }
 
-  // 네이버 쇼핑(클립 포함) 소싱 - 공식 API라 검색 결과에 이미 실제 구매 링크가 들어있어서,
-  // 1688→쿠팡처럼 별도 존재 확인 단계 없이 바로 승인해서 초안을 만들 수 있음 (2026-07-20 요청).
+  // 네이버 쇼핑(스마트스토어) 소싱 - Apify 스크래핑(네이버 쇼핑 검색 공식 API는 2026-07-31부로
+  // 대체 없이 완전 종료 예정이라 사용 불가, 1688/쿠팡과 동일한 방식으로 전환)이라 검색 결과에
+  // 이미 실제 구매 링크가 들어있어서, 1688→쿠팡처럼 별도 존재 확인 단계 없이 바로 승인해서
+  // 초안을 만들 수 있음 (2026-07-20 요청).
   const [naverQuery, setNaverQuery] = useState('')
   const [naverSearching, setNaverSearching] = useState(false)
   const [naverError, setNaverError] = useState('')
@@ -673,9 +675,9 @@ export default function BenchmarkReports() {
         )}
       </div>
 
-      {/* 네이버 쇼핑/클립 상품 소싱 검색 (공식 API - 결과에 실제 구매 링크가 바로 포함됨) */}
+      {/* 네이버 쇼핑 상품 소싱 검색 (Apify 스크래핑 - 결과에 실제 구매 링크가 바로 포함됨) */}
       <div className="mb-4 rounded-xl bg-paper-card p-4 shadow-card">
-        <h2 className="mb-2 text-sm font-semibold text-ink">🛍️ 네이버 쇼핑/클립 상품 소싱 검색</h2>
+        <h2 className="mb-2 text-sm font-semibold text-ink">🛍️ 네이버 쇼핑 상품 소싱 검색</h2>
         <form onSubmit={runNaverSearch} className="flex flex-wrap gap-2">
           <input
             className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
@@ -703,7 +705,7 @@ export default function BenchmarkReports() {
           </select>
         </div>
         <p className="mt-2 text-[11px] text-ink/40">
-          네이버 공식 검색 API라 결과에 실제 구매 링크가 바로 들어있어요 - 1688처럼 별도로 "실제 파는지 확인"하는 단계 없이 바로 승인하시면 돼요.
+          실제 스마트스토어 판매 상품이라 결과에 구매 링크가 바로 들어있어요 - 1688처럼 별도로 "실제 파는지 확인"하는 단계 없이 바로 승인하시면 돼요.
         </p>
 
         {naverError && <p className="mt-3 text-xs text-stamp-reject">{naverError}</p>}

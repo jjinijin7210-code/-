@@ -115,11 +115,10 @@ export async function searchCoupangProducts({ query }) {
   return data.products || []
 }
 
-// 네이버 쇼핑(클립 포함) 상품 검색 - 공식 API라 결과에 실제 구매 링크가 바로 포함됨
-export async function searchNaverShoppingProducts({ query, display, sort }) {
+// 네이버 쇼핑(스마트스토어) 상품 검색 - Apify 스크래핑, 결과에 실제 구매 링크가 바로 포함됨
+export async function searchNaverShoppingProducts({ query, maxCrawlPages }) {
   const params = new URLSearchParams({ q: query })
-  if (display) params.set('display', String(display))
-  if (sort) params.set('sort', sort)
+  if (maxCrawlPages) params.set('maxCrawlPages', String(maxCrawlPages))
   const res = await fetch(`${API_BASE}/api/sourcing/naver-shopping?${params.toString()}`)
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {

@@ -16,7 +16,7 @@ const EMPLOYEE_ROSTER = [
     department: '리서치',
     role_name: '소싱 담당 (네이버 쇼핑·클립)',
     role_emoji: '🛍️',
-    current_task: '네이버 쇼핑 공식 API로 실제 판매 중인 상품과 구매 링크를 바로 찾아옴',
+    current_task: '네이버 쇼핑(스마트스토어)에서 실제 판매 중인 상품과 구매 링크를 바로 찾아옴',
   },
   {
     department: '콘텐츠 제작',
