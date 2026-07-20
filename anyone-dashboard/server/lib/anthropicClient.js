@@ -61,3 +61,20 @@ export async function callClaudeJson({ system, messages, maxTokens = 1024, parse
   }
   throw lastErr
 }
+
+// 검수 단계(reviewParser.js의 parseReviewResponse)는 파싱 실패 시 예외를 던지는 대신
+// "반려 + parseError:true" fallback을 반환하는 fail-safe 설계라, callClaudeJson과 같은
+// try/catch 재시도 방식이 통하지 않는다 (실패해도 정상 값을 리턴하니 catch가 안 걸림).
+// 2026-07-20: 실사용에서 1차/교차 검수가 같은 초안에 대해 동시에 파싱 실패로 반려되는 사례를
+// 발견 - draft-generation 쪽엔 이미 재시도가 있는데(2026-07-19) 검수 쪽엔 없었던 게 원인.
+// parse가 반환한 값의 parseError 플래그를 보고 재시도하도록 별도 래퍼로 분리.
+export async function callClaudeWithParseRetry({ system, messages, maxTokens = 1024, parse, maxRetries = 2 }) {
+  let result
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    const text = await callClaude({ system, messages, maxTokens })
+    result = parse(text)
+    if (!result?.parseError) return result
+    console.error(`[callClaudeWithParseRetry] 파싱 실패 (시도 ${attempt + 1}/${maxRetries + 1})`)
+  }
+  return result // 재시도까지 다 실패하면 마지막 fallback(반려)을 그대로 반환 - 애매하면 반려하는 기존 원칙 유지
+}

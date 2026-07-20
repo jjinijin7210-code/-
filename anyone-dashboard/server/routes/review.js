@@ -1,5 +1,5 @@
 import { Router } from 'express'
-import { callClaude } from '../lib/anthropicClient.js'
+import { callClaudeWithParseRetry } from '../lib/anthropicClient.js'
 import { buildReviewMessages, parseReviewResponse, combineStageResults, REVIEW_STAGES, STAGE_CHECK_KEYS } from '../lib/reviewParser.js'
 import { reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 
@@ -18,8 +18,13 @@ router.post('/review', async (req, res) => {
     for (const stage of REVIEW_STAGES) {
       const { system, messages } = buildReviewMessages({ title, body, channel, stage })
       // 512로는 반려 사유가 길게 나올 때 응답이 중간에 잘려 JSON 파싱이 깨지는 경우가 있어 여유있게 올림
-      const text = await callClaude({ system, messages, maxTokens: 1024 })
-      stageResults.push({ stage, result: parseReviewResponse(text, STAGE_CHECK_KEYS[stage]) })
+      const result = await callClaudeWithParseRetry({
+        system,
+        messages,
+        maxTokens: 1024,
+        parse: (text) => parseReviewResponse(text, STAGE_CHECK_KEYS[stage]),
+      })
+      stageResults.push({ stage, result })
     }
     const review = combineStageResults(stageResults)
     res.json(review)

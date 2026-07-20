@@ -4,7 +4,7 @@
 // 고쳐서 재검수" 버튼(review.js) 둘 다 이 로직을 공유한다.
 // ============================================================
 
-import { callClaude } from './anthropicClient.js'
+import { callClaude, callClaudeWithParseRetry } from './anthropicClient.js'
 import { buildReviseMessages, parseDraftResponse } from './promptBuilder.js'
 import {
   buildReviewMessages,
@@ -21,8 +21,15 @@ export async function runReviewStages({ title, body, channel }) {
   const stageResults = []
   for (const stage of REVIEW_STAGES) {
     const { system, messages } = buildReviewMessages({ title, body, channel, stage })
-    const text = await callClaude({ system, messages, maxTokens: 1024 })
-    stageResults.push({ stage, result: parseReviewResponse(text, STAGE_CHECK_KEYS[stage]) })
+    // 2026-07-20: 파싱 실패 시 그냥 반려로 넘기지 않고 최대 2번 재시도 - draft-generation과
+    // 동일한 문제(가끔 JSON이 깨짐)가 검수 단계에도 있었는데 여긴 재시도가 빠져 있었음
+    const result = await callClaudeWithParseRetry({
+      system,
+      messages,
+      maxTokens: 1024,
+      parse: (text) => parseReviewResponse(text, STAGE_CHECK_KEYS[stage]),
+    })
+    stageResults.push({ stage, result })
   }
   return combineStageResults(stageResults)
 }
