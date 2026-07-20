@@ -13,6 +13,12 @@ const EMPLOYEE_ROSTER = [
     current_task: '카테고리 키워드로 1688 유사 상품을 찾고, 쿠팡에도 실제로 판매 중인지 확인',
   },
   {
+    department: '리서치',
+    role_name: '소싱 담당 (네이버 쇼핑·클립)',
+    role_emoji: '🛍️',
+    current_task: '네이버 쇼핑 공식 API로 실제 판매 중인 상품과 구매 링크를 바로 찾아옴',
+  },
+  {
     department: '콘텐츠 제작',
     role_name: '작성자 (AI 초안 생성)',
     role_emoji: '✍️',

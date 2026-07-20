@@ -115,6 +115,19 @@ export async function searchCoupangProducts({ query }) {
   return data.products || []
 }
 
+// 네이버 쇼핑(클립 포함) 상품 검색 - 공식 API라 결과에 실제 구매 링크가 바로 포함됨
+export async function searchNaverShoppingProducts({ query, display, sort }) {
+  const params = new URLSearchParams({ q: query })
+  if (display) params.set('display', String(display))
+  if (sort) params.set('sort', sort)
+  const res = await fetch(`${API_BASE}/api/sourcing/naver-shopping?${params.toString()}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `네이버 쇼핑 검색이 실패했어요 (${res.status})`)
+  }
+  return data.products || []
+}
+
 // 쿠팡/1688 검색 결과의 상품 이미지를 첨부용 data URL로 변환
 export async function fetchSourcingImage(url) {
   const params = new URLSearchParams({ url })

@@ -13,6 +13,7 @@ import {
   search1688Products,
   generateShorts,
   searchCoupangProducts,
+  searchNaverShoppingProducts,
   fetchSourcingImage,
   generateDraft,
   reviewDraftWithAi,
@@ -235,6 +236,90 @@ export default function BenchmarkReports() {
       navigate(`/drafts?id=${saved.id}`)
     } catch (err) {
       setCoupangCheckState((prev) => ({ ...prev, [key]: { ...state, creatingDraft: false, createError: err.message } }))
+    }
+  }
+
+  // 네이버 쇼핑(클립 포함) 소싱 - 공식 API라 검색 결과에 이미 실제 구매 링크가 들어있어서,
+  // 1688→쿠팡처럼 별도 존재 확인 단계 없이 바로 승인해서 초안을 만들 수 있음 (2026-07-20 요청).
+  const [naverQuery, setNaverQuery] = useState('')
+  const [naverSearching, setNaverSearching] = useState(false)
+  const [naverError, setNaverError] = useState('')
+  const [naverResults, setNaverResults] = useState(null)
+  const [naverChannel, setNaverChannel] = useState('인스타/틱톡')
+  const [naverApproveState, setNaverApproveState] = useState({}) // key -> { creatingDraft, createError }
+
+  const runNaverSearch = async (e) => {
+    e.preventDefault()
+    if (!naverQuery.trim()) return
+    setNaverSearching(true)
+    setNaverError('')
+    try {
+      const products = await searchNaverShoppingProducts({ query: naverQuery })
+      setNaverResults(products)
+    } catch (err) {
+      setNaverError(err.message)
+      setNaverResults(null)
+    } finally {
+      setNaverSearching(false)
+    }
+  }
+
+  const approveNaverAndCreateDraft = async (product, key) => {
+    setNaverApproveState((prev) => ({ ...prev, [key]: { creatingDraft: true } }))
+    try {
+      const channel = naverChannel
+      const priceText = product.price ? `${Number(product.price).toLocaleString('ko-KR')}원` : '정보 없음'
+      // 블로그는 본문에 실제 구매 링크를 바로 넣고, 인스타/틱톡은 댓글 트리거 유도 문구로
+      // (1688/쿠팡 소싱 흐름과 동일한 원칙 - 인포크 링크는 진희님이 직접 관리)
+      const topic = channel.startsWith('블로그')
+        ? `상품명: ${product.title} (가격대: ${priceText})
+
+[필수 지시사항] 본문 중 자연스러운 위치에 아래 구매 링크를 안내하는 문장을 반드시 포함해서 작성해줘
+(링크 자체를 지어내지 말고 정확히 이 URL을 그대로 써): ${product.productUrl}`
+        : `상품명: ${product.title} (가격대: ${priceText})
+
+[필수 지시사항] 게시물 마지막 부분에 "댓글에 '정보'라고 남겨주시면 구매 링크 보내드릴게요!" 같은
+자연스러운 유도 문구를 반드시 포함해서 작성해줘. 이게 없으면 안 돼.`
+      const draft = await generateDraft({ channel, topic })
+      if (channel.startsWith('블로그') && !draft.body.includes(product.productUrl)) {
+        draft.body = `${draft.body}\n\n👉 구매 링크: ${product.productUrl}`
+      }
+      const review = await reviewDraftWithAi({ title: draft.title, body: draft.body, channel })
+
+      const images = []
+      if (product.image) {
+        try {
+          const dataUrl = await fetchSourcingImage(product.image)
+          images.push({
+            id: crypto.randomUUID(),
+            kind: 'image',
+            filename: `naver-${Date.now()}.jpg`,
+            mime_type: 'image/jpeg',
+            size: dataUrl.length,
+            data_url: dataUrl,
+            note: `네이버 쇼핑 상품 이미지 (${product.mallName || '-'})`,
+            created_at: new Date().toISOString(),
+          })
+        } catch (imgErr) {
+          console.error('[네이버 쇼핑] 이미지 첨부 실패, 텍스트만 저장:', imgErr.message)
+        }
+      }
+
+      const saved = await insertContentDraft({
+        title: draft.title,
+        platform: channel,
+        category: getCategoryForChannel(channel),
+        body: draft.body,
+        images,
+        hashtags: draft.hashtags,
+        source: `네이버 쇼핑 소싱 승인 완료 - "${product.title}" (${product.productUrl})`,
+        status: review.result,
+        review_opinion: review.reasons?.join(' / ') || (review.result === '통과' ? '문제 없음' : ''),
+        reject_reason: review.result === '반려' ? review.reasons?.join(' / ') || '' : null,
+      })
+      navigate(`/drafts?id=${saved.id}`)
+    } catch (err) {
+      setNaverApproveState((prev) => ({ ...prev, [key]: { creatingDraft: false, createError: err.message } }))
     }
   }
 
@@ -581,6 +666,85 @@ export default function BenchmarkReports() {
                       {coupangCheck.createError && <p className="mt-2 text-xs text-stamp-reject">{coupangCheck.createError}</p>}
                     </div>
                   )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+
+      {/* 네이버 쇼핑/클립 상품 소싱 검색 (공식 API - 결과에 실제 구매 링크가 바로 포함됨) */}
+      <div className="mb-4 rounded-xl bg-paper-card p-4 shadow-card">
+        <h2 className="mb-2 text-sm font-semibold text-ink">🛍️ 네이버 쇼핑/클립 상품 소싱 검색</h2>
+        <form onSubmit={runNaverSearch} className="flex flex-wrap gap-2">
+          <input
+            className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+            placeholder="검색어 (예: 실리콘 주방매트)"
+            value={naverQuery}
+            onChange={(e) => setNaverQuery(e.target.value)}
+          />
+          <button
+            type="submit"
+            disabled={naverSearching}
+            className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+          >
+            {naverSearching ? '검색 중...' : '검색'}
+          </button>
+        </form>
+        <div className="mt-2 flex items-center gap-2">
+          <label className="text-[11px] font-semibold text-ink/60">승인 시 만들 채널</label>
+          <select
+            className="rounded-md border border-ink/15 px-2 py-1 text-xs"
+            value={naverChannel}
+            onChange={(e) => setNaverChannel(e.target.value)}
+          >
+            <option value="인스타/틱톡">인스타/틱톡 (댓글 트리거 유도 문구)</option>
+            <option value="블로그(네이버)-생활">블로그(네이버)-생활 (본문에 네이버 상품 링크 직접 기재)</option>
+          </select>
+        </div>
+        <p className="mt-2 text-[11px] text-ink/40">
+          네이버 공식 검색 API라 결과에 실제 구매 링크가 바로 들어있어요 - 1688처럼 별도로 "실제 파는지 확인"하는 단계 없이 바로 승인하시면 돼요.
+        </p>
+
+        {naverError && <p className="mt-3 text-xs text-stamp-reject">{naverError}</p>}
+        {naverResults && naverResults.length === 0 && !naverError && (
+          <p className="mt-3 text-xs text-ink/40">조건에 맞는 상품이 없어요.</p>
+        )}
+
+        {naverResults && naverResults.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {naverResults.map((p, i) => {
+              const key = p.productUrl || String(i)
+              const approve = naverApproveState[key]
+              return (
+                <div key={key} className="rounded-lg border border-ink/10 p-2">
+                  <div className="flex items-center gap-3">
+                    {p.image && <img src={p.image} alt="" className="h-16 w-16 flex-shrink-0 rounded object-cover" />}
+                    <div className="min-w-0 flex-1">
+                      <a href={p.productUrl} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium text-ink hover:underline">
+                        {p.title}
+                      </a>
+                      <p className="truncate text-xs text-ink/50">
+                        {p.price ? `${p.price.toLocaleString('ko-KR')}원` : '가격 정보 없음'} · {p.mallName || '-'}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={approve?.creatingDraft}
+                      onClick={() => approveNaverAndCreateDraft(p, key)}
+                      className="flex-shrink-0 rounded-md bg-stamp-amber px-4 py-2 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                    >
+                      {approve?.creatingDraft ? '초안 만드는 중...' : '✅ 승인하고 초안 만들기'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setNaverResults((prev) => prev.filter((_, idx) => idx !== i))}
+                      className="flex-shrink-0 rounded-md px-2 py-1 text-[11px] text-ink/40 hover:text-stamp-reject"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  {approve?.createError && <p className="mt-2 text-xs text-stamp-reject">{approve.createError}</p>}
                 </div>
               )
             })}
