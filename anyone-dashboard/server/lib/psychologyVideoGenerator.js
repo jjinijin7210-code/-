@@ -23,10 +23,11 @@ import { uploadGeneratedVideo } from './videoStorage.js'
 
 const MIN_SCENE_DURATION = 2.5
 
-// 2026-07-20: 지금 server/assets/characters/의 코코로 파일은 흰 배경이 그대로 박힌 불투명
-// PNG라, 배경을 깔면 캐릭터 뒤에 흰 네모가 떠 보이는 문제가 있음. 진희님이 Luna에서 투명
-// 배경(알파 채널) PNG로 다시 뽑아서 같은 폴더에 교체해주면 이 값을 true로 바꿔서 켤 것.
-const KOKORO_TRANSPARENT_BG = false
+// 2026-07-20: server/assets/characters/의 코코로 7종을 투명 배경으로 교체 완료.
+// (remove.bg로 먼저 시도했는데 흰 몸통까지 같이 지워지는 문제가 있어서, 모서리에서부터
+// 연결된 흰색만 배경으로 간주하는 플러드필 스크립트로 직접 처리함 - 검은 윤곽선에 막힌
+// 몸통 내부는 안 건드림. 실제 합성 렌더링까지 확인 후 켬.)
+const KOKORO_TRANSPARENT_BG = true
 // 캐릭터 바이블 포인트컬러(민트/하늘색)에 맞춘 크림·민트·하늘 파스텔 3색을 씬마다 돌아가며 사용.
 const PASTEL_BACKGROUNDS = ['#FFF6EC', '#EAF7F1', '#EAF2FB']
 
