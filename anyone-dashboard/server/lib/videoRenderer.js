@@ -122,17 +122,43 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
   const bw = Math.round(w * 1.2)
   const bh = Math.round(h * 1.2)
   const zoompan = kenBurnsFilter(scene.motion, frames, fps, w, h, bw)
+  const postFilter = (zoompan ? `,${zoompan}` : `,scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps}`) + ',format=yuv420p' + textFilter
 
-  let filter = `scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh}`
-  filter += zoompan ? `,${zoompan}` : `,scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps}`
-  filter += ',format=yuv420p'
-  filter += textFilter
+  // 배경(scene.background) + 투명 배경 캐릭터(scene.src, PNG alpha)를 합성한 뒤 같은 방식으로
+  // 줌/팬 처리 (2026-07-20 추가 - 코코로가 배경 없이 화면을 꽉 채우던 문제 해결용).
+  // scene.src가 알파 채널이 없는 불투명 이미지면 배경이 안 보이고 캐릭터가 그대로 화면을
+  // 덮어버리니, 투명 PNG일 때만 의미가 있음.
+  if (scene.background) {
+    const filterComplex =
+      `[0:v]scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh}[bg];` +
+      `[1:v]scale=-1:${Math.round(bh * 0.85)}:force_original_aspect_ratio=decrease[fg];` +
+      `[bg][fg]overlay=(W-w)/2:(H-h)*0.6[merged];` +
+      `[merged]${postFilter.slice(1)}[vout]`
+    run([
+      '-framerate', `1/${duration}`, '-loop', '1', '-i', scene.background,
+      '-framerate', `1/${duration}`, '-loop', '1', '-i', scene.src,
+      '-t', String(duration),
+      '-filter_complex', filterComplex,
+      '-map', '[vout]',
+      '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out,
+    ])
+    return { file: out, duration }
+  }
+
+  const filter = `scale=${bw}:${bh}:force_original_aspect_ratio=increase,crop=${bw}:${bh}${postFilter}`
 
   // 입력 프레임레이트를 씬 길이 전체에 1장으로 낮춰서 이미지를 딱 1개의 입력 프레임으로만 공급한다.
   // 기본값(25fps)으로 두면 zoompan이 매 입력 프레임마다 줌/팬을 초기값으로 리셋해서
   // 초당 25번씩 화면이 튀는 깜빡임(스트로브) 현상이 생긴다.
   run(['-framerate', `1/${duration}`, '-loop', '1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out])
   return { file: out, duration }
+}
+
+// 단색 배경 이미지 한 장 생성 (코코로 같은 투명 PNG 캐릭터 뒤에 깔 용도). 사진이 아니라
+// 브랜드 포인트컬러 단색/그라데이션이라 해상도가 크게 중요치 않아 씬 실제 해상도로 바로 생성.
+export function generateSolidBackground(hex, w, h, outPath) {
+  run(['-f', 'lavfi', '-i', `color=c=${hex}:s=${w}x${h}`, '-update', '1', '-frames:v', '1', outPath])
+  return outPath
 }
 
 function concatWithCrossfade(clips, transitionDuration, cfg, tmpDir) {

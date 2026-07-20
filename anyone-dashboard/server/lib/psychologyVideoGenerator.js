@@ -16,12 +16,19 @@ import { buildPsychologyTranslateMessages, parsePsychologyTranslateResponse } fr
 import { generateSpeech } from './ttsClient.js'
 import { generateImage } from './imageClient.js'
 import { listCharacterImages } from './characterImages.js'
-import { renderVideo, ffprobeDuration } from './videoRenderer.js'
+import { renderVideo, ffprobeDuration, generateSolidBackground } from './videoRenderer.js'
 import { pickBackgroundMusic } from './backgroundMusic.js'
 import { GENERATED_DIR } from './shortsGenerator.js'
 import { uploadGeneratedVideo } from './videoStorage.js'
 
 const MIN_SCENE_DURATION = 2.5
+
+// 2026-07-20: 지금 server/assets/characters/의 코코로 파일은 흰 배경이 그대로 박힌 불투명
+// PNG라, 배경을 깔면 캐릭터 뒤에 흰 네모가 떠 보이는 문제가 있음. 진희님이 Luna에서 투명
+// 배경(알파 채널) PNG로 다시 뽑아서 같은 폴더에 교체해주면 이 값을 true로 바꿔서 켤 것.
+const KOKORO_TRANSPARENT_BG = false
+// 캐릭터 바이블 포인트컬러(민트/하늘색)에 맞춘 크림·민트·하늘 파스텔 3색을 씬마다 돌아가며 사용.
+const PASTEL_BACKGROUNDS = ['#FFF6EC', '#EAF7F1', '#EAF2FB']
 
 // 2026-07-19: 일본 심리학 채널 전용 마스코트 "Kokoro(こころ)" 확정(사용자가 만든 캐릭터 바이블
 // 기준) - server/assets/characters/에 실제 캐릭터 파일을 넣어두면 이 프롬프트 대신 그 파일을
@@ -112,8 +119,20 @@ export async function generatePsychologyVideo({ topic, format = 'shorts', refere
     // 4. 씬 구성 - 이미지는 모자라면 순환(modulo)해서 돌려씀. 줌/팬 효과를 쓰면 화면이
     // 흔들려 보인다는 피드백(2026-07-19)이 있어서, 이 콘텐츠는 효과 없이 정지 화면으로 둔다.
     // 내레이션도 숏폼 기본 배속(1.2배)을 쓰지 않고 원래 속도(1.0배) 그대로 재생.
+    // 코코로 파일이 투명 배경으로 바뀌면(KOKORO_TRANSPARENT_BG), 씬마다 파스텔 배경을 하나씩
+    // 만들어 캐릭터 뒤에 깔아준다. 색상 개수만큼만 미리 생성해두고 씬끼리 돌려쓴다.
+    const useBackground = KOKORO_TRANSPARENT_BG && characterFiles.length > 0
+    const backgroundPaths = useBackground
+      ? PASTEL_BACKGROUNDS.map((hex, i) => {
+          const bgPath = path.join(tmpDir, `bg_${i}.png`)
+          generateSolidBackground(hex, cfg.width, cfg.height, bgPath)
+          return bgPath
+        })
+      : []
+
     const scenes = points.map((p, i) => ({
       src: imagePaths[i % imagePaths.length],
+      background: useBackground ? backgroundPaths[i % backgroundPaths.length] : undefined,
       duration: p.duration,
       motion: 'none',
       text: p.caption,
