@@ -240,6 +240,26 @@ export async function prepareNaverBlogPost({ title, body }) {
   return data
 }
 
+// 스레드 자동 입력 (진희님 컴퓨터에서만 동작 - 인스타/틱톡과 같은 방식, 마지막 게시는 직접)
+export function openThreadsLogin() {
+  return postJson('/api/threads/open-login', {})
+}
+
+export async function prepareThreadsPost({ body, imageDataUrl }) {
+  const res = await fetch(`${API_BASE}/api/threads/prepare`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ body, imageDataUrl }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = new Error(data.error || `요청이 실패했어요 (${res.status})`)
+    err.loginRequired = Boolean(data.loginRequired)
+    throw err
+  }
+  return data
+}
+
 // 영상 제작실 - 씬(이미지+모션+자막+보이스) + 배경음악을 직접 구성해서 mp4로 렌더링
 export async function renderVideoStudio(formData) {
   const res = await fetch(`${API_BASE}/api/video-studio/render`, { method: 'POST', body: formData })

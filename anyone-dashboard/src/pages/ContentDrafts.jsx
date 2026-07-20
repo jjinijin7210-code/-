@@ -41,6 +41,8 @@ import {
   prepareTiktokPost,
   openNaverBlogLogin,
   prepareNaverBlogPost,
+  openThreadsLogin,
+  prepareThreadsPost,
 } from '../lib/apiClient'
 import { compressImageFile, fileToDataUrl } from '../lib/attachments'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
@@ -382,6 +384,45 @@ export default function ContentDrafts() {
   const handlePrepareBothPosts = async () => {
     await handlePrepareInstagramPost()
     await handlePrepareTiktokPost()
+  }
+
+  // 스레드 자동 입력 (인스타그램과 같은 방식 - 이 계정도 메타 소유라 별도 로그인 필요)
+  const [thLoading, setThLoading] = useState(false)
+  const [thMessage, setThMessage] = useState(null)
+
+  const handleOpenThreadsLogin = async () => {
+    setThLoading(true)
+    setThMessage(null)
+    try {
+      const result = await openThreadsLogin()
+      setThMessage({ type: 'success', text: result.message })
+    } catch (err) {
+      setThMessage({ type: 'error', text: err.message })
+    } finally {
+      setThLoading(false)
+    }
+  }
+
+  const handlePrepareThreadsPost = async () => {
+    const hashtagText = parseHashtags(form.hashtags).join(' ')
+    const body = [form.body, hashtagText].filter(Boolean).join('\n\n')
+    const firstImage = (form.images || []).find((img) => img.kind === 'image')
+
+    setThLoading(true)
+    setThMessage(null)
+    try {
+      const result = await prepareThreadsPost({ body, imageDataUrl: firstImage?.data_url })
+      setThMessage({ type: 'success', text: result.message })
+    } catch (err) {
+      setThMessage({
+        type: 'error',
+        text: err.loginRequired
+          ? '스레드 로그인 창이 열렸어요! 화면에 뜬 창에서 로그인하신 뒤, 이 버튼을 한 번 더 눌러주세요.'
+          : err.message,
+      })
+    } finally {
+      setThLoading(false)
+    }
   }
 
   // 네이버 블로그 자동 입력 (인스타/틱톡과 같은 방식 - 제목/본문만 채우고 발행은 직접)
@@ -1132,6 +1173,56 @@ export default function ContentDrafts() {
               {ttMessage && (
                 <p className={`mt-2 text-[11px] ${ttMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
                   {ttMessage.text}
+                </p>
+              )}
+            </div>
+          )}
+
+          {form.platform === '스레드' && (
+            <div className="mb-3">
+              <button
+                type="button"
+                onClick={handleMarkPublished}
+                className="w-full rounded-lg border border-stamp-pass/40 bg-stamp-pass/5 px-3 py-2 text-xs font-semibold text-stamp-pass hover:bg-stamp-pass/10"
+              >
+                ✅ 실제로 게시 눌렀어요 - 발행완료로 표시하기
+              </button>
+              {markPublishedMessage && (
+                <p className={`mt-1 text-[11px] ${markPublishedMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {markPublishedMessage.text}
+                </p>
+              )}
+            </div>
+          )}
+
+          {form.platform === '스레드' && (
+            <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
+              <p className="mb-1 text-xs font-bold text-ink/70">🧵 스레드 자동 입력</p>
+              <p className="mb-2 text-[11px] text-ink/40">
+                이 컴퓨터에서만 동작해요. 인스타그램과 같은 방식이지만 스레드는 로그인을 따로 해야 해요 (처음 한 번만).
+                글(+이미지 1장, 있으면)만 채워줘요. 마지막 "게시" 버튼만 스레드 창에서 직접 눌러주세요.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handlePrepareThreadsPost}
+                  disabled={thLoading || !form.body}
+                  className="rounded-md bg-stamp-amber px-3 py-2 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                >
+                  {thLoading ? '처리 중...' : '🧵 스레드에 글 자동으로 채우기'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenThreadsLogin}
+                  disabled={thLoading}
+                  className="text-[11px] text-ink/40 underline decoration-dotted hover:text-stamp-amber disabled:opacity-50"
+                >
+                  (문제 있을 때만) 로그인 창만 다시 열기
+                </button>
+              </div>
+              {thMessage && (
+                <p className={`mt-2 text-[11px] ${thMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {thMessage.text}
                 </p>
               )}
             </div>
