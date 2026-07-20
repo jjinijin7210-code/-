@@ -6,6 +6,8 @@ export const DEFAULT_ANYONE_ROSTER = [
   { department: '총괄', role_name: '루나 (총괄 팀장 - 전체 진행 확인·브리핑)', role_emoji: '🌙' },
 
   { department: '인스타틱톡팀 · 리서치', role_name: '리서처', role_emoji: '🔍' },
+  { department: '인스타틱톡팀 · 리서치', role_name: '소싱 담당 (1688)', role_emoji: '📦' },
+  { department: '인스타틱톡팀 · 리서치', role_name: '소싱 담당 (네이버 쇼핑·클립)', role_emoji: '🛍️' },
   { department: '인스타틱톡팀 · 콘텐츠제작', role_name: '작성자 (AI 초안 생성)', role_emoji: '✍️' },
   { department: '인스타틱톡팀 · 콘텐츠제작', role_name: '이미지·썸네일 제작 담당 (AI 이미지 생성)', role_emoji: '🎬' },
   { department: '인스타틱톡팀 · 콘텐츠제작', role_name: '쇼츠 제작 담당 (사진→영상 합성)', role_emoji: '📹' },
