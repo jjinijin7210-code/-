@@ -17,6 +17,7 @@ import {
   isAiDraftChannel,
   isLocalizationChannel,
   isBloggerChannel,
+  isNaverBlogChannel,
   isYoutubeChannel,
   parseHashtags,
 } from '../lib/contentPreview'
@@ -38,6 +39,8 @@ import {
   prepareInstagramPost,
   openTiktokLogin,
   prepareTiktokPost,
+  openNaverBlogLogin,
+  prepareNaverBlogPost,
 } from '../lib/apiClient'
 import { compressImageFile, fileToDataUrl } from '../lib/attachments'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
@@ -379,6 +382,45 @@ export default function ContentDrafts() {
   const handlePrepareBothPosts = async () => {
     await handlePrepareInstagramPost()
     await handlePrepareTiktokPost()
+  }
+
+  // 네이버 블로그 자동 입력 (인스타/틱톡과 같은 방식 - 제목/본문만 채우고 발행은 직접)
+  const [nbLoading, setNbLoading] = useState(false)
+  const [nbMessage, setNbMessage] = useState(null)
+
+  const handleOpenNaverBlogLogin = async () => {
+    setNbLoading(true)
+    setNbMessage(null)
+    try {
+      const result = await openNaverBlogLogin()
+      setNbMessage({ type: 'success', text: result.message })
+    } catch (err) {
+      setNbMessage({ type: 'error', text: err.message })
+    } finally {
+      setNbLoading(false)
+    }
+  }
+
+  const handlePrepareNaverBlogPost = async () => {
+    if (!form.title?.trim()) {
+      setNbMessage({ type: 'error', text: '제목을 입력해주세요.' })
+      return
+    }
+    setNbLoading(true)
+    setNbMessage(null)
+    try {
+      const result = await prepareNaverBlogPost({ title: form.title, body: form.body })
+      setNbMessage({ type: 'success', text: result.message })
+    } catch (err) {
+      setNbMessage({
+        type: 'error',
+        text: err.loginRequired
+          ? '네이버 로그인 창이 열렸어요! 화면에 뜬 창에서 로그인하신 뒤, 이 버튼을 한 번 더 눌러주세요.'
+          : err.message,
+      })
+    } finally {
+      setNbLoading(false)
+    }
   }
 
   // 인스타/틱톡은 실제 게시가 별도 브라우저 창에서 사람이 직접 눌러야 끝나기 때문에,
@@ -1090,6 +1132,57 @@ export default function ContentDrafts() {
               {ttMessage && (
                 <p className={`mt-2 text-[11px] ${ttMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
                   {ttMessage.text}
+                </p>
+              )}
+            </div>
+          )}
+
+          {isNaverBlogChannel(form.platform) && (
+            <div className="mb-3">
+              <button
+                type="button"
+                onClick={handleMarkPublished}
+                className="w-full rounded-lg border border-stamp-pass/40 bg-stamp-pass/5 px-3 py-2 text-xs font-semibold text-stamp-pass hover:bg-stamp-pass/10"
+              >
+                ✅ 실제로 발행 눌렀어요 - 발행완료로 표시하기
+              </button>
+              {markPublishedMessage && (
+                <p className={`mt-1 text-[11px] ${markPublishedMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {markPublishedMessage.text}
+                </p>
+              )}
+            </div>
+          )}
+
+          {isNaverBlogChannel(form.platform) && (
+            <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
+              <p className="mb-1 text-xs font-bold text-ink/70">📝 네이버 블로그 자동 입력</p>
+              <p className="mb-2 text-[11px] text-ink/40">
+                이 컴퓨터에서만 동작해요. 제목·본문만 채워줘요 (이미지는 직접 첨부해주세요). 네이버 에디터가
+                자주 바뀌어서 인스타/틱톡보다 실패할 수 있어요 - 실패하면 화면 캡처 경로를 같이 보여드려요.
+                마지막 "발행" 버튼만 네이버 창에서 직접 눌러주세요.
+              </p>
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  onClick={handlePrepareNaverBlogPost}
+                  disabled={nbLoading || !form.body}
+                  className="rounded-md bg-stamp-amber px-3 py-2 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                >
+                  {nbLoading ? '처리 중...' : '📝 네이버 블로그에 제목·본문 자동으로 채우기'}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenNaverBlogLogin}
+                  disabled={nbLoading}
+                  className="text-[11px] text-ink/40 underline decoration-dotted hover:text-stamp-amber disabled:opacity-50"
+                >
+                  (문제 있을 때만) 로그인 창만 다시 열기
+                </button>
+              </div>
+              {nbMessage && (
+                <p className={`mt-2 text-[11px] ${nbMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {nbMessage.text}
                 </p>
               )}
             </div>

@@ -57,6 +57,11 @@ export function isBloggerChannel(channel) {
   return channel === '블로그(구글 Blogger)'
 }
 
+// 네이버 블로그 자동 입력(로컬 브라우저) 대상 채널인지
+export function isNaverBlogChannel(channel) {
+  return channel.startsWith('블로그(네이버)')
+}
+
 // 유튜브로 실제 업로드 가능한 채널인지 (구글 계정 연결은 Blogger와 공유함)
 export function isYoutubeChannel(channel) {
   return channel === '유튜브(일본어)'

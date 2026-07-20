@@ -20,6 +20,7 @@ import benchmarkAutoRoutes from './routes/benchmark.js'
 import instagramRoutes from './routes/instagram.js'
 import instagramCommentsRoutes from './routes/instagramComments.js'
 import tiktokRoutes from './routes/tiktok.js'
+import naverBlogRoutes from './routes/naverBlog.js'
 import briefingRoutes from './routes/briefing.js'
 import threadBlogAutoRoutes from './routes/threadBlogAuto.js'
 import youtubeAutoRoutes from './routes/youtubeAuto.js'
@@ -63,6 +64,7 @@ app.use('/api', benchmarkAutoRoutes)
 app.use('/api', instagramRoutes)
 app.use('/api', instagramCommentsRoutes)
 app.use('/api', tiktokRoutes)
+app.use('/api', naverBlogRoutes)
 app.use('/api', briefingRoutes)
 app.use('/api', threadBlogAutoRoutes)
 app.use('/api', youtubeAutoRoutes)
