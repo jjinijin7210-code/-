@@ -40,9 +40,34 @@ function extractCategory(source) {
   return m ? m[1] : '기타'
 }
 
+// 자동 파이프라인이 실제로 살아서 돌고 있는지 - "코드는 고쳤는데 실행이 안 되고 있었다"를
+// 뒤늦게 GitHub Actions를 뒤져서 알아내는 대신 홈 화면에서 바로 보이게 함 (2026-07-20)
+const STALE_HOURS = 3 // 자동 파이프라인은 9시~21시 사이 2시간 간격으로 도니, 3시간 넘게 조용하면 이상 신호
+const RECENT_FAILURE_WINDOW_MS = 24 * 60 * 60 * 1000
+
+// 파이프라인은 9~21시(KST)에만 도니, 자정 무렵 "12시간째 조용함"을 오탐지하지 않도록
+// 활성 시간대인지부터 확인 (서버 타임존과 무관하게 KST 기준으로 계산)
+function getKstHour(date = new Date()) {
+  return Number(new Date(date.getTime() + 9 * 60 * 60 * 1000).toISOString().slice(11, 13))
+}
+
+function computeAutomationHealth(runs) {
+  if (!runs.length) return { status: 'none' }
+  const latest = runs[0] // useSupabaseTable('automation_runs', { orderBy: 'started_at' })는 최신순 정렬
+  const hoursSinceLast = (Date.now() - new Date(latest.started_at).getTime()) / (1000 * 60 * 60)
+  const recentFailures = runs.filter(
+    (r) => r.status === '이슈발생' && Date.now() - new Date(r.started_at).getTime() < RECENT_FAILURE_WINDOW_MS
+  )
+  const kstHour = getKstHour()
+  const inActiveWindow = kstHour >= 9 && kstHour < 22
+  const isStale = inActiveWindow && hoursSinceLast > STALE_HOURS
+  return { status: isStale ? 'stale' : recentFailures.length > 0 ? 'failures' : 'ok', latest, hoursSinceLast, recentFailures }
+}
+
 export default function Home() {
   const employees = useSupabaseTable('employee_status', { orderBy: 'updated_at' })
   const drafts = useSupabaseTable('content_drafts')
+  const automationRuns = useSupabaseTable('automation_runs', { orderBy: 'started_at' })
 
   const [quickType, setQuickType] = useState('image') // 'image' | 'text'
   const [quickChannel, setQuickChannel] = useState(QUICK_TEXT_CHANNELS[0])
@@ -101,6 +126,14 @@ export default function Home() {
   if (employees.error) return <ErrorView message={employees.error} />
   if (drafts.error) return <ErrorView message={drafts.error} />
 
+  const automationHealth = computeAutomationHealth(automationRuns.rows)
+  const sinceLabel =
+    automationHealth.hoursSinceLast != null
+      ? automationHealth.hoursSinceLast < 1
+        ? `${Math.round(automationHealth.hoursSinceLast * 60)}분 전`
+        : `${Math.floor(automationHealth.hoursSinceLast)}시간 전`
+      : null
+
   const todayDrafts = drafts.rows.filter(
     (d) => isToday(d.created_at) || isToday(d.published_at)
   )
@@ -134,6 +167,36 @@ export default function Home() {
           오늘 ({new Date().toLocaleDateString('ko-KR')}) 발행 현황과 직원팀 작업 상태예요.
         </p>
       </div>
+
+      {/* 자동화 상태 - "코드는 고쳤는데 실행이 조용히 멈춰 있었다"를 뒤늦게 GitHub까지 뒤져서
+          알아내는 일이 없도록, 마지막 실행 시각/최근 실패를 홈 화면에서 바로 보여줌 */}
+      {!automationRuns.loading && automationHealth.status !== 'none' && (
+        <section
+          className={`rounded-xl p-4 shadow-card ${
+            automationHealth.status === 'ok' ? 'bg-paper-card' : 'border border-stamp-reject/40 bg-stamp-reject/5'
+          }`}
+        >
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm font-bold text-ink/70">🤖 자동화 상태</span>
+            <Link to="/automation-log" className="text-xs font-semibold text-stamp-amber hover:underline">
+              실행 로그 보기 →
+            </Link>
+          </div>
+          {automationHealth.status === 'ok' && (
+            <p className="mt-1 text-xs text-ink/50">정상 작동 중 · 마지막 실행 {sinceLabel}</p>
+          )}
+          {automationHealth.status === 'stale' && (
+            <p className="mt-1 text-xs font-semibold text-stamp-reject">
+              ⚠️ 자동화가 {sinceLabel}째 실행되지 않았어요. GitHub Actions 스케줄 또는 서버 상태를 확인해주세요.
+            </p>
+          )}
+          {automationHealth.status === 'failures' && (
+            <p className="mt-1 text-xs font-semibold text-stamp-reject">
+              ⚠️ 최근 24시간 안에 자동 실행이 {automationHealth.recentFailures.length}건 실패했어요.
+            </p>
+          )}
+        </section>
+      )}
 
       {/* 안전 원칙 - 전체 버전으로 홈 화면 상단에 크게 노출 */}
       <PrincipleChecklist />
