@@ -247,7 +247,7 @@ export default function BenchmarkReports() {
   const [naverSearching, setNaverSearching] = useState(false)
   const [naverError, setNaverError] = useState('')
   const [naverResults, setNaverResults] = useState(null)
-  const [naverChannel, setNaverChannel] = useState('인스타/틱톡')
+  const [naverChannel, setNaverChannel] = useState('블로그(네이버)-생활')
   const [naverApproveState, setNaverApproveState] = useState({}) // key -> { creatingDraft, createError }
 
   const runNaverSearch = async (e) => {
@@ -700,7 +700,6 @@ export default function BenchmarkReports() {
             value={naverChannel}
             onChange={(e) => setNaverChannel(e.target.value)}
           >
-            <option value="인스타/틱톡">인스타/틱톡 (댓글 트리거 유도 문구)</option>
             <option value="블로그(네이버)-생활">블로그(네이버)-생활 (본문에 네이버 상품 링크 직접 기재)</option>
           </select>
         </div>
