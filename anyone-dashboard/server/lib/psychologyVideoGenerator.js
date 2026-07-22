@@ -45,9 +45,10 @@ const KOKORO_CHARACTER_PROMPT = `캐릭터: "Kokoro(こころ)" - 심리를 쉽�
 - 스타일: 플랫 벡터/라인아트, 그림자·그라데이션 없이 평면적으로, 귀엽고 친근한 톤
 - 표정/포즈는 웃음·놀람·슬픔·화남·고민·기쁨·피곤·민망·설렘·울음 등 순수하고 단순한 감정 표현 위주`
 
-// 20대~시니어까지 편하게 들을 수 있는 차분한 목소리 (River - ElevenLabs 자체 라벨이 "calm").
-// 기본 목소리(Rachel)는 좀 더 또렷하고 상품 홍보용 톤이라 심리학 콘텐츠엔 안 맞았음(2026-07-19 피드백).
-const PSYCHOLOGY_VOICE_ID = 'SAz9YHcvj6GT2YYXdXww' // River
+// 진희님이 ElevenLabs Voice Library에서 직접 골라 지정한 목소리 (2026-07-22).
+// 이전엔 River(SAz9YHcvj6GT2YYXdXww)를 썼음 - 기본 목소리(Rachel)가 상품 홍보용 톤이라
+// 심리학 콘텐츠엔 안 맞아서(2026-07-19 피드백) River로 바꿨다가, 이번에 다시 교체.
+const PSYCHOLOGY_VOICE_ID = 't3iNwCjYhE9IEQPVBlys'
 // stability를 높여서(기본 0.5→0.8) 톤 기복(음성이 "떨리는" 느낌)을 줄임 - 차분한 낭독 톤에 맞춤.
 const PSYCHOLOGY_VOICE_STABILITY = 0.8
 
