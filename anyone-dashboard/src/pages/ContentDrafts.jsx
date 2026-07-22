@@ -1335,6 +1335,23 @@ export default function ContentDrafts() {
             </div>
           )}
 
+          {isBloggerChannel(form.platform) && (
+            <div className="mb-3">
+              <button
+                type="button"
+                onClick={handleMarkPublished}
+                className="w-full rounded-lg border border-stamp-pass/40 bg-stamp-pass/5 px-3 py-2 text-xs font-semibold text-stamp-pass hover:bg-stamp-pass/10"
+              >
+                ✅ 직접 발행했어요 - 발행완료로 표시하기
+              </button>
+              {markPublishedMessage && (
+                <p className={`mt-1 text-[11px] ${markPublishedMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {markPublishedMessage.text}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* 유튜브 업로드 (구글 계정 연결은 Blogger와 공유함) */}
           {isYoutubeChannel(form.platform) && (
             <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
@@ -1369,6 +1386,23 @@ export default function ContentDrafts() {
               {youtubeUploadMessage && (
                 <p className={`mt-2 text-[11px] ${youtubeUploadMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
                   {youtubeUploadMessage.text}
+                </p>
+              )}
+            </div>
+          )}
+
+          {isYoutubeChannel(form.platform) && (
+            <div className="mb-3">
+              <button
+                type="button"
+                onClick={handleMarkPublished}
+                className="w-full rounded-lg border border-stamp-pass/40 bg-stamp-pass/5 px-3 py-2 text-xs font-semibold text-stamp-pass hover:bg-stamp-pass/10"
+              >
+                ✅ 직접 업로드했어요 - 발행완료로 표시하기
+              </button>
+              {markPublishedMessage && (
+                <p className={`mt-1 text-[11px] ${markPublishedMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+                  {markPublishedMessage.text}
                 </p>
               )}
             </div>
