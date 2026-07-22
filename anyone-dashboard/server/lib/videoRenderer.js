@@ -111,10 +111,19 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
   // 진희님이 직접 만든 영상을 씬 소스로 그대로 쓸 수 있게 함(2026-07-19) - 정지 이미지가
   // 아니라서 loop/zoompan(줌·팬 효과)을 적용하면 안 되고, 이미 있는 움직임을 그대로 살려서
   // 원하는 씬 길이에 맞게 자르거나(길면) 반복해서 채움(짧으면).
+  // 2026-07-22: 입모양 영상이 깨졌거나(코덱 문제 등) ffmpeg이 처리 못 하면 그 씬만 통째로
+  // 실패해서 영상 전체가 날아가는 문제가 있어 - scene.fallbackSrc(같은 표정의 정지 이미지)가
+  // 있으면 그걸로 대체해서 계속 진행한다("혹시 모르니까" 안전장치, 사용자 요청).
   if (scene.isVideo) {
     const filter = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps},format=yuv420p${textFilter}`
-    run(['-stream_loop', '-1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out])
-    return { file: out, duration }
+    try {
+      run(['-stream_loop', '-1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out])
+      return { file: out, duration }
+    } catch (err) {
+      if (!scene.fallbackSrc) throw err
+      console.error(`[videoRenderer] 입모양 영상 렌더링 실패, 정지 이미지로 대체: ${err.message}`)
+      return buildImageClip({ ...scene, isVideo: false, src: scene.fallbackSrc }, idx, cfg, tmpDir)
+    }
   }
 
   const frames = Math.round(duration * fps)

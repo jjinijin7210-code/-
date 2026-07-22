@@ -15,7 +15,7 @@ import { buildPsychologyScriptMessages, parsePsychologyScriptResponse } from './
 import { buildPsychologyTranslateMessages, parsePsychologyTranslateResponse } from './psychologyTranslate.js'
 import { generateSpeech } from './ttsClient.js'
 import { generateImage } from './imageClient.js'
-import { listCharacterImages } from './characterImages.js'
+import { listCharacterAssets } from './characterImages.js'
 import { renderVideo, ffprobeDuration, generateSolidBackground } from './videoRenderer.js'
 import { pickBackgroundMusic } from './backgroundMusic.js'
 import { GENERATED_DIR } from './shortsGenerator.js'
@@ -55,8 +55,8 @@ const PSYCHOLOGY_VOICE_STABILITY = 0.8
 // 쇼츠는 포인트=이미지 1:1(짧으니 굳이 돌려쓸 필요 없음), 롱폼은 이미지 몇 장을 여러 포인트에
 // 걸쳐 돌려쓴다(진희님 요청 - "이미지를 길게 해서 몇 장으로 상황에 맞게 돌려가며").
 const FORMAT_CONFIG = {
-  shorts: { width: 540, height: 960, fps: 24, pointCount: 5, maxUniqueImages: 5 },
-  long: { width: 1280, height: 720, fps: 24, pointCount: 9, maxUniqueImages: 5 },
+  shorts: { width: 540, height: 960, fps: 24, pointCount: 5, maxUniqueImages: 6 },
+  long: { width: 1280, height: 720, fps: 24, pointCount: 9, maxUniqueImages: 6 },
 }
 
 export async function generatePsychologyVideo({ topic, format = 'shorts', referenceNote }) {
@@ -95,15 +95,17 @@ export async function generatePsychologyVideo({ topic, format = 'shorts', refere
       points.push({ caption: point.caption, voicePath, duration })
     }
 
-    // 3. 이미지 - 진희님이 만든 캐릭터 이미지가 있으면 그걸 그대로 씀(비용 절감 + 채널 정체성),
-    // 없으면 기존처럼 AI로 생성 (포인트 수보다 적게 만들어서 돌려씀)
-    const characterFiles = listCharacterImages()
-    let imagePaths
-    if (characterFiles.length > 0) {
-      imagePaths = characterFiles.slice(0, cfg.maxUniqueImages)
+    // 3. 캐릭터 소스 - 진희님이 만든 입모양 애니메이션 클립/정지 이미지가 있으면 그걸 그대로 씀
+    // (비용 절감 + 채널 정체성), 둘 다 없으면 기존처럼 AI로 정지 이미지를 생성 (포인트 수보다
+    // 적게 만들어서 돌려씀). listCharacterAssets()는 영상을 이미지보다 앞에 두므로, 영상이
+    // maxUniqueImages개 이상이면 정지 이미지는 아예 안 쓰인다.
+    const characterAssets = listCharacterAssets()
+    let assets
+    if (characterAssets.length > 0) {
+      assets = characterAssets.slice(0, cfg.maxUniqueImages)
     } else {
       const imageCount = Math.min(points.length, cfg.maxUniqueImages)
-      imagePaths = []
+      assets = []
       for (let i = 0; i < imageCount; i++) {
         const prompt = `${KOKORO_CHARACTER_PROMPT}
 
@@ -114,16 +116,18 @@ export async function generatePsychologyVideo({ topic, format = 'shorts', refere
         const base64 = dataUrl.split(',')[1]
         const imgPath = path.join(tmpDir, `img_${i}.png`)
         fs.writeFileSync(imgPath, Buffer.from(base64, 'base64'))
-        imagePaths.push(imgPath)
+        assets.push({ src: imgPath, isVideo: false })
       }
     }
 
-    // 4. 씬 구성 - 이미지는 모자라면 순환(modulo)해서 돌려씀. 줌/팬 효과를 쓰면 화면이
-    // 흔들려 보인다는 피드백(2026-07-19)이 있어서, 이 콘텐츠는 효과 없이 정지 화면으로 둔다.
+    // 4. 씬 구성 - 소스는 모자라면 순환(modulo)해서 돌려씀. 줌/팬 효과를 쓰면 화면이
+    // 흔들려 보인다는 피드백(2026-07-19)이 있어서, 정지 이미지는 효과 없이 그대로 둔다.
     // 내레이션도 숏폼 기본 배속(1.2배)을 쓰지 않고 원래 속도(1.0배) 그대로 재생.
-    // 코코로 파일이 투명 배경으로 바뀌면(KOKORO_TRANSPARENT_BG), 씬마다 파스텔 배경을 하나씩
-    // 만들어 캐릭터 뒤에 깔아준다. 색상 개수만큼만 미리 생성해두고 씬끼리 돌려쓴다.
-    const useBackground = KOKORO_TRANSPARENT_BG && characterFiles.length > 0
+    // 코코로 정지 이미지가 투명 배경일 때만(KOKORO_TRANSPARENT_BG) 씬마다 파스텔 배경을 하나씩
+    // 만들어 캐릭터 뒤에 깔아준다. 입모양 영상 자체는 배경이 이미 있어서 평소엔 안 쓰지만,
+    // 영상이 실패해서 정지 이미지(fallbackSrc)로 대체될 때 필요하니 항상 미리 만들어둔다.
+    const hasImageAssets = characterAssets.some((a) => !a.isVideo || a.fallbackSrc)
+    const useBackground = KOKORO_TRANSPARENT_BG && hasImageAssets
     const backgroundPaths = useBackground
       ? PASTEL_BACKGROUNDS.map((hex, i) => {
           const bgPath = path.join(tmpDir, `bg_${i}.png`)
@@ -132,15 +136,22 @@ export async function generatePsychologyVideo({ topic, format = 'shorts', refere
         })
       : []
 
-    const scenes = points.map((p, i) => ({
-      src: imagePaths[i % imagePaths.length],
-      background: useBackground ? backgroundPaths[i % backgroundPaths.length] : undefined,
-      duration: p.duration,
-      motion: 'none',
-      text: p.caption,
-      voice: p.voicePath,
-      voiceSpeed: 1.0,
-    }))
+    const scenes = points.map((p, i) => {
+      const asset = assets[i % assets.length]
+      return {
+        src: asset.src,
+        isVideo: asset.isVideo,
+        // fallbackSrc가 있을 때만 background도 같이 넘김 - videoRenderer.js가 영상 렌더링 실패 시
+        // 이 정지 이미지로 대체하면서 background를 함께 합성한다(평소엔 안 쓰임, 실패 시에만 참조).
+        fallbackSrc: asset.isVideo ? asset.fallbackSrc : undefined,
+        background: useBackground ? backgroundPaths[i % backgroundPaths.length] : undefined,
+        duration: p.duration,
+        motion: 'none',
+        text: p.caption,
+        voice: p.voicePath,
+        voiceSpeed: 1.0,
+      }
+    })
 
     // 5. 배경음악(있으면) + 렌더링
     const musicPath = pickBackgroundMusic()
