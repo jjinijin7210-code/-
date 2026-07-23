@@ -19,7 +19,11 @@ function getLocalStore() {
  * 반환값의 backend 필드로 지금 어떤 저장소를 쓰고 있는지 확인할 수 있습니다.
  */
 export function useSupabaseTable(tableName, options = {}) {
-  const { orderBy = 'created_at', ascending = false } = options
+  // 2026-07-23: content_drafts처럼 첨부 이미지/영상을 base64로 그대로 담는 테이블은 행이
+  // 수십 개만 쌓여도 select('*')가 수십 MB에 statement timeout까지 나는 문제가 실측 확인됨
+  // (61개 행에 60MB, 10초+). 목록 화면은 대부분 이미지 자체가 필요 없으니, 무거운 컬럼은
+  // 뺀 select 절을 테이블별로 지정할 수 있게 함(기본은 기존처럼 '*').
+  const { orderBy = 'created_at', ascending = false, select = '*' } = options
   const backend = isSupabaseConfigured ? 'supabase' : 'local'
 
   const [rows, setRows] = useState([])
@@ -61,7 +65,7 @@ export function useSupabaseTable(tableName, options = {}) {
 
     const { data, error: err } = await supabase
       .from(tableName)
-      .select('*')
+      .select(select)
       .order(orderBy, { ascending })
 
     if (err) {
@@ -71,11 +75,26 @@ export function useSupabaseTable(tableName, options = {}) {
       setRows(data ?? [])
     }
     setLoading(false)
-  }, [tableName, orderBy, ascending, backend, sortRows])
+  }, [tableName, orderBy, ascending, backend, sortRows, select])
 
   useEffect(() => {
     fetchAll()
   }, [fetchAll])
+
+  // 목록은 가벼운 select로 불러오고, 특정 행 하나를 열 때(예: 수정 모달)만 이걸로 전체
+  // 컬럼(이미지 포함)을 따로 가져옴 - select 옵션을 좁게 지정한 테이블에서 사용
+  const fetchOne = useCallback(
+    async (id) => {
+      if (backend === 'local') {
+        const store = getLocalStore()
+        return store.getAll(tableName).find((r) => r.id === id) || null
+      }
+      const { data, error: err } = await supabase.from(tableName).select('*').eq('id', id).single()
+      if (err) throw err
+      return data
+    },
+    [tableName, backend]
+  )
 
   const insertRow = useCallback(
     async (values) => {
@@ -188,6 +207,7 @@ export function useSupabaseTable(tableName, options = {}) {
     error,
     saveStatus,
     backend,
+    fetchOne,
     refresh: fetchAll,
     insertRow,
     updateRow,

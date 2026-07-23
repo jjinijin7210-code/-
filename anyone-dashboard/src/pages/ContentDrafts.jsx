@@ -85,7 +85,15 @@ const emptyForm = {
 }
 
 export default function ContentDrafts() {
-  const { rows, loading, error, saveStatus, insertRow, updateRow, deleteRow } = useSupabaseTable('content_drafts')
+  // 2026-07-23: images(첨부 이미지/영상, base64) 컬럼까지 목록 조회에 다 불러오면 행이 수십 개만
+  // 쌓여도 응답이 수십 MB에 DB statement timeout까지 나는 문제가 실측 확인됨 - 목록에는 필요 없는
+  // 컬럼이라 빼고, 개별 초안을 열 때(openEdit)만 fetchOne으로 이미지까지 따로 불러온다.
+  const CONTENT_DRAFTS_LIST_SELECT =
+    'id, user_id, title, platform, category, body, hashtags, link, source, author_name, review_opinion, revision_history, scheduled_at, published_url, status, trigger_keyword, cs_link_id, author_role, reject_reason, checked_no_real_person_image, checked_no_overseas_reuse, created_at, updated_at, published_at'
+  const { rows, loading, error, saveStatus, insertRow, updateRow, deleteRow, fetchOne } = useSupabaseTable(
+    'content_drafts',
+    { select: CONTENT_DRAFTS_LIST_SELECT }
+  )
   const { rows: csLinks } = useSupabaseTable('cs_links')
   const { insertRow: insertReviewLog } = useSupabaseTable('review_log')
   const confirm = useConfirm()
@@ -702,11 +710,20 @@ export default function ContentDrafts() {
   }
   const openEdit = (row) => {
     setEditing(row)
-    setForm({ ...emptyForm, ...row, cs_link_id: row.cs_link_id || '', images: row.images || [], revision_history: row.revision_history || [] })
+    // 목록 조회엔 images가 빠져있어서(위 CONTENT_DRAFTS_LIST_SELECT 참고), 일단 이미지 없이 바로
+    // 열고 - 실제 이미지는 아래에서 이 행 하나만 따로 불러와서 채워넣는다 (전체 목록을 다시
+    // 무겁게 불러오지 않기 위함).
+    setForm({ ...emptyForm, ...row, cs_link_id: row.cs_link_id || '', images: [], revision_history: row.revision_history || [] })
     setRevisionNote('')
     setFormError(null)
     resetAiState()
     setModalOpen(true)
+
+    fetchOne(row.id)
+      .then((full) => {
+        if (full?.images) setForm((f) => ({ ...f, images: full.images }))
+      })
+      .catch((err) => console.error('[ContentDrafts] 이미지 불러오기 실패:', err.message))
   }
 
   // 홈/아침 브리핑에서 "?id=..."로 들어오면 해당 초안을 바로 열어줌 (일일이 목록에서 찾을 필요 없게)
