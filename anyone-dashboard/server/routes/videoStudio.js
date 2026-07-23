@@ -6,6 +6,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { renderVideo } from '../lib/videoRenderer.js'
 import { GENERATED_DIR } from './shorts.js'
+import { BGM_DIR } from '../lib/backgroundMusic.js'
 
 // video-maker(독립 프로그램)의 씬 편집기를 그대로 대시보드 안으로 옮겨온 라우트.
 // 렌더링 엔진(videoRenderer.js)은 video-maker/build.js와 동일한 로직을 공유한다.
@@ -14,6 +15,14 @@ const router = Router()
 const uploadDir = path.join(os.tmpdir(), 'anyone-video-studio-uploads')
 fs.mkdirSync(uploadDir, { recursive: true })
 const upload = multer({ dest: uploadDir, limits: { fileSize: 200 * 1024 * 1024 } })
+
+// 2026-07-23: "배경음악 추천 + 직접 고르기" 요청 - server/assets/bgm/에 넣어둔 무료 음악
+// 목록을 보여줘서, 매번 파일을 새로 업로드하지 않고 목록에서 골라 쓸 수 있게 함.
+router.get('/video-studio/bgm-list', (req, res) => {
+  if (!fs.existsSync(BGM_DIR)) return res.json({ tracks: [] })
+  const files = fs.readdirSync(BGM_DIR).filter((f) => /\.mp3$/i.test(f))
+  res.json({ tracks: files.map((f) => ({ filename: f, url: `/bgm-assets/${encodeURIComponent(f)}` })) })
+})
 
 router.post('/video-studio/render', upload.any(), (req, res) => {
   try {
@@ -54,6 +63,14 @@ router.post('/video-studio/render', upload.any(), (req, res) => {
       cfg.audio = fileMap.audio.path
       cfg.audioVolume = Number(req.body.audioVolume) || 1
       cfg.loopAudio = true
+    } else if (req.body.bgmFilename) {
+      // 추천 목록(server/assets/bgm/)에서 고른 경우 - 매번 새로 업로드 안 하고 파일명으로 바로 참조
+      const bgmPath = path.join(BGM_DIR, path.basename(req.body.bgmFilename))
+      if (fs.existsSync(bgmPath)) {
+        cfg.audio = bgmPath
+        cfg.audioVolume = Number(req.body.audioVolume) || 1
+        cfg.loopAudio = true
+      }
     }
 
     fs.mkdirSync(GENERATED_DIR, { recursive: true })

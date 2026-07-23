@@ -1,6 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import PageHeader from '../components/PageHeader'
-import { renderVideoStudio } from '../lib/apiClient'
+import { renderVideoStudio, getBgmList } from '../lib/apiClient'
+
+// 2026-07-23: "사진 한 장으로 여러 장면 채우기" 요청 - 영상/사진을 매번 여러 개 구하지 않아도
+// 같은 사진을 다른 모션으로 몇 번 반복해서 보여주면 장면이 여러 개 있는 것처럼 느껴진다는
+// 아이디어. ffmpeg 렌더링 쪽은 기존 모션 옵션을 그대로 재사용하므로 새 서버 로직이 필요 없고,
+// 프론트엔드에서 같은 파일로 씬을 여러 개 만들어주기만 하면 됨.
+const SPLIT_MOTION_CYCLE = ['zoom-in', 'pan-left', 'zoom-out', 'pan-right', 'boomerang', 'pan-boomerang']
 
 const MOTION_OPTIONS = [
   { value: 'zoom-in', label: '줌인' },
@@ -44,6 +50,34 @@ export default function VideoStudio() {
   const [musicFile, setMusicFile] = useState(null)
   const [musicVolume, setMusicVolume] = useState(0.8)
   const [bulkAdding, setBulkAdding] = useState(false)
+
+  // 추천 배경음악 (server/assets/bgm/) - 직접 업로드 대신 목록에서 미리 듣고 고를 수 있게
+  const [bgmTracks, setBgmTracks] = useState([])
+  const [bgmLoading, setBgmLoading] = useState(true)
+  const [selectedBgm, setSelectedBgm] = useState(null) // filename or null
+  useEffect(() => {
+    getBgmList()
+      .then(setBgmTracks)
+      .catch(() => setBgmTracks([]))
+      .finally(() => setBgmLoading(false))
+  }, [])
+
+  // 사진 한 장을 여러 장면으로 자동 분할 (모션을 다르게 돌려가며 같은 사진을 반복 사용)
+  const [splitFile, setSplitFile] = useState(null)
+  const [splitCount, setSplitCount] = useState(3)
+  const addSplitScenes = () => {
+    if (!splitFile) return
+    const newScenes = Array.from({ length: splitCount }, (_, i) => ({
+      key: `s${sceneSeq++}`,
+      imageFile: splitFile,
+      motion: SPLIT_MOTION_CYCLE[i % SPLIT_MOTION_CYCLE.length],
+      duration: 3,
+      text: '',
+      voiceFile: null,
+    }))
+    setScenes((prev) => (prev.length === 1 && !prev[0].imageFile ? newScenes : [...prev, ...newScenes]))
+    setSplitFile(null)
+  }
 
   const [rendering, setRendering] = useState(false)
   const [error, setError] = useState(null)
@@ -92,6 +126,9 @@ export default function VideoStudio() {
     fd.append('transitionDuration', String(transitionDuration))
     if (musicFile) {
       fd.append('audio', musicFile)
+      fd.append('audioVolume', String(musicVolume))
+    } else if (selectedBgm) {
+      fd.append('bgmFilename', selectedBgm)
       fd.append('audioVolume', String(musicVolume))
     }
     fd.append(
@@ -149,14 +186,70 @@ export default function VideoStudio() {
           />
         </div>
         <div>
-          <label className="mb-1 block text-xs font-semibold text-ink/70">배경음악 (선택)</label>
+          <label className="mb-1 block text-xs font-semibold text-ink/70">배경음악 볼륨</label>
           <input
-            type="file"
-            accept="audio/*"
-            onChange={(e) => setMusicFile(e.target.files?.[0] || null)}
-            className="w-full text-xs"
+            type="number"
+            step="0.1"
+            min="0"
+            max="1"
+            value={musicVolume}
+            onChange={(e) => setMusicVolume(Number(e.target.value))}
+            className="w-full rounded-md border border-ink/15 bg-white px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
           />
         </div>
+      </div>
+
+      <div className="mb-4 rounded-xl bg-paper-card p-4 shadow-card">
+        <label className="mb-2 block text-sm font-semibold text-ink/80">🎵 배경음악 (선택)</label>
+        {bgmLoading ? (
+          <p className="text-xs text-ink/40">추천 음악 불러오는 중...</p>
+        ) : bgmTracks.length === 0 ? (
+          <p className="text-xs text-ink/40">
+            아직 추천 음악이 없어요 (server/assets/bgm/ 폴더가 비어있음) - 아래에서 직접 파일을 올려도 돼요.
+          </p>
+        ) : (
+          <div className="mb-3 space-y-2">
+            {bgmTracks.map((t) => (
+              <label
+                key={t.filename}
+                className={`flex items-center gap-3 rounded-md border p-2 text-xs ${
+                  selectedBgm === t.filename ? 'border-stamp-amber bg-stamp-amber/5' : 'border-ink/10'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="bgmTrack"
+                  checked={selectedBgm === t.filename}
+                  onChange={() => {
+                    setSelectedBgm(t.filename)
+                    setMusicFile(null)
+                  }}
+                />
+                <span className="flex-1">{t.filename}</span>
+                <audio src={t.url} controls className="h-8" style={{ maxWidth: '200px' }} />
+              </label>
+            ))}
+            {selectedBgm && (
+              <button
+                type="button"
+                onClick={() => setSelectedBgm(null)}
+                className="text-[11px] text-ink/40 underline decoration-dotted hover:text-stamp-amber"
+              >
+                선택 해제
+              </button>
+            )}
+          </div>
+        )}
+        <label className="mb-1 block text-[11px] text-ink/50">또는 직접 음악 파일 올리기</label>
+        <input
+          type="file"
+          accept="audio/*"
+          onChange={(e) => {
+            setMusicFile(e.target.files?.[0] || null)
+            if (e.target.files?.[0]) setSelectedBgm(null)
+          }}
+          className="w-full text-xs"
+        />
       </div>
 
       <div className="mb-4 rounded-xl border border-dashed border-stamp-amber/40 bg-stamp-amber/5 p-4">
@@ -177,6 +270,42 @@ export default function VideoStudio() {
             ? '영상 길이 확인 중...'
             : '고른 순서대로 씬이 자동으로 만들어져요. 효과 없이 원본 그대로 이어붙고, 아래에서 순서·길이는 나중에 바꿀 수 있어요.'}
         </p>
+      </div>
+
+      <div className="mb-4 rounded-xl border border-dashed border-stamp-amber/40 bg-stamp-amber/5 p-4">
+        <label className="mb-1 block text-sm font-semibold text-ink/80">
+          🖼 사진 한 장으로 여러 장면 채우기
+        </label>
+        <p className="mb-2 text-[11px] text-ink/40">
+          영상이나 사진이 부족할 때, 같은 사진 하나를 줌/팬 효과를 바꿔가며 여러 장면으로 나눠서 써요.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <input
+            type="file"
+            accept="image/*"
+            onChange={(e) => setSplitFile(e.target.files?.[0] || null)}
+            className="min-w-[160px] flex-1 text-xs"
+          />
+          <label className="flex items-center gap-1 text-xs text-ink/60">
+            장면 개수
+            <input
+              type="number"
+              min="2"
+              max="6"
+              value={splitCount}
+              onChange={(e) => setSplitCount(Number(e.target.value))}
+              className="w-14 rounded-md border border-ink/15 px-2 py-1 text-xs"
+            />
+          </label>
+          <button
+            type="button"
+            onClick={addSplitScenes}
+            disabled={!splitFile}
+            className="rounded-md bg-stamp-amber px-3 py-1.5 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+          >
+            + {splitCount}개 장면 만들기
+          </button>
+        </div>
       </div>
 
       <div className="space-y-3">

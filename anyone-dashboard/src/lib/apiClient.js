@@ -281,6 +281,14 @@ export async function renderVideoStudio(formData) {
   return data
 }
 
+// 영상 제작실 - 추천 배경음악 목록(server/assets/bgm/) 조회
+export async function getBgmList() {
+  const res = await fetch(`${API_BASE}/api/video-studio/bgm-list`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `배경음악 목록을 불러오지 못했어요 (${res.status})`)
+  return data.tracks || []
+}
+
 // 유튜브 트렌드 분석 - 장르별 급상승 영상을 상승 속도 기준으로 채점 + AI 분석/리포트
 export async function scanYoutubeTrend({ genre, keywords, days }) {
   return postJson('/api/youtube-trend/scan', { genre, keywords, days })

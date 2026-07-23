@@ -16,6 +16,7 @@ import pexelsRoutes from './routes/pexels.js'
 import autoRoutes from './routes/auto.js'
 import seedRoutes from './routes/seed.js'
 import videoStudioRoutes from './routes/videoStudio.js'
+import { BGM_DIR } from './lib/backgroundMusic.js'
 import benchmarkAutoRoutes from './routes/benchmark.js'
 import instagramRoutes from './routes/instagram.js'
 import instagramCommentsRoutes from './routes/instagramComments.js'
@@ -78,6 +79,9 @@ app.use('/auth', authRoutes)
 // 쇼츠 렌더링 결과(mp4)를 바로 재생/다운로드할 수 있게 정적으로 서빙
 fs.mkdirSync(GENERATED_DIR, { recursive: true })
 app.use('/generated', express.static(GENERATED_DIR))
+
+// 영상편집실의 "배경음악 추천" 목록에서 미리듣기할 수 있게 bgm 폴더도 정적으로 서빙
+app.use('/bgm-assets', express.static(BGM_DIR))
 
 // 배포(프로덕션) 환경에서는 프론트엔드(vite build 결과)까지 이 서버 하나가 같이 서빙한다.
 // 로컬 개발(npm run dev:all)에서는 vite dev 서버가 따로 5173번에서 떠서 이 블록은 그냥 건너뛴다.
