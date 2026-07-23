@@ -166,14 +166,20 @@ export default function ContentDrafts() {
   const [sourceSavingChannel, setSourceSavingChannel] = useState(null)
   const [sourceSavedChannels, setSourceSavedChannels] = useState([])
 
+  // 2026-07-23: 모달 열 때마다 자동으로 다 지워지던 걸(실패했을 때 다시 붙여넣어야 하는 불편함
+  // 피드백) 그만두고, 붙여넣은 기사/주제/결과는 그대로 남겨둠 - 지우고 싶을 때만 아래
+  // resetSourceModal(초기화 버튼)로 직접 지우게 함.
   const openSourceModal = () => {
+    setSourceModalOpen(true)
+  }
+
+  const resetSourceModal = () => {
     setSourceArticleText('')
     setSourceTopic('')
     setSourceError(null)
     setSourceResults([])
     setSourceWeatherNote(null)
     setSourceSavedChannels([])
-    setSourceModalOpen(true)
   }
 
   const toggleSourceChannel = (channel) => {
@@ -210,6 +216,17 @@ export default function ContentDrafts() {
   const handleSaveSourceResult = async (result) => {
     setSourceSavingChannel(result.channel)
     try {
+      // 서버가 블로그류엔 무료 스톡사진(Pexels)을 이미 찾아서 같이 내려줌 - 첨부 형식(id/size/생성일)만 여기서 맞춰줌
+      const images = (result.images || []).map((img) => ({
+        id: crypto.randomUUID(),
+        kind: img.kind,
+        filename: img.filename,
+        mime_type: img.mime_type,
+        size: img.data_url?.length || 0,
+        data_url: img.data_url,
+        note: img.note,
+        created_at: new Date().toISOString(),
+      }))
       await insertRow({
         ...emptyForm,
         title: result.title,
@@ -217,6 +234,7 @@ export default function ContentDrafts() {
         hashtags: result.hashtags || '',
         platform: result.channel,
         category: getCategoryForChannel(result.channel),
+        images,
         source: '기사/링크에서 자동 생성',
         author_name: 'AI (소스 변환)',
         status: '초안',
@@ -1758,10 +1776,20 @@ export default function ContentDrafts() {
       </Modal>
 
       <Modal open={sourceModalOpen} onClose={() => setSourceModalOpen(false)} title="📰 기사/링크로 한번에 만들기">
-        <p className="mb-3 text-xs text-ink/50">
-          기사 본문(또는 소재 내용)을 붙여넣고 채널을 고르면, 원문을 그대로 베끼지 않고 개인 경험담처럼 재구성해서
-          채널마다 각각 초안을 만들어줘요. 오늘 계절·날씨도 자연스러울 때만 살짝 반영해요.
-        </p>
+        <div className="mb-3 flex items-start justify-between gap-2">
+          <p className="text-xs text-ink/50">
+            기사 본문(또는 소재 내용)을 붙여넣고 채널을 고르면, 원문을 그대로 베끼지 않고 개인 경험담처럼 재구성해서
+            채널마다 각각 초안을 만들어줘요. 오늘 계절·날씨도 자연스러울 때만 살짝 반영해요. 실패해도 입력한 내용은
+            그대로 남아있으니 안심하고 다시 눌러도 돼요.
+          </p>
+          <button
+            type="button"
+            onClick={resetSourceModal}
+            className="flex-shrink-0 rounded-md border border-ink/15 px-2 py-1 text-[11px] font-semibold text-ink/50 hover:bg-ink/5"
+          >
+            🗑 초기화
+          </button>
+        </div>
 
         <FormField
           label="기사 본문 / 소재 내용"
@@ -1836,6 +1864,13 @@ export default function ContentDrafts() {
                   <>
                     <p className="text-sm font-semibold">{r.title}</p>
                     <p className="mt-1 whitespace-pre-wrap text-xs text-ink/60">{r.body}</p>
+                    {r.images?.length > 0 && (
+                      <div className="mt-2 flex gap-2">
+                        {r.images.map((img, i) => (
+                          <img key={i} src={img.data_url} alt="" className="h-16 w-24 rounded object-cover" title={img.note} />
+                        ))}
+                      </div>
+                    )}
                   </>
                 )}
               </div>
