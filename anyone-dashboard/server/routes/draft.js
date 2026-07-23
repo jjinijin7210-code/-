@@ -1,7 +1,8 @@
 import { Router } from 'express'
-import { callClaude } from '../lib/anthropicClient.js'
+import { callClaudeJson } from '../lib/anthropicClient.js'
 import { buildDraftMessages, buildTranslateMessages, parseDraftResponse } from '../lib/promptBuilder.js'
 import { getCurrentWeatherNote } from '../lib/weatherClient.js'
+import { searchPhotos, fetchPhotoAsDataUrl } from '../lib/pexelsClient.js'
 
 const router = Router()
 
@@ -23,8 +24,9 @@ router.post('/draft', async (req, res) => {
     // 블로그는 소제목이 있는 긴 article 형태라 1024토큰으로는 JSON이 중간에 잘려서
     // 파싱 실패가 났음(실측 확인) - 블로그류만 넉넉하게 늘림
     const maxTokens = channel.startsWith('블로그') ? 3000 : 1024
-    const text = await callClaude({ system, messages, maxTokens })
-    const draft = parseDraftResponse(text)
+    // 2026-07-23: 가끔 AI 응답이 JSON 파싱에 실패하는 문제(대부분 그날그날의 응답 변동) - 같은
+    // 프롬프트로 재시도하면 대부분 성공한다는 게 dailyAutofill.mjs 등에서 이미 확인된 방식이라 동일 적용
+    const draft = await callClaudeJson({ system, messages, maxTokens, parse: parseDraftResponse })
     res.json(draft)
   } catch (err) {
     res.status(502).json({ error: err.message })
@@ -50,17 +52,22 @@ router.post('/draft/from-source', async (req, res) => {
   const results = []
   for (const channel of channels) {
     try {
+      const isBlog = channel.startsWith('블로그')
       const { system, messages } = buildDraftMessages({
         channel,
         topic,
         sourceArticle,
         includeSeasonWeather: true,
         weatherNote,
+        needsPhotoQuery: isBlog, // 블로그는 본문에 사진 언급이 자연스레 들어가니, 실제로 매칭되는 무료 스톡사진을 찾아 첨부하기 위한 검색어를 같이 받음
       })
-      const maxTokens = channel.startsWith('블로그') ? 3000 : 1024
-      const text = await callClaude({ system, messages, maxTokens })
-      const draft = parseDraftResponse(text)
+      const maxTokens = isBlog ? 3000 : 1024
+      // 2026-07-23: 가끔 AI 응답이 JSON 파싱에 실패하는 문제 - 같은 프롬프트로 재시도하면 대부분
+      // 성공한다는 게 dailyAutofill.mjs 등에서 이미 확인된 방식이라 동일 적용 (기존엔 재시도 없이
+      // 바로 실패해서 "구글 블로그는 실패네" 같은 리포트가 나왔음)
+      const draft = await callClaudeJson({ system, messages, maxTokens, parse: parseDraftResponse })
 
+      let finalDraft = draft
       if (channel === GOOGLE_BLOG_CHANNEL) {
         // 한국어 초안은 그대로 내보내지 않고, 곧바로 영어로 번역한 버전을 이 채널의 결과로 씀
         // (실제 게시 대상은 영어 버전이므로 - threadBlogAuto.js 자동화와 동일한 원칙)
@@ -70,12 +77,37 @@ router.post('/draft/from-source', async (req, res) => {
           body: draft.body,
           hashtags: draft.hashtags,
         })
-        const trText = await callClaude({ system: trSystem, messages: trMessages, maxTokens: 3000 })
-        const translated = parseDraftResponse(trText)
-        results.push({ channel, ...translated })
-      } else {
-        results.push({ channel, ...draft })
+        finalDraft = await callClaudeJson({
+          system: trSystem,
+          messages: trMessages,
+          maxTokens: 3000,
+          parse: parseDraftResponse,
+        })
       }
+
+      // 블로그류는 photoQuery로 무료 스톡사진(Pexels)을 찾아서 같이 첨부 - "사진이 없는데 본문이
+      // 사진 얘기를 하면 뭘 봐야 할지 모르겠다"는 피드백(2026-07-23) 반영. 실패해도(검색어로 못
+      // 찾음, PEXELS_API_KEY 없음 등) 글 자체는 그대로 내보냄(best-effort).
+      let images = []
+      if (isBlog && draft.photoQuery) {
+        try {
+          const photos = await searchPhotos({ query: draft.photoQuery, perPage: 3 })
+          const picked = photos.slice(0, 2)
+          images = await Promise.all(
+            picked.map(async (p) => ({
+              kind: 'image',
+              filename: `pexels-${p.id}.jpg`,
+              mime_type: 'image/jpeg',
+              data_url: await fetchPhotoAsDataUrl(p.full),
+              note: `무료 스톡 사진 (Pexels · ${p.photographer}) - 검색어: ${draft.photoQuery}`,
+            }))
+          )
+        } catch (photoErr) {
+          console.error('[draft/from-source] 스톡사진 검색 실패, 사진 없이 진행:', photoErr.message)
+        }
+      }
+
+      results.push({ channel, ...finalDraft, images })
     } catch (err) {
       results.push({ channel, error: err.message })
     }
@@ -94,8 +126,7 @@ router.post('/draft/translate', async (req, res) => {
 
   try {
     const { system, messages } = buildTranslateMessages({ targetChannel, title, body, hashtags })
-    const text = await callClaude({ system, messages, maxTokens: 1024 })
-    const draft = parseDraftResponse(text)
+    const draft = await callClaudeJson({ system, messages, maxTokens: 1024, parse: parseDraftResponse })
     res.json(draft)
   } catch (err) {
     res.status(502).json({ error: err.message })
