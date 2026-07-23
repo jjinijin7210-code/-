@@ -20,7 +20,7 @@ const upload = multer({ dest: uploadDir, limits: { fileSize: 200 * 1024 * 1024 }
 // 목록을 보여줘서, 매번 파일을 새로 업로드하지 않고 목록에서 골라 쓸 수 있게 함.
 router.get('/video-studio/bgm-list', (req, res) => {
   if (!fs.existsSync(BGM_DIR)) return res.json({ tracks: [] })
-  const files = fs.readdirSync(BGM_DIR).filter((f) => /\.mp3$/i.test(f))
+  const files = fs.readdirSync(BGM_DIR).filter((f) => /\.(mp3|wav)$/i.test(f))
   res.json({ tracks: files.map((f) => ({ filename: f, url: `/bgm-assets/${encodeURIComponent(f)}` })) })
 })
 

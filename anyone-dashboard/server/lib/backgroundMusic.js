@@ -12,9 +12,10 @@ import { fileURLToPath } from 'node:url'
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 export const BGM_DIR = path.join(__dirname, '..', 'assets', 'bgm')
 
+// 2026-07-23: 수노(Suno)로 만든 배경음악을 wav로 받아와서 mp3 확장자도 함께 지원하도록 확장
 export function pickBackgroundMusic() {
   if (!fs.existsSync(BGM_DIR)) return null
-  const files = fs.readdirSync(BGM_DIR).filter((f) => /\.mp3$/i.test(f))
+  const files = fs.readdirSync(BGM_DIR).filter((f) => /\.(mp3|wav)$/i.test(f))
   if (files.length === 0) return null
   const picked = files[Math.floor(Math.random() * files.length)]
   return path.join(BGM_DIR, picked)
