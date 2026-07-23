@@ -21,9 +21,9 @@ router.post('/draft', async (req, res) => {
 
   try {
     const { system, messages } = buildDraftMessages({ channel, topic, referenceNote })
-    // 블로그는 소제목이 있는 긴 article 형태라 1024토큰으로는 JSON이 중간에 잘려서
-    // 파싱 실패가 났음(실측 확인) - 블로그류만 넉넉하게 늘림
-    const maxTokens = channel.startsWith('블로그') ? 3000 : 1024
+    // 블로그는 소제목이 있는 긴 article 형태, 유튜브(한국어)는 쇼츠 나레이션 대본이라 둘 다
+    // 1024토큰으로는 JSON이 중간에 잘려서 파싱 실패가 났음(실측 확인) - 넉넉하게 늘림
+    const maxTokens = channel.startsWith('블로그') || channel === '유튜브(한국어)' ? 3000 : 1024
     // 2026-07-23: 가끔 AI 응답이 JSON 파싱에 실패하는 문제(대부분 그날그날의 응답 변동) - 같은
     // 프롬프트로 재시도하면 대부분 성공한다는 게 dailyAutofill.mjs 등에서 이미 확인된 방식이라 동일 적용
     const draft = await callClaudeJson({ system, messages, maxTokens, parse: parseDraftResponse })
@@ -53,6 +53,7 @@ router.post('/draft/from-source', async (req, res) => {
   for (const channel of channels) {
     try {
       const isBlog = channel.startsWith('블로그')
+      const isLongForm = isBlog || channel === '유튜브(한국어)'
       const { system, messages } = buildDraftMessages({
         channel,
         topic,
@@ -61,7 +62,7 @@ router.post('/draft/from-source', async (req, res) => {
         weatherNote,
         needsPhotoQuery: isBlog, // 블로그는 본문에 사진 언급이 자연스레 들어가니, 실제로 매칭되는 무료 스톡사진을 찾아 첨부하기 위한 검색어를 같이 받음
       })
-      const maxTokens = isBlog ? 3000 : 1024
+      const maxTokens = isLongForm ? 3000 : 1024
       // 2026-07-23: 가끔 AI 응답이 JSON 파싱에 실패하는 문제 - 같은 프롬프트로 재시도하면 대부분
       // 성공한다는 게 dailyAutofill.mjs 등에서 이미 확인된 방식이라 동일 적용 (기존엔 재시도 없이
       // 바로 실패해서 "구글 블로그는 실패네" 같은 리포트가 나왔음)
