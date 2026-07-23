@@ -246,6 +246,9 @@ export default function ContentDrafts() {
         source: '기사/링크에서 자동 생성',
         author_name: 'AI (소스 변환)',
         status: '초안',
+        // cs_link_id는 uuid 컬럼이라 emptyForm의 빈 문자열('')을 그대로 보내면 400 에러가 남
+        // (다른 저장 경로/handleSave는 이미 null로 바꿔서 보내고 있었는데 여기만 빠져있었음)
+        cs_link_id: null,
       })
       setSourceSavedChannels((prev) => [...prev, result.channel])
     } catch (err) {
