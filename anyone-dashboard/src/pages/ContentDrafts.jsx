@@ -60,6 +60,16 @@ const IMAGE_KIND = [
   { key: 'video', label: '영상 (자동 합성)' },
 ]
 
+// 2026-07-23: AI로 이미지를 만들면(실제 스톡사진이 아니라) 투명하게 표시해달라는 요청 - 이미지
+// 생성 직후 본문 맨 끝에 한 번만 자연스럽게 붙여줌(이미 있으면 중복으로 또 안 붙임). 사진 첨부
+// 안 하고 그냥 스톡사진(Pexels)만 쓸 땐 실제 사진이라 이 문구가 안 붙는 게 맞음.
+const AI_IMAGE_DISCLOSURE = 'AI로 제작된 이미지가 포함되어 있습니다.'
+function appendAiImageDisclosure(body) {
+  if (body && body.includes(AI_IMAGE_DISCLOSURE)) return body
+  const trimmed = (body || '').trimEnd()
+  return trimmed ? `${trimmed}\n\n${AI_IMAGE_DISCLOSURE}` : AI_IMAGE_DISCLOSURE
+}
+
 const emptyForm = {
   title: '',
   platform: PLATFORM_OPTIONS[0],
@@ -326,7 +336,7 @@ export default function ContentDrafts() {
         note: aiImagePrompt,
         created_at: new Date().toISOString(),
       }
-      setForm((f) => ({ ...f, images: [...(f.images || []), attachment] }))
+      setForm((f) => ({ ...f, images: [...(f.images || []), attachment], body: appendAiImageDisclosure(f.body) }))
       setAiImagePrompt('')
     } catch (err) {
       setAiImageError(err.message)
@@ -359,7 +369,7 @@ export default function ContentDrafts() {
         note: `참고 사진 기반 생성: ${similarPrompt}`,
         created_at: new Date().toISOString(),
       }
-      setForm((f) => ({ ...f, images: [...(f.images || []), attachment] }))
+      setForm((f) => ({ ...f, images: [...(f.images || []), attachment], body: appendAiImageDisclosure(f.body) }))
       setSimilarRefFile(null)
       setSimilarPrompt('')
     } catch (err) {
