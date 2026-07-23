@@ -60,6 +60,33 @@ function getTargetLanguage(channel) {
   return '한국어'
 }
 
+// 2026-07-23: "기사/링크 하나 넣으면 여러 채널로 한번에 변환" 기능(draft/from-source)에서 쓰는
+// 글쓰기 공식. 진희님이 유튜브 강의 영상을 보고 정리한 원칙(정보 나열이 아니라 개인 경험담처럼
+// 써야 안 딱딱하고, 필자의 의견이 들어가야 노출이 잘 됨) + 실제 대화에서 확인한 "증상/사건 →
+// 왜지 생각 → 원인 발견" 훅 구조를 그대로 반영함.
+const PERSONAL_HOOK_RULE = `[글쓰기 공식 - 반드시 이 구조로] 정보를 나열하듯 시작하지 말고, 아래 순서로 써:
+1. 개인 경험 훅: "어제 ~하다가 ~했는데 왜 그런가 했더니" 같은 증상/사건 → 궁금증 → 원인 발견 흐름으로 시작해
+2. 그 경험과 자연스럽게 연결지어서 핵심 정보 2~3개를 풀어줘 (나열이 아니라 "찾아보니 ~더라고" 식으로)
+3. 필자의 주관적인 생각이나 다짐을 한 마디 넣어줘 (AI가 쓴 것 같은 객관적 정보 나열만 하면 안 됨)
+4. 마지막은 CTA로 마무리해`
+
+// 현재 월을 기준으로 계절감을 프롬프트에 살짝 얹어줌 (한국은 4계절이 뚜렷해서, 시의성 있는
+// 소재로 자연스럽게 녹이면 반응이 더 좋다는 진희님 피드백, 2026-07-23)
+function getCurrentSeasonKorean(date = new Date()) {
+  const month = date.getMonth() + 1
+  if (month >= 3 && month <= 5) return '봄'
+  if (month >= 6 && month <= 8) return '여름'
+  if (month >= 9 && month <= 11) return '가을'
+  return '겨울'
+}
+
+// 외부 기사/자료를 참고 소재로 줄 때 지킬 것 - 원문 그대로 베끼면 저작권 문제가 생길 수 있어서,
+// 의미(사실관계)는 유지하되 표현은 완전히 새로 쓰도록 명시함.
+const SOURCE_ARTICLE_RULES = `[원본 자료 참고 원칙]
+- 아래 원본 자료의 사실 관계·핵심 정보는 그대로 살리되, 문장 표현은 원문을 절대 그대로 베끼지 말고 완전히 새로운 표현으로 다시 써
+- 원본에 없는 사실을 지어내지 마
+- 원본이 불확실하거나 "~라는 설이 있다"는 식의 속설이면, 확정된 사실처럼 단정하지 말고 그 뉘앙스(속설임)를 그대로 살려서 정직하게 써줘`
+
 // 2026-07-19: 동물/재밌는영상 카테고리는 실제로 화제가 된 동물 사진을 Pexels(무료 스톡사진)에서
 // 찾아 붙이기로 함(사용자 결정: "그 동물의 다른 사진을 찾아서 올리면 되니까") - AI가 참고자료
 // 속 실제 동물/장면을 영어 키워드로 뽑아내야 검색이 가능해서, 그 키워드를 초안 JSON에 같이 담게 함.
@@ -74,19 +101,33 @@ const PHOTO_QUERY_RULE = `[사진 검색어] 위 참고자료에서 실제로 �
  * @param {string} channel - '스레드' | '인스타/틱톡' 등
  * @param {object} [opts]
  * @param {boolean} [opts.needsPhotoQuery] - true면 JSON 응답에 photoQuery 필드도 요구함
+ * @param {boolean} [opts.usesSourceArticle] - true면 원본 자료 기반 재구성 원칙 + 개인 경험 훅 공식을 추가함
  */
-export function buildDraftSystemPrompt(channel, { needsPhotoQuery = false } = {}) {
+export function buildDraftSystemPrompt(channel, { needsPhotoQuery = false, usesSourceArticle = false } = {}) {
   const parts = [
     '너는 애니원(AnyOne)의 콘텐츠 작성자야. 실제 사람이 쓴 것처럼 자연스러운 SNS 게시물 초안을 써줘.',
     COMMON_TONE_RULES,
   ]
-  if (CHANNEL_TONE[channel]) parts.push(CHANNEL_TONE[channel])
+  if (CHANNEL_TONE[channel]) {
+    parts.push(CHANNEL_TONE[channel])
+  } else if (channel.startsWith('블로그')) {
+    // CHANNEL_TONE에 개별 등록 안 된 블로그 하위 카테고리(예: 블로그(네이버)-푸드)도 기본 블로그 톤은 적용
+    parts.push(BLOG_TONE)
+  }
   if (channel.startsWith('인스타/틱톡')) {
     parts.push(INSTA_TIKTOK_TONE)
     parts.push(LOCALIZATION_RULES)
-    const lang = getTargetLanguage(channel)
+  }
+  // 언어 지시는 채널명에 "영어"/"일본어"가 들어간 모든 채널에 공통 적용 (인스타/틱톡뿐 아니라
+  // 유튜브(일본어) 같은 채널도 해당 - 2026-07-23, from-source 기능으로 대상 채널이 넓어지며 발견)
+  const lang = getTargetLanguage(channel)
+  if (lang !== '한국어') {
     parts.push(`[언어] title/body/hashtags 전부 반드시 ${lang}로만 작성해. 다른 언어를 섞지 마.`)
     if (lang === '일본어') parts.push(JAPANESE_NATURALNESS_RULES)
+  }
+  if (usesSourceArticle) {
+    parts.push(SOURCE_ARTICLE_RULES)
+    parts.push(PERSONAL_HOOK_RULE)
   }
   if (needsPhotoQuery) parts.push(PHOTO_QUERY_RULE)
   parts.push(
@@ -99,22 +140,39 @@ export function buildDraftSystemPrompt(channel, { needsPhotoQuery = false } = {}
  * 초안 생성 요청의 user prompt를 만듭니다.
  * @param {object} params
  * @param {string} params.channel
- * @param {string} params.topic - 다루고 싶은 주제/키워드
+ * @param {string} [params.topic] - 다루고 싶은 주제/키워드 (sourceArticle이 있으면 생략 가능)
  * @param {string} [params.referenceNote] - (인스타/틱톡 전용) 참고한 해외 트렌드에 대한 설명 - 원문 캡션이 아니라 "왜 인기 있는지" 설명이어야 함
+ * @param {string} [params.sourceArticle] - 기사/링크 등 원본 소재 전문 (있으면 이걸 바탕으로 재구성)
+ * @param {boolean} [params.includeSeasonWeather] - true면 오늘 계절+날씨 컨텍스트를 함께 전달
+ * @param {string} [params.weatherNote] - "맑음 28도"처럼 미리 조회해둔 오늘 날씨 한 줄 (없으면 계절만 전달)
  */
-export function buildDraftUserPrompt({ channel, topic, referenceNote }) {
-  const lines = [`채널: ${channel}`, `주제: ${topic}`]
+export function buildDraftUserPrompt({ channel, topic, referenceNote, sourceArticle, includeSeasonWeather, weatherNote }) {
+  const lines = [`채널: ${channel}`]
+  if (topic && topic.trim()) lines.push(`주제: ${topic.trim()}`)
+  if (includeSeasonWeather) {
+    const season = getCurrentSeasonKorean()
+    lines.push(`오늘 계절/날씨: ${season}${weatherNote ? ` · ${weatherNote}` : ''} (자연스럽게 어울릴 때만 살짝 녹여줘, 억지로 끼워 넣지 마)`)
+  }
   if (referenceNote && referenceNote.trim()) {
     lines.push(`참고한 해외 트렌드 포인트(그대로 번역 금지, 아이디어만 반영): ${referenceNote.trim()}`)
+  }
+  if (sourceArticle && sourceArticle.trim()) {
+    lines.push(`[원본 자료]\n${sourceArticle.trim()}`)
   }
   lines.push('위 내용으로 게시물 초안을 하나 작성해줘.')
   return lines.join('\n')
 }
 
-export function buildDraftMessages({ channel, topic, referenceNote, needsPhotoQuery }) {
+export function buildDraftMessages({ channel, topic, referenceNote, needsPhotoQuery, sourceArticle, includeSeasonWeather, weatherNote }) {
+  const usesSourceArticle = Boolean(sourceArticle && sourceArticle.trim())
   return {
-    system: buildDraftSystemPrompt(channel, { needsPhotoQuery }),
-    messages: [{ role: 'user', content: buildDraftUserPrompt({ channel, topic, referenceNote }) }],
+    system: buildDraftSystemPrompt(channel, { needsPhotoQuery, usesSourceArticle }),
+    messages: [
+      {
+        role: 'user',
+        content: buildDraftUserPrompt({ channel, topic, referenceNote, sourceArticle, includeSeasonWeather, weatherNote }),
+      },
+    ],
   }
 }
 

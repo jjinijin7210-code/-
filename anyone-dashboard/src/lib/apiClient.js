@@ -28,6 +28,11 @@ export function translateDraft({ targetChannel, title, body, hashtags }) {
   return postJson('/api/draft/translate', { targetChannel, title, body, hashtags })
 }
 
+// 기사/링크 등 원본 소재 하나를 여러 채널용으로 한 번에 변환 (returns { results: [{channel, title, body, hashtags, error?}], weatherNote })
+export function generateDraftsFromSource({ sourceArticle, channels, topic }) {
+  return postJson('/api/draft/from-source', { sourceArticle, channels, topic })
+}
+
 // AI 자동 검수 (팩트체크/과장표현/AI스러운 문체)
 export function reviewDraftWithAi({ title, body, channel }) {
   return postJson('/api/review', { title, body, channel })

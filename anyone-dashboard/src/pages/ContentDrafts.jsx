@@ -23,6 +23,7 @@ import {
 } from '../lib/contentPreview'
 import {
   generateDraft,
+  generateDraftsFromSource,
   translateDraft,
   reviewDraftWithAi,
   autoFixAndReview,
@@ -146,6 +147,84 @@ export default function ContentDrafts() {
       setDupMessage({ type: 'error', text: `삭제 중 오류가 났어요: ${e.message}` })
     } finally {
       setDupCleaning(false)
+    }
+  }
+
+  // "기사/링크로 한번에 만들기" - 원본 소재 하나를 여러 채널용으로 한 번에 변환 (2026-07-23,
+  // 진희님이 유튜브 강의 영상 보고 요청한 기능). 채널별 결과를 먼저 미리보기로 보여주고, 마음에
+  // 드는 것만 골라서 저장하게 함 (전부 자동 저장하면 실패한 것도 섞여 들어갈 위험이 있어서).
+  const SOURCE_CHANNEL_OPTIONS = PLATFORM_OPTIONS
+  const [sourceModalOpen, setSourceModalOpen] = useState(false)
+  const [sourceArticleText, setSourceArticleText] = useState('')
+  const [sourceTopic, setSourceTopic] = useState('')
+  const [sourceChannels, setSourceChannels] = useState(['스레드', '블로그(네이버)-푸드'])
+  const [sourceLoading, setSourceLoading] = useState(false)
+  const [sourceError, setSourceError] = useState(null)
+  const [sourceResults, setSourceResults] = useState([]) // [{channel, title, body, hashtags, error?}]
+  const [sourceWeatherNote, setSourceWeatherNote] = useState(null)
+  const [sourceSavingChannel, setSourceSavingChannel] = useState(null)
+  const [sourceSavedChannels, setSourceSavedChannels] = useState([])
+
+  const openSourceModal = () => {
+    setSourceArticleText('')
+    setSourceTopic('')
+    setSourceError(null)
+    setSourceResults([])
+    setSourceWeatherNote(null)
+    setSourceSavedChannels([])
+    setSourceModalOpen(true)
+  }
+
+  const toggleSourceChannel = (channel) => {
+    setSourceChannels((prev) => (prev.includes(channel) ? prev.filter((c) => c !== channel) : [...prev, channel]))
+  }
+
+  const handleGenerateFromSource = async () => {
+    if (!sourceArticleText.trim()) {
+      setSourceError('기사 본문이나 소재 내용을 먼저 붙여넣어주세요.')
+      return
+    }
+    if (sourceChannels.length === 0) {
+      setSourceError('채널을 하나 이상 선택해주세요.')
+      return
+    }
+    setSourceLoading(true)
+    setSourceError(null)
+    setSourceResults([])
+    try {
+      const { results, weatherNote } = await generateDraftsFromSource({
+        sourceArticle: sourceArticleText,
+        channels: sourceChannels,
+        topic: sourceTopic,
+      })
+      setSourceResults(results)
+      setSourceWeatherNote(weatherNote)
+    } catch (err) {
+      setSourceError(err.message)
+    } finally {
+      setSourceLoading(false)
+    }
+  }
+
+  const handleSaveSourceResult = async (result) => {
+    setSourceSavingChannel(result.channel)
+    try {
+      await insertRow({
+        ...emptyForm,
+        title: result.title,
+        body: result.body,
+        hashtags: result.hashtags || '',
+        platform: result.channel,
+        category: getCategoryForChannel(result.channel),
+        source: '기사/링크에서 자동 생성',
+        author_name: 'AI (소스 변환)',
+        status: '초안',
+      })
+      setSourceSavedChannels((prev) => [...prev, result.channel])
+    } catch (err) {
+      setSourceError(`"${result.channel}" 저장 실패: ${err.message}`)
+    } finally {
+      setSourceSavingChannel(null)
     }
   }
 
@@ -820,6 +899,15 @@ export default function ContentDrafts() {
         onAddClick={openAdd}
         addLabel="초안 추가"
       />
+
+      <div className="mb-4">
+        <button
+          onClick={openSourceModal}
+          className="rounded-lg border border-stamp-amber/40 bg-stamp-amber/5 px-4 py-2 text-sm font-semibold text-stamp-amber hover:bg-stamp-amber/10"
+        >
+          📰 기사/링크로 한번에 만들기
+        </button>
+      </div>
 
       {loading && <LoadingView />}
       {error && <ErrorView message={error} />}
@@ -1609,6 +1697,93 @@ export default function ContentDrafts() {
             </div>
           </div>
         </form>
+      </Modal>
+
+      <Modal open={sourceModalOpen} onClose={() => setSourceModalOpen(false)} title="📰 기사/링크로 한번에 만들기">
+        <p className="mb-3 text-xs text-ink/50">
+          기사 본문(또는 소재 내용)을 붙여넣고 채널을 고르면, 원문을 그대로 베끼지 않고 개인 경험담처럼 재구성해서
+          채널마다 각각 초안을 만들어줘요. 오늘 계절·날씨도 자연스러울 때만 살짝 반영해요.
+        </p>
+
+        <FormField
+          label="기사 본문 / 소재 내용"
+          type="textarea"
+          hint="뉴스 기사, 블로그 글 등을 그대로 붙여넣으면 돼요"
+          value={sourceArticleText}
+          onChange={setSourceArticleText}
+        />
+        <FormField
+          label="주제 힌트 (선택)"
+          hint="예: 여름 과일 궁합 - 비워두면 AI가 원본 내용을 보고 알아서 잡아요"
+          value={sourceTopic}
+          onChange={setSourceTopic}
+        />
+
+        <div className="my-3">
+          <p className="mb-1.5 text-xs font-bold text-ink/70">만들 채널 선택</p>
+          <div className="flex flex-wrap gap-2">
+            {SOURCE_CHANNEL_OPTIONS.map((ch) => (
+              <button
+                key={ch}
+                type="button"
+                onClick={() => toggleSourceChannel(ch)}
+                className={`rounded-full border px-3 py-1 text-xs font-semibold transition ${
+                  sourceChannels.includes(ch)
+                    ? 'border-stamp-amber bg-stamp-amber text-white'
+                    : 'border-ink/15 text-ink/60 hover:bg-ink/5'
+                }`}
+              >
+                {ch}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {sourceError && <p className="mb-2 text-xs text-stamp-reject">{sourceError}</p>}
+
+        <button
+          type="button"
+          onClick={handleGenerateFromSource}
+          disabled={sourceLoading}
+          className="w-full rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+        >
+          {sourceLoading ? `생성 중... (채널 ${sourceChannels.length}개, 시간이 좀 걸려요)` : `🤖 ${sourceChannels.length}개 채널로 한번에 생성`}
+        </button>
+
+        {sourceResults.length > 0 && (
+          <div className="mt-4 space-y-3">
+            {sourceWeatherNote && <p className="text-[11px] text-ink/40">오늘 날씨 참고: {sourceWeatherNote}</p>}
+            {sourceResults.map((r) => (
+              <div key={r.channel} className="rounded-lg border border-ink/10 p-3">
+                <div className="mb-1.5 flex items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-ink/70">{r.channel}</span>
+                  {r.error ? (
+                    <span className="text-[11px] font-semibold text-stamp-reject">생성 실패</span>
+                  ) : sourceSavedChannels.includes(r.channel) ? (
+                    <span className="text-[11px] font-semibold text-stamp-pass">✓ 저장됨</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleSaveSourceResult(r)}
+                      disabled={sourceSavingChannel === r.channel}
+                      className="rounded-md bg-stamp-amber px-3 py-1 text-[11px] font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                    >
+                      {sourceSavingChannel === r.channel ? '저장 중...' : '이 채널 저장'}
+                    </button>
+                  )}
+                </div>
+                {r.error ? (
+                  <p className="text-xs text-stamp-reject">{r.error}</p>
+                ) : (
+                  <>
+                    <p className="text-sm font-semibold">{r.title}</p>
+                    <p className="mt-1 whitespace-pre-wrap text-xs text-ink/60">{r.body}</p>
+                  </>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
       </Modal>
     </div>
   )
