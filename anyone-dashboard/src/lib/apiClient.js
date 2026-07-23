@@ -33,6 +33,12 @@ export function generateDraftsFromSource({ sourceArticle, channels, topic }) {
   return postJson('/api/draft/from-source', { sourceArticle, channels, topic })
 }
 
+// 심리학 유튜브(일본어) 영상을 실제로 제작해서 content_drafts에 바로 저장 (대본→내레이션→이미지→배경음악 합성이라 1~2분 걸림)
+// topic을 주면(소재 직접 입력) 랜덤 주제풀 대신 그 소재로 만든다.
+export function generatePsychologyVideoNow({ format = 'shorts', topic } = {}) {
+  return postJson('/api/youtube/psychology-video-run-manual', { format, topic })
+}
+
 // AI 자동 검수 (팩트체크/과장표현/AI스러운 문체)
 export function reviewDraftWithAi({ title, body, channel }) {
   return postJson('/api/review', { title, body, channel })

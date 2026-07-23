@@ -59,7 +59,7 @@ const FORMAT_CONFIG = {
   long: { width: 1280, height: 720, fps: 24, pointCount: 9, maxUniqueImages: 6 },
 }
 
-export async function generatePsychologyVideo({ topic, format = 'shorts', referenceNote }) {
+export async function generatePsychologyVideo({ topic, format = 'shorts', referenceNote, storyMaterial }) {
   const cfg = FORMAT_CONFIG[format] || FORMAT_CONFIG.shorts
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anyone-psych-video-'))
 
@@ -67,7 +67,7 @@ export async function generatePsychologyVideo({ topic, format = 'shorts', refere
     // 1. 대본 생성 (한국어, 포인트 여러 개 - 사실관계 작성/검토가 한국어 프롬프트 체계에서 더 안정적)
     // JSON 파싱이 한 번 깨지면 영상 제작 전체가 날아가는 문제가 있어서(2026-07-19, benchmark.js와
     // 동일한 원인) 같은 프롬프트로 최대 2번까지 자동 재시도.
-    const { system, messages } = buildPsychologyScriptMessages({ topic, pointCount: cfg.pointCount, referenceNote })
+    const { system, messages } = buildPsychologyScriptMessages({ topic, pointCount: cfg.pointCount, referenceNote, storyMaterial })
     const script = await callClaudeJson({ system, messages, maxTokens: 2048, parse: parsePsychologyScriptResponse })
 
     // 1.5. 일본 채널이므로 실제 내레이션/자막은 일본어로 번역 (2026-07-19 피드백: "일본이라면서

@@ -182,6 +182,37 @@ export async function getVideoById(videoIdOrUrl) {
   }
 }
 
+// 2026-07-23: 심리학 영상 대본에 넣을 "실제 사연" 소재를 레딧뿐 아니라 다른 심리학 유튜브
+// 채널에서도 찾자는 요청 - 인기 심리학 영상의 댓글에는 시청자들이 직접 겪은 이야기를 남기는
+// 경우가 많아서(예: "저희 아들도 딱 이래요..."), 이걸 사연 소재로 같이 활용한다.
+const COMMENT_THREADS_URL = 'https://www.googleapis.com/youtube/v3/commentThreads'
+
+export async function getTopComments(videoId, maxResults = 10) {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  if (!apiKey || !videoId) return []
+
+  try {
+    const params = new URLSearchParams({
+      part: 'snippet',
+      videoId,
+      order: 'relevance',
+      maxResults: String(Math.min(maxResults, 50)),
+      textFormat: 'plainText',
+      key: apiKey,
+    })
+    const res = await fetch(`${COMMENT_THREADS_URL}?${params.toString()}`)
+    if (!res.ok) return [] // 댓글이 꺼져있는 영상 등도 있어서 에러여도 그냥 빈 배열(best-effort)
+    const data = await res.json()
+    return (data.items || [])
+      .map((item) => item.snippet?.topLevelComment?.snippet)
+      .filter(Boolean)
+      .map((s) => ({ text: s.textDisplay, likeCount: s.likeCount || 0 }))
+      .sort((a, b) => b.likeCount - a.likeCount)
+  } catch {
+    return []
+  }
+}
+
 // 특정 지역 하나로 고정하지 않고 여러 나라를 한 번에 같이 확인하고 싶다는 요청(2026-07-18)
 // 반영 - regionCodes 배열을 받아서 나라별로 검색한 뒤 하나로 합침. 같은 영상이 여러 나라
 // 검색에 동시에 걸리면 처음 나온 지역 표시만 남기고 중복 제거, 조회수 기준 재정렬.

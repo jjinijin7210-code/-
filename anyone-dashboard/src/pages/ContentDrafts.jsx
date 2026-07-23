@@ -24,6 +24,7 @@ import {
 import {
   generateDraft,
   generateDraftsFromSource,
+  generatePsychologyVideoNow,
   translateDraft,
   reviewDraftWithAi,
   autoFixAndReview,
@@ -225,6 +226,32 @@ export default function ContentDrafts() {
       setSourceError(`"${result.channel}" 저장 실패: ${err.message}`)
     } finally {
       setSourceSavingChannel(null)
+    }
+  }
+
+  // "심리학 영상 만들기" - 원래 GitHub Actions에서 수동으로만 트리거할 수 있었는데(매번
+  // github.com 들어가야 해서 불편하다는 피드백, 2026-07-23), 대시보드에서 바로 누를 수 있게 버튼 추가.
+  const [psychLoading, setPsychLoading] = useState(false)
+  const [psychMessage, setPsychMessage] = useState(null)
+  const [psychFormat, setPsychFormat] = useState('shorts')
+  const [psychTopic, setPsychTopic] = useState('')
+
+  const handleGeneratePsychologyVideo = async () => {
+    setPsychLoading(true)
+    setPsychMessage(null)
+    try {
+      const result = await generatePsychologyVideoNow({ format: psychFormat, topic: psychTopic })
+      setPsychMessage({
+        type: result.status === '통과' ? 'success' : 'error',
+        text:
+          result.status === '통과'
+            ? `"${result.draftId ? '영상' : ''}" 제작 완료! 콘텐츠 목록에서 확인하고 업로드해주세요. (상태: 통과)`
+            : `제작은 됐는데 AI 검수에서 반려됐어요. 콘텐츠 목록에서 확인해보세요.`,
+      })
+    } catch (err) {
+      setPsychMessage({ type: 'error', text: err.message })
+    } finally {
+      setPsychLoading(false)
     }
   }
 
@@ -900,13 +927,44 @@ export default function ContentDrafts() {
         addLabel="초안 추가"
       />
 
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <button
           onClick={openSourceModal}
           className="rounded-lg border border-stamp-amber/40 bg-stamp-amber/5 px-4 py-2 text-sm font-semibold text-stamp-amber hover:bg-stamp-amber/10"
         >
           📰 기사/링크로 한번에 만들기
         </button>
+
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-stamp-amber/40 bg-stamp-amber/5 px-3 py-1.5">
+          <span className="text-sm font-semibold text-stamp-amber">🎬 심리학 영상 만들기 (일본어)</span>
+          <input
+            type="text"
+            value={psychTopic}
+            onChange={(e) => setPsychTopic(e.target.value)}
+            placeholder="소재/주제 (비워두면 AI가 알아서 고름)"
+            className="w-56 rounded-md border border-stamp-amber/30 bg-white px-2 py-1 text-xs"
+          />
+          <select
+            value={psychFormat}
+            onChange={(e) => setPsychFormat(e.target.value)}
+            className="rounded-md border border-stamp-amber/30 bg-white px-2 py-1 text-xs"
+          >
+            <option value="shorts">쇼츠</option>
+            <option value="long">롱폼</option>
+          </select>
+          <button
+            onClick={handleGeneratePsychologyVideo}
+            disabled={psychLoading}
+            className="rounded-md bg-stamp-amber px-3 py-1.5 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+          >
+            {psychLoading ? '제작 중... (1~2분)' : '만들기'}
+          </button>
+        </div>
+        {psychMessage && (
+          <p className={`text-xs ${psychMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+            {psychMessage.text}
+          </p>
+        )}
       </div>
 
       {loading && <LoadingView />}

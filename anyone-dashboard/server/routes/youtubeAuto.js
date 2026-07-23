@@ -16,9 +16,10 @@ import crypto from 'node:crypto'
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js'
 import { setEmployeeStatus } from '../lib/employeeStatusSync.js'
 import { startAutomationRun, finishAutomationRun } from '../lib/automationLog.js'
-import { searchPopularVideosMultiRegion } from '../lib/youtubeClient.js'
+import { searchPopularVideosMultiRegion, getTopComments, extractYoutubeVideoId } from '../lib/youtubeClient.js'
 import { sendTelegramMessage } from '../lib/telegramClient.js'
 import { generatePsychologyVideo } from '../lib/psychologyVideoGenerator.js'
+import { searchRedditStories, formatRedditStoriesForPrompt } from '../lib/redditClient.js'
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { callClaude } from '../lib/anthropicClient.js'
 import { buildMarketAnalysisMessages } from '../lib/marketAnalysis.js'
@@ -165,17 +166,18 @@ router.post('/youtube/auto-research', async (req, res) => {
 // (다른 채널들처럼) 발행은 여기 저장된 영상을 진희님이 직접 유튜브에 올리는 방식.
 // 2026-07-19: 우선 workflow_dispatch(수동 트리거)로만 열어두고, 자동 스케줄에는 아직 안 넣음 -
 // 결과 품질/빈도를 사용자가 먼저 확인한 뒤 자동 스케줄 여부를 정하기로 함.
-router.post('/youtube/psychology-video-run', async (req, res) => {
-  const { token, format } = req.body || {}
-  if (!process.env.AUTO_RUN_SECRET || token !== process.env.AUTO_RUN_SECRET) {
-    return res.status(401).json({ error: '인증 토큰이 올바르지 않아요.' })
-  }
+//
+// 2026-07-23: GitHub Actions에서만 트리거 가능해서 대표님이 매번 github.com 들어가야 했던 게
+// 불편하다는 피드백 - 대시보드에서 바로 누를 수 있는 "심리학 영상 만들기" 버튼도 추가하기로 하고,
+// 실제 생성 로직은 runPsychologyVideoRun()으로 분리해서 두 경로(자동화 토큰 / 대시보드 버튼)가
+// 같이 쓰게 함.
+// customTopic이 있으면(진희님이 소재를 직접 넣은 경우) 그걸 쓰고, 없으면 기존처럼 주제 풀에서 랜덤으로 고름
+async function runPsychologyVideoRun({ videoFormat, customTopic }) {
   const targetUserId = process.env.AUTO_TARGET_USER_ID
   if (!targetUserId) {
-    return res.status(500).json({ error: 'AUTO_TARGET_USER_ID가 서버 .env에 설정되어 있지 않아요.' })
+    throw new Error('AUTO_TARGET_USER_ID가 서버 .env에 설정되어 있지 않아요.')
   }
-  const videoFormat = format === 'long' ? 'long' : 'shorts'
-  const topic = VIDEO_TOPIC_POOL[Math.floor(Math.random() * VIDEO_TOPIC_POOL.length)]
+  const topic = customTopic && customTopic.trim() ? customTopic.trim() : VIDEO_TOPIC_POOL[Math.floor(Math.random() * VIDEO_TOPIC_POOL.length)]
 
   const supabase = getSupabaseAdmin()
   const run = await startAutomationRun(supabase, targetUserId, `심리학 유튜브 영상 제작 (${videoFormat})`, {
@@ -199,8 +201,42 @@ router.post('/youtube/psychology-video-run', async (req, res) => {
     const marketNote = await getLatestMarketInsight(supabase, targetUserId)
     const referenceNote = [linkNote, marketNote ? `[국가별 트렌드 비교]\n${marketNote}` : ''].filter(Boolean).join('\n\n') || undefined
 
-    const { fileName, videoUrl: storageUrl, title, hook, hasMusic } = await generatePsychologyVideo({ topic, format: videoFormat, referenceNote })
-    const videoUrl = storageUrl || `${req.protocol}://${req.get('host')}/generated/${fileName}`
+    // 레딧에서 실제 고민 사연 후보를 찾아서(2026-07-23, "평면적인 정보보다 각색한 사연 소개도
+    // 같이 넣어달라"는 요청) 대본에 각색 소재로 전달 - 못 찾아도(레딧 차단 등) 그냥 진행함(best-effort)
+    const redditStories = await searchRedditStories({ query: topic })
+
+    // 2026-07-23 (같은 요청, 추가): "레딧뿐 아니라 다른 심리학 채널도 이용하면 좋겠다" - 위에서
+    // 리서치팀이 이미 찾아둔 인기 심리학 유튜브 영상(references)의 댓글에서도 사연 소재를 찾는다.
+    // 시청자들이 자기 경험을 댓글로 남기는 경우가 많아서("저희 아들도 딱 이래요...") 사연감이 좋음.
+    let youtubeCommentStories = []
+    try {
+      const videoIds = (references || [])
+        .map((r) => extractYoutubeVideoId(r.note?.match(/https?:\/\/\S+/)?.[0] || ''))
+        .filter(Boolean)
+        .slice(0, 3)
+      for (const videoId of videoIds) {
+        const comments = await getTopComments(videoId, 5)
+        youtubeCommentStories.push(
+          ...comments
+            .filter((c) => c.text && c.text.length > 40) // 너무 짧은 댓글("ㅠㅠ" 등)은 사연으로 못 씀
+            .map((c) => ({ title: '(유튜브 댓글)', body: c.text.slice(0, 800) }))
+        )
+      }
+    } catch (ytErr) {
+      console.error('[psychology-video-run] 유튜브 댓글 수집 실패, 레딧만으로 진행:', ytErr.message)
+    }
+
+    const storyMaterial =
+      formatRedditStoriesForPrompt([...redditStories, ...youtubeCommentStories.slice(0, 5)]) || undefined
+
+    const { fileName, videoUrl: storageUrl, title, hook, hasMusic } = await generatePsychologyVideo({
+      topic,
+      format: videoFormat,
+      referenceNote,
+      storyMaterial,
+    })
+    const baseUrl = process.env.RENDER_EXTERNAL_URL || 'https://anyone-dashboard-p3an.onrender.com'
+    const videoUrl = storageUrl || `${baseUrl}/generated/${fileName}`
 
     const initialReview = await runReviewStages({ title, body: hook, channel: YOUTUBE_CHANNEL })
     const { title: finalTitle, review, attempts } = await reviseUntilPassOrGiveUp({
@@ -258,11 +294,38 @@ router.post('/youtube/psychology-video-run', async (req, res) => {
       `🤖 심리학 유튜브 영상 제작 (${videoFormat === 'long' ? '롱폼' : '쇼츠'})\n\n"${finalTitle}"\n${passed ? '✅ 통과 - 업로드 대기 중' : `⚠️ 반려 - ${review.reasons[0] || '사유 미기재'}`}`
     )
 
-    res.json({ ok: true, draftId: savedDraft.id, status: savedDraft.status, videoUrl })
+    return { ok: true, draftId: savedDraft.id, status: savedDraft.status, videoUrl }
   } catch (err) {
     await setEmployeeStatus(supabase, targetUserId, VIDEO_ROLE, '이슈발생', err.message)
     await finishAutomationRun(supabase, run?.id, { status: '이슈발생', errorMessage: err.message })
     await sendTelegramMessage(`🤖 심리학 유튜브 영상 제작 실패\n\n❌ ${err.message}`)
+    throw err
+  }
+}
+
+// GitHub Actions(자동화)에서 호출 - AUTO_RUN_SECRET 토큰으로만 인증
+router.post('/youtube/psychology-video-run', async (req, res) => {
+  const { token, format } = req.body || {}
+  if (!process.env.AUTO_RUN_SECRET || token !== process.env.AUTO_RUN_SECRET) {
+    return res.status(401).json({ error: '인증 토큰이 올바르지 않아요.' })
+  }
+  try {
+    const result = await runPsychologyVideoRun({ videoFormat: format === 'long' ? 'long' : 'shorts' })
+    res.json(result)
+  } catch (err) {
+    res.status(502).json({ error: err.message })
+  }
+})
+
+// 대시보드 "🎬 심리학 영상 만들기" 버튼에서 호출 - 이 사이트 자체가 개인 전용 도구라 다른
+// API(예: /api/draft)처럼 별도 토큰 없이 호출 가능 (2026-07-23 추가).
+// topic을 같이 보내면(진희님이 직접 소재를 넣은 경우) 랜덤 주제풀 대신 그 소재로 만든다.
+router.post('/youtube/psychology-video-run-manual', async (req, res) => {
+  const { format, topic } = req.body || {}
+  try {
+    const result = await runPsychologyVideoRun({ videoFormat: format === 'long' ? 'long' : 'shorts', customTopic: topic })
+    res.json(result)
+  } catch (err) {
     res.status(502).json({ error: err.message })
   }
 })
