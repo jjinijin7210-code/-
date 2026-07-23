@@ -5,6 +5,12 @@ import { getCurrentWeatherNote } from '../lib/weatherClient.js'
 
 const router = Router()
 
+// 구글 블로그는 해외 독자 대상이라 실제로 게시되는 건 영어 버전이어야 함 (threadBlogAuto.js의
+// 자동화와 동일한 방식 - 한국어로 먼저 쓴 뒤 "(영어)"를 붙인 가짜 채널명으로 번역 요청을 걸어서
+// promptBuilder의 언어 감지(getTargetLanguage)가 영어로 잡히게 함. 실제 저장되는 platform 값은
+// 그대로 '블로그(구글 Blogger)'로 둔다.)
+const GOOGLE_BLOG_CHANNEL = '블로그(구글 Blogger)'
+
 router.post('/draft', async (req, res) => {
   const { channel, topic, referenceNote } = req.body || {}
 
@@ -54,7 +60,22 @@ router.post('/draft/from-source', async (req, res) => {
       const maxTokens = channel.startsWith('블로그') ? 3000 : 1024
       const text = await callClaude({ system, messages, maxTokens })
       const draft = parseDraftResponse(text)
-      results.push({ channel, ...draft })
+
+      if (channel === GOOGLE_BLOG_CHANNEL) {
+        // 한국어 초안은 그대로 내보내지 않고, 곧바로 영어로 번역한 버전을 이 채널의 결과로 씀
+        // (실제 게시 대상은 영어 버전이므로 - threadBlogAuto.js 자동화와 동일한 원칙)
+        const { system: trSystem, messages: trMessages } = buildTranslateMessages({
+          targetChannel: `${GOOGLE_BLOG_CHANNEL}(영어)`,
+          title: draft.title,
+          body: draft.body,
+          hashtags: draft.hashtags,
+        })
+        const trText = await callClaude({ system: trSystem, messages: trMessages, maxTokens: 3000 })
+        const translated = parseDraftResponse(trText)
+        results.push({ channel, ...translated })
+      } else {
+        results.push({ channel, ...draft })
+      }
     } catch (err) {
       results.push({ channel, error: err.message })
     }
