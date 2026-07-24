@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
+import { useAuth } from '../contexts/AuthContext'
 import { useConfirm } from '../components/ConfirmDialog'
 import SaveStatusIndicator from '../components/SaveStatusIndicator'
 import PageHeader from '../components/PageHeader'
@@ -56,6 +57,11 @@ export default function BenchmarkReports() {
   })
   const { insertRow: insertContentDraft } = useSupabaseTable('content_drafts')
   const navigate = useNavigate()
+  const { user } = useAuth()
+  // 2026-07-24: 상품 소싱 검색(1688/쿠팡/네이버쇼핑)은 Apify 유료 크롤링이라, 지인 테스트
+  // 계정한테는 막아둠(ContentDrafts.jsx의 AI 이미지 생성 제한과 같은 이유/같은 방식).
+  const ownerUserId = import.meta.env.VITE_OWNER_USER_ID
+  const isOwner = !ownerUserId || user?.id === ownerUserId
   const confirm = useConfirm()
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -509,6 +515,13 @@ export default function BenchmarkReports() {
         )}
       </div>
 
+      {!isOwner && (
+        <div className="mb-4 rounded-lg border border-ink/10 bg-ink/[0.03] p-3 text-xs text-ink/60">
+          이 계정에서는 상품 소싱 검색(1688/쿠팡/네이버쇼핑) 기능이 꺼져 있어요.
+        </div>
+      )}
+      {isOwner && (
+      <>
       {/* 1688 상품 소싱 검색 (베스트셀러순) */}
       <div className="mb-4 rounded-xl bg-paper-card p-4 shadow-card">
         <h2 className="mb-2 text-sm font-semibold text-ink">📦 1688 상품 소싱 검색</h2>
@@ -752,6 +765,8 @@ export default function BenchmarkReports() {
           </div>
         )}
       </div>
+      </>
+      )}
 
       {loading && <LoadingView />}
       {error && <ErrorView message={error} />}

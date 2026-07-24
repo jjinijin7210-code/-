@@ -20,7 +20,6 @@ import { callClaudeJson } from '../lib/anthropicClient.js'
 import { buildDraftMessages, buildTranslateMessages, parseDraftResponse } from '../lib/promptBuilder.js'
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { sendTelegramMessage } from '../lib/telegramClient.js'
-import { getLatestMarketInsight } from '../lib/marketInsights.js'
 import { pickTrendingTopic } from '../lib/threadsSearchClient.js'
 
 const router = Router()
@@ -101,11 +100,7 @@ router.post('/thread-blog/auto-run', async (req, res) => {
   await setEmployeeStatus(supabase, targetUserId, WRITER_ROLE, '작업중', `"${topic}" 주제로 ${channel} 초안 작성 중`)
 
   try {
-    // 국가별 트렌드 비교 분석(있으면) 참고자료로 반영 - 전 채널이 공유하는 인사이트(2026-07-19)
-    const marketNote = await getLatestMarketInsight(supabase, targetUserId)
-    const referenceNote = marketNote ? `[국가별 트렌드 비교]\n${marketNote}` : undefined
-
-    const { system, messages } = buildDraftMessages({ channel, topic, referenceNote })
+    const { system, messages } = buildDraftMessages({ channel, topic })
     // 작성자 단계가 유일한 관문이라 JSON 파싱이 한 번 깨지면 그 슬롯이 통째로 날아가는 문제가
     // 있었음(2026-07-19 사용자 보고, benchmark.js와 동일) - 최대 2번까지 자동 재시도.
     const draft = await callClaudeJson({

@@ -26,6 +26,11 @@ ARG VITE_SUPABASE_ANON_KEY
 ENV VITE_SUPABASE_URL=$VITE_SUPABASE_URL
 ENV VITE_SUPABASE_ANON_KEY=$VITE_SUPABASE_ANON_KEY
 
+# 2026-07-24: 지인 테스트 계정에게 대시보드를 넘겨줄 때 AI 이미지 생성 비용이 그쪽 사용으로도
+# 진희님 API 키에 청구되는 걸 막기 위해, 본인 계정(UID)만 이미지 생성 버튼이 보이게 구분함.
+ARG VITE_OWNER_USER_ID
+ENV VITE_OWNER_USER_ID=$VITE_OWNER_USER_ID
+
 RUN npm run build
 
 ENV PORT=4000

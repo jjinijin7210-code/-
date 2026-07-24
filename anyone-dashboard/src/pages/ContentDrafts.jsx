@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
+import { useAuth } from '../contexts/AuthContext'
 import { useConfirm } from '../components/ConfirmDialog'
 import SaveStatusIndicator from '../components/SaveStatusIndicator'
 import PageHeader from '../components/PageHeader'
@@ -106,6 +107,12 @@ export default function ContentDrafts() {
   )
   const { rows: csLinks } = useSupabaseTable('cs_links')
   const { insertRow: insertReviewLog } = useSupabaseTable('review_log')
+  const { user } = useAuth()
+  // 2026-07-24: 지인 테스트 계정한테 대시보드를 넘겨줄 때, AI 이미지 생성 비용이 계속 진희님
+  // API 키로 나가는 걸 막기 위해 본인 계정(UID)에서만 이미지 생성 버튼을 보여줌. 소유자 UID가
+  // 설정 안 돼있으면(로컬 모드 등) 항상 보이게 둬서 기존 개인 사용에는 영향 없음.
+  const ownerUserId = import.meta.env.VITE_OWNER_USER_ID
+  const isOwner = !ownerUserId || user?.id === ownerUserId
   const confirm = useConfirm()
   const [searchParams, setSearchParams] = useSearchParams()
 
@@ -1170,52 +1177,60 @@ export default function ContentDrafts() {
 
           <div className="my-3">
             <p className="mb-2 text-xs font-bold text-ink/70">🖼 이미지</p>
-            <div className="mb-2 flex flex-wrap gap-2">
-              <input
-                className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
-                placeholder="AI 이미지 설명 (예: 하얀 접시 위 겨울 담요, 따뜻한 조명, 상품 사진 스타일)"
-                value={aiImagePrompt}
-                onChange={(e) => setAiImagePrompt(e.target.value)}
-              />
-              <button
-                type="button"
-                disabled={aiImageLoading || !aiImagePrompt.trim()}
-                onClick={handleGenerateImage}
-                className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
-              >
-                {aiImageLoading ? '생성 중...' : '🎨 AI 이미지 생성'}
-              </button>
-            </div>
-            {aiImageError && <p className="mb-2 text-xs text-stamp-reject">{aiImageError}</p>}
+            {isOwner ? (
+              <>
+                <div className="mb-2 flex flex-wrap gap-2">
+                  <input
+                    className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+                    placeholder="AI 이미지 설명 (예: 하얀 접시 위 겨울 담요, 따뜻한 조명, 상품 사진 스타일)"
+                    value={aiImagePrompt}
+                    onChange={(e) => setAiImagePrompt(e.target.value)}
+                  />
+                  <button
+                    type="button"
+                    disabled={aiImageLoading || !aiImagePrompt.trim()}
+                    onClick={handleGenerateImage}
+                    className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                  >
+                    {aiImageLoading ? '생성 중...' : '🎨 AI 이미지 생성'}
+                  </button>
+                </div>
+                {aiImageError && <p className="mb-2 text-xs text-stamp-reject">{aiImageError}</p>}
 
-            <div className="mb-2 rounded-md border border-ink/10 p-2">
-              <p className="mb-1.5 text-[11px] font-semibold text-ink/50">
-                📎 참고 사진을 올리면 그 느낌으로 비슷한(원본 그대로가 아닌 새로 그린) 이미지를 만들어요
+                <div className="mb-2 rounded-md border border-ink/10 p-2">
+                  <p className="mb-1.5 text-[11px] font-semibold text-ink/50">
+                    📎 참고 사진을 올리면 그 느낌으로 비슷한(원본 그대로가 아닌 새로 그린) 이미지를 만들어요
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => setSimilarRefFile(e.target.files?.[0] || null)}
+                      className="min-w-[160px] flex-1 text-xs"
+                    />
+                    <input
+                      className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+                      placeholder="어떻게 비슷하게 만들지 (예: 같은 분위기로 다른 색 원피스)"
+                      value={similarPrompt}
+                      onChange={(e) => setSimilarPrompt(e.target.value)}
+                    />
+                    <button
+                      type="button"
+                      disabled={similarLoading || !similarRefFile || !similarPrompt.trim()}
+                      onClick={handleGenerateSimilarImage}
+                      className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                    >
+                      {similarLoading ? '생성 중...' : '🎨 비슷한 이미지 생성'}
+                    </button>
+                  </div>
+                  {similarError && <p className="mt-1.5 text-xs text-stamp-reject">{similarError}</p>}
+                </div>
+              </>
+            ) : (
+              <p className="mb-2 text-[11px] text-ink/40">
+                이 계정에서는 AI 이미지 생성 기능이 꺼져 있어요. 아래 무료 스톡 사진 검색이나 직접 파일 첨부를 이용해주세요.
               </p>
-              <div className="flex flex-wrap gap-2">
-                <input
-                  type="file"
-                  accept="image/*"
-                  onChange={(e) => setSimilarRefFile(e.target.files?.[0] || null)}
-                  className="min-w-[160px] flex-1 text-xs"
-                />
-                <input
-                  className="min-w-[200px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
-                  placeholder="어떻게 비슷하게 만들지 (예: 같은 분위기로 다른 색 원피스)"
-                  value={similarPrompt}
-                  onChange={(e) => setSimilarPrompt(e.target.value)}
-                />
-                <button
-                  type="button"
-                  disabled={similarLoading || !similarRefFile || !similarPrompt.trim()}
-                  onClick={handleGenerateSimilarImage}
-                  className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
-                >
-                  {similarLoading ? '생성 중...' : '🎨 비슷한 이미지 생성'}
-                </button>
-              </div>
-              {similarError && <p className="mt-1.5 text-xs text-stamp-reject">{similarError}</p>}
-            </div>
+            )}
 
             <div className="mb-2 flex flex-wrap gap-2">
               <input
