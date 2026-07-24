@@ -207,7 +207,9 @@ export function generateSolidBackground(hex, w, h, outPath) {
   return outPath
 }
 
-function concatWithCrossfade(clips, transitionDuration, cfg, tmpDir) {
+// 2026-07-25: "이미지 두 장이 교차하는" 전환 요청 - ffmpeg xfade에 이미 대각선으로 교차하며
+// 넘어가는 전환(diagtl 등)이 내장되어 있어서, 커스텀 필터 없이 transition 종류만 바꿔서 재사용.
+function concatWithCrossfade(clips, transitionDuration, cfg, tmpDir, transition = 'fade') {
   const sceneStarts = [0]
   let cumulative = clips[0].duration
 
@@ -226,7 +228,7 @@ function concatWithCrossfade(clips, transitionDuration, cfg, tmpDir) {
     const offset = Math.max(cumulative - t, 0)
     sceneStarts.push(offset)
     const outLabel = i === clips.length - 1 ? 'vout' : `v${i}`
-    filterComplex += `[${prevLabel}][${i}]xfade=transition=fade:duration=${t}:offset=${offset}[${outLabel}];`
+    filterComplex += `[${prevLabel}][${i}]xfade=transition=${transition}:duration=${t}:offset=${offset}[${outLabel}];`
     cumulative = cumulative + clips[i].duration - t
     prevLabel = outLabel
   }
@@ -365,8 +367,10 @@ export function renderVideo(cfg, outputPath) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anyone-shorts-'))
   try {
     const clips = cfg.scenes.map((scene, idx) => buildImageClip(scene, idx, cfg, tmpDir))
-    const concatFn = cfg.transitionType === 'rotate' ? concatWithRotateTransition : concatWithCrossfade
-    const { file: concatenated, sceneStarts, totalDuration } = concatFn(clips, cfg.transitionDuration, cfg, tmpDir)
+    const { file: concatenated, sceneStarts, totalDuration } =
+      cfg.transitionType === 'rotate'
+        ? concatWithRotateTransition(clips, cfg.transitionDuration, cfg, tmpDir)
+        : concatWithCrossfade(clips, cfg.transitionDuration, cfg, tmpDir, cfg.transitionType === 'diagonal' ? 'diagtl' : 'fade')
     const withAudio = buildAudioMix(concatenated, cfg, sceneStarts, totalDuration, tmpDir)
     fs.mkdirSync(path.dirname(outputPath), { recursive: true })
     fs.copyFileSync(withAudio, outputPath)

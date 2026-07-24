@@ -224,6 +224,7 @@ export default function VideoStudio() {
           >
             <option value="fade">페이드 (기본)</option>
             <option value="rotate">회전 전환 (포토카드처럼 젖혀짐)</option>
+            <option value="diagonal">교차 전환 (대각선으로 겹치며 넘어감)</option>
           </select>
         </div>
         <div>
