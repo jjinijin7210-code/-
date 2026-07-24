@@ -140,10 +140,19 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
     // 순수 사인 곡선(1-cos)으로 바꿔서 시작·중간(최고 각도)·끝에서 모두 속도가 0에 가깝게
     // 부드럽게 감속/가속되도록 함 - 별도 구간 분기 없이 식 하나로 전체 왕복을 표현.
     const angleExpr = `(${peak}/2)*(1-cos(2*PI*t/${duration}))`
+    // 2026-07-25 요청 - "돌면서 같이 살짝 커지는" 줌 추가. 회전이랑 같은 사인 곡선(1-cos)을
+    // 타이밍만 공유해서 중간(최고 각도)에서 가장 확대되고, 시작·끝에서는 원래 크기로 돌아옴.
+    // zoompan은 여기서 안 씀(정지 이미지 1프레임 입력 구조와 안 맞아 앞서 실패) - scale을
+    // eval=frame으로 매 프레임 재계산해서 확대하고, crop으로 중앙만 다시 잘라내는 방식.
+    const zoomAmount = 0.15 // 최대 15% 확대
+    const zoomExpr = `(1+${zoomAmount}*(1-cos(2*PI*t/${duration}))/2)`
     const filter =
       `scale=${rw}:${rw}:force_original_aspect_ratio=increase,crop=${rw}:${rw},` +
       `rotate='${angleExpr}':ow=${rw}:oh=${rw}:fillcolor=black,` +
-      `crop=${w}:${h},format=yuv420p${textFilter}`
+      `crop=${w}:${h},` +
+      `scale=w='iw*${zoomExpr}':h='ih*${zoomExpr}':eval=frame,` +
+      `crop=${w}:${h}:x='(in_w-out_w)/2':y='(in_h-out_h)/2',` +
+      `format=yuv420p${textFilter}`
     // 다른 효과(zoompan 기반)는 정지 이미지를 씬 전체에 딱 1프레임만 넣어도 zoompan의
     // d= 파라미터가 알아서 프레임 수만큼 펼쳐주지만, rotate 필터엔 그런 기능이 없다. 그래서
     // 1/${duration}fps로 입력하면(즉 프레임이 딱 1장) rotate의 각도(t)가 그 한 프레임에서
