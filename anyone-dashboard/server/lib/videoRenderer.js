@@ -134,9 +134,12 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
   // 크기 공식 - 이 값보다 작으면 회전 도중 모서리가 비어 보임).
   if (scene.motion === 'rotate') {
     const rw = Math.ceil((w + h) / Math.SQRT2)
-    const half = duration / 2
     const peak = 2 * Math.PI // 한 바퀴(360도) 돌았다가 원래 각도로 복귀
-    const angleExpr = `if(lte(t,${half}),${peak}/${half}*t,${peak}-${peak}/${half}*(t-${half}))`
+    // 2026-07-24: "완급조절도 되면 좋겠다" 요청 - 기존엔 각도가 시간에 선형으로 늘었다가
+    // 중간 지점에서 속도가 뚝 바뀌며 반대로 줄어드는 방식이라 반환점이 부자연스러웠음.
+    // 순수 사인 곡선(1-cos)으로 바꿔서 시작·중간(최고 각도)·끝에서 모두 속도가 0에 가깝게
+    // 부드럽게 감속/가속되도록 함 - 별도 구간 분기 없이 식 하나로 전체 왕복을 표현.
+    const angleExpr = `(${peak}/2)*(1-cos(2*PI*t/${duration}))`
     const filter =
       `scale=${rw}:${rw}:force_original_aspect_ratio=increase,crop=${rw}:${rw},` +
       `rotate='${angleExpr}':ow=${rw}:oh=${rw}:fillcolor=black,` +
@@ -285,7 +288,8 @@ function buildAudioMix(videoFile, cfg, sceneStarts, totalDuration, tmpDir) {
 // 있어서 별도 오버샘플링 없이 그냥 겹쳐 보이면 되므로(단일 씬 회전 모션과 달리 신경 안 써도 됨).
 function buildRotateTransitionClip(clipA, clipB, t, cfg, tmpDir, idx) {
   const peak = Math.PI / 8 // 약 22.5도 - 계속 도는 게 아니라 살짝 기울며 넘어가는 정도
-  const angleExpr = `${peak}*t/${t}`
+  // 완급조절(2026-07-24) - 등속 대신 처음엔 천천히 기울다가 끝으로 갈수록 빨라지는 이즈인 곡선
+  const angleExpr = `${peak}*(1-cos(PI*t/${t}/2))`
   const startA = Math.max(clipA.duration - t, 0)
   const filterComplex =
     `[0:v]trim=start=${startA}:end=${clipA.duration},setpts=PTS-STARTPTS,format=rgba,` +
