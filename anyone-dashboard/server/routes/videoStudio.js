@@ -57,6 +57,7 @@ router.post('/video-studio/render', upload.any(), (req, res) => {
       height: Number(req.body.height) || 1920,
       fps: Number(req.body.fps) || 30,
       transitionDuration: req.body.transitionDuration !== undefined ? Number(req.body.transitionDuration) : 0.6,
+      transitionType: req.body.transitionType === 'rotate' ? 'rotate' : 'fade',
       scenes,
     }
     if (fileMap.audio) {

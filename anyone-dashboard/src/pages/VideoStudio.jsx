@@ -15,6 +15,7 @@ const MOTION_OPTIONS = [
   { value: 'pan-right', label: '우로 팬' },
   { value: 'boomerang', label: '앞뒤 반전 (줌인 후 다시 줌아웃)' },
   { value: 'pan-boomerang', label: '앞뒤 반전 (팬만, 줌 없음)' },
+  { value: 'rotate', label: '회전 (한 바퀴 돌았다 복귀)' },
   { value: 'none', label: '효과 없음' },
 ]
 
@@ -26,6 +27,33 @@ const SIZE_PRESETS = [
 
 let sceneSeq = 0
 const emptyScene = () => ({ key: `s${sceneSeq++}`, imageFile: null, motion: 'zoom-in', duration: 4, text: '', voiceFile: null })
+
+// 2026-07-24: "씬 삭제가 너무 오래 걸린다" 버그 수정 - 기존엔 각 씬의 미리보기(img/video)를
+// 렌더링할 때마다 URL.createObjectURL(file)을 매번 새로 호출하고 있어서, 씬 하나만 지워도
+// scenes 배열 전체가 바뀌며 나머지 모든 씬의 영상이 새 blob URL로 다시 로딩/디코딩됐음(영상
+// 개수·용량이 클수록 체감 지연이 커짐) + revoke도 안 해서 메모리 누수도 있었음. 파일별로 자기
+// blob URL을 한 번만 만들고 유지하는 별도 컴포넌트로 분리해서 해결.
+function ScenePreview({ file }) {
+  const [url, setUrl] = useState(null)
+  useEffect(() => {
+    if (!file) {
+      setUrl(null)
+      return
+    }
+    const objectUrl = URL.createObjectURL(file)
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [file])
+
+  if (!url) return null
+  if (file.type.startsWith('video/')) {
+    return <video src={url} className="mt-2 h-24 rounded-md border border-ink/10 object-cover" muted controls />
+  }
+  if (file.type.startsWith('image/')) {
+    return <img src={url} alt="" className="mt-2 h-24 rounded-md border border-ink/10 object-cover" />
+  }
+  return null
+}
 
 // 영상 파일의 실제 길이를 읽어서, 여러 영상을 한 번에 추가할 때 기본 노출 시간으로 씀
 // (안 그러면 기본값 4초로 다 잘려버림 - 실제 영상 길이 그대로 이어붙이는 게 자연스러움)
@@ -47,6 +75,7 @@ export default function VideoStudio() {
   const [sizePreset, setSizePreset] = useState(SIZE_PRESETS[0].value)
   const [fps, setFps] = useState(30)
   const [transitionDuration, setTransitionDuration] = useState(0.6)
+  const [transitionType, setTransitionType] = useState('fade')
   const [musicFile, setMusicFile] = useState(null)
   const [musicVolume, setMusicVolume] = useState(0.8)
   const [bulkAdding, setBulkAdding] = useState(false)
@@ -124,6 +153,7 @@ export default function VideoStudio() {
     fd.append('height', String(preset.height))
     fd.append('fps', String(fps))
     fd.append('transitionDuration', String(transitionDuration))
+    fd.append('transitionType', transitionType)
     if (musicFile) {
       fd.append('audio', musicFile)
       fd.append('audioVolume', String(musicVolume))
@@ -184,6 +214,17 @@ export default function VideoStudio() {
             onChange={(e) => setTransitionDuration(e.target.value)}
             className="w-full rounded-md border border-ink/15 bg-white px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
           />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-semibold text-ink/70">전환 효과 종류</label>
+          <select
+            value={transitionType}
+            onChange={(e) => setTransitionType(e.target.value)}
+            className="w-full rounded-md border border-ink/15 bg-white px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+          >
+            <option value="fade">페이드 (기본)</option>
+            <option value="rotate">회전 전환 (포토카드처럼 젖혀짐)</option>
+          </select>
         </div>
         <div>
           <label className="mb-1 block text-xs font-semibold text-ink/70">배경음악 볼륨</label>
@@ -335,21 +376,7 @@ export default function VideoStudio() {
                 <p className="mt-1 text-[11px] text-ink/40">
                   직접 만든 영상을 넣으면 줌/팬 효과 없이 그 영상 그대로 씬 길이에 맞춰 잘리거나 반복돼요.
                 </p>
-                {s.imageFile && s.imageFile.type.startsWith('video/') && (
-                  <video
-                    src={URL.createObjectURL(s.imageFile)}
-                    className="mt-2 h-24 rounded-md border border-ink/10 object-cover"
-                    muted
-                    controls
-                  />
-                )}
-                {s.imageFile && s.imageFile.type.startsWith('image/') && (
-                  <img
-                    src={URL.createObjectURL(s.imageFile)}
-                    alt=""
-                    className="mt-2 h-24 rounded-md border border-ink/10 object-cover"
-                  />
-                )}
+                <ScenePreview file={s.imageFile} />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-semibold text-ink/70">보이스/내레이션 (선택)</label>
@@ -428,6 +455,13 @@ export default function VideoStudio() {
             <a href={videoUrl} download className="text-xs text-ink/60 underline decoration-dotted hover:text-stamp-amber">
               다운로드
             </a>
+            <button
+              type="button"
+              onClick={() => setVideoUrl(null)}
+              className="text-xs text-stamp-reject hover:underline"
+            >
+              삭제
+            </button>
           </div>
           <p className="mt-2 text-[11px] text-ink/40">
             이 영상을 콘텐츠에 쓰려면 "콘텐츠 관리"에서 초안을 만들고 이미지 첨부란에 다운로드한 파일을 올려주세요.

@@ -126,6 +126,25 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
     }
   }
 
+  // "화면이 한 바퀴 돌았다가 돌아오는" 회전 효과(2026-07-24 요청). zoompan은 x/y/zoom만
+  // 다룰 수 있어서 회전은 별도의 rotate 필터로 처리해야 함 - 그냥 w×h 프레임을 돌리면 45도
+  // 부근에서 모서리가 새까맣게 비게 되므로, 회전 중 어떤 각도에서도 중앙 w×h 영역이 항상
+  // 실제 이미지로 덮이도록 (w+h)/√2 크기의 정사각형 캔버스로 먼저 오버샘플링한 뒤 그 위에서
+  // 회전시키고, 마지막에 중앙 w×h만 잘라낸다(회전 사각형이 원본 사각형을 항상 덮는 최소
+  // 크기 공식 - 이 값보다 작으면 회전 도중 모서리가 비어 보임).
+  if (scene.motion === 'rotate') {
+    const rw = Math.ceil((w + h) / Math.SQRT2)
+    const half = duration / 2
+    const peak = 2 * Math.PI // 한 바퀴(360도) 돌았다가 원래 각도로 복귀
+    const angleExpr = `if(lte(t,${half}),${peak}/${half}*t,${peak}-${peak}/${half}*(t-${half}))`
+    const filter =
+      `scale=${rw}:${rw}:force_original_aspect_ratio=increase,crop=${rw}:${rw},` +
+      `rotate='${angleExpr}':ow=${rw}:oh=${rw}:fillcolor=black,` +
+      `crop=${w}:${h},fps=${fps},format=yuv420p${textFilter}`
+    run(['-framerate', `1/${duration}`, '-loop', '1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out])
+    return { file: out, duration }
+  }
+
   const frames = Math.round(duration * fps)
   // 무료 인스턴스(512MB) 메모리 절약을 위해 오버샘플링 배율을 최소한으로만 둠
   const bw = Math.round(w * 1.2)
@@ -259,7 +278,64 @@ function buildAudioMix(videoFile, cfg, sceneStarts, totalDuration, tmpDir) {
   return out
 }
 
-// cfg: { width, height, fps, transitionDuration, defaultSceneDuration, audio, audioVolume, scenes: [{ src, duration, motion, text }] }
+// 2026-07-24: "포토카드가 젖혀지듯 회전하며 넘어가는" 씬 전환 효과 요청 - 참고 영상
+// (트롯충전소 완성본/반짝반짝.mp4)을 프레임 단위로 뜯어보니 완전한 3D 큐브 회전이 아니라,
+// 나가는 사진이 제자리에서 살짝 회전하며 투명해지고 그 아래 다음 사진이 드러나는 2D 효과였음.
+// 회전 중 모서리가 비는 문제는, 어차피 그 아래 다음 사진(clip B)이 화면 전체를 이미 채우고
+// 있어서 별도 오버샘플링 없이 그냥 겹쳐 보이면 되므로(단일 씬 회전 모션과 달리 신경 안 써도 됨).
+function buildRotateTransitionClip(clipA, clipB, t, cfg, tmpDir, idx) {
+  const peak = Math.PI / 8 // 약 22.5도 - 계속 도는 게 아니라 살짝 기울며 넘어가는 정도
+  const angleExpr = `${peak}*t/${t}`
+  const startA = Math.max(clipA.duration - t, 0)
+  const filterComplex =
+    `[0:v]trim=start=${startA}:end=${clipA.duration},setpts=PTS-STARTPTS,format=rgba,` +
+    `rotate='${angleExpr}':ow=iw:oh=ih:fillcolor=none,fade=t=out:st=0:d=${t}:alpha=1,format=yuva420p[outA];` +
+    `[1:v]trim=start=0:end=${t},setpts=PTS-STARTPTS[inB];` +
+    `[inB][outA]overlay=format=auto,format=yuv420p[vout]`
+  const out = path.join(tmpDir, `rottrans_${idx}.mp4`)
+  run(['-i', clipA.file, '-i', clipB.file, '-filter_complex', filterComplex, '-map', '[vout]', '-r', String(cfg.fps), ...LOW_MEM_ENCODE_ARGS, out])
+  return out
+}
+
+// concatWithCrossfade와 같은 입출력 계약(sceneStarts/totalDuration)을 지키되, 씬 사이를
+// xfade(페이드) 대신 회전 전환 클립으로 이어붙임. 각 경계마다 별도 ffmpeg 호출로 작은 전환
+// 클립을 만들고, 마지막에 concat 데뮤서(재인코딩)로 한 번에 합친다 - 여러 개의 작은 ffmpeg
+// 호출로 나누는 기존 코드베이스 패턴(buildImageClip 등)과 동일하게, 메모리 사용을 낮게 유지.
+function concatWithRotateTransition(clips, transitionDuration, cfg, tmpDir) {
+  const sceneStarts = [0]
+  let cumulative = clips[0].duration
+
+  if (clips.length === 1) {
+    return { file: clips[0].file, sceneStarts, totalDuration: cumulative }
+  }
+
+  const segments = []
+  for (let i = 0; i < clips.length; i++) {
+    const tNext = i < clips.length - 1 ? Math.min(transitionDuration, clips[i].duration, clips[i + 1].duration) : 0
+    const tPrev = i > 0 ? Math.min(transitionDuration, clips[i - 1].duration, clips[i].duration) : 0
+    const start = tPrev
+    const end = clips[i].duration - tNext
+    if (end > start + 0.05) {
+      const mainOut = path.join(tmpDir, `rotmain_${i}.mp4`)
+      run(['-i', clips[i].file, '-vf', `trim=start=${start}:end=${end},setpts=PTS-STARTPTS`, '-r', String(cfg.fps), ...LOW_MEM_ENCODE_ARGS, mainOut])
+      segments.push(mainOut)
+    }
+    if (i < clips.length - 1) {
+      segments.push(buildRotateTransitionClip(clips[i], clips[i + 1], tNext, cfg, tmpDir, i))
+      sceneStarts.push(cumulative - tNext)
+      cumulative = cumulative + clips[i + 1].duration - tNext
+    }
+  }
+
+  const listFile = path.join(tmpDir, 'rotate_concat_list.txt')
+  fs.writeFileSync(listFile, segments.map((f) => `file '${f.replace(/'/g, "'\\''")}'`).join('\n'))
+  const out = path.join(tmpDir, 'concatenated.mp4')
+  run(['-f', 'concat', '-safe', '0', '-i', listFile, '-r', String(cfg.fps), ...LOW_MEM_ENCODE_ARGS, out])
+  return { file: out, sceneStarts, totalDuration: cumulative }
+}
+
+// cfg: { width, height, fps, transitionDuration, transitionType, defaultSceneDuration, audio,
+// audioVolume, scenes: [{ src, duration, motion, text }] }
 // scenes[].src / cfg.audio 는 전부 로컬 파일 경로여야 함 (원격 URL은 미리 다운로드해서 넘길 것)
 export function renderVideo(cfg, outputPath) {
   cfg.width = cfg.width || 1080
@@ -270,7 +346,8 @@ export function renderVideo(cfg, outputPath) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anyone-shorts-'))
   try {
     const clips = cfg.scenes.map((scene, idx) => buildImageClip(scene, idx, cfg, tmpDir))
-    const { file: concatenated, sceneStarts, totalDuration } = concatWithCrossfade(clips, cfg.transitionDuration, cfg, tmpDir)
+    const concatFn = cfg.transitionType === 'rotate' ? concatWithRotateTransition : concatWithCrossfade
+    const { file: concatenated, sceneStarts, totalDuration } = concatFn(clips, cfg.transitionDuration, cfg, tmpDir)
     const withAudio = buildAudioMix(concatenated, cfg, sceneStarts, totalDuration, tmpDir)
     fs.mkdirSync(path.dirname(outputPath), { recursive: true })
     fs.copyFileSync(withAudio, outputPath)
