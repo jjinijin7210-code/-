@@ -236,11 +236,11 @@ export function openNaverBlogLogin() {
   return postJson('/api/naverblog/open-login', {})
 }
 
-export async function prepareNaverBlogPost({ title, body }) {
+export async function prepareNaverBlogPost({ title, body, images }) {
   const res = await fetch(`${API_BASE}/api/naverblog/prepare`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ title, body }),
+    body: JSON.stringify({ title, body, images }),
   })
   const data = await res.json().catch(() => ({}))
   if (!res.ok) {

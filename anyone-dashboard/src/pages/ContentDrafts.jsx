@@ -595,7 +595,8 @@ export default function ContentDrafts() {
     setNbLoading(true)
     setNbMessage(null)
     try {
-      const result = await prepareNaverBlogPost({ title: form.title, body: form.body })
+      const imageDataUrls = (form.images || []).filter((a) => a.kind === 'image').map((a) => a.data_url)
+      const result = await prepareNaverBlogPost({ title: form.title, body: form.body, images: imageDataUrls })
       setNbMessage({ type: 'success', text: result.message })
     } catch (err) {
       setNbMessage({
@@ -1449,8 +1450,9 @@ export default function ContentDrafts() {
             <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
               <p className="mb-1 text-xs font-bold text-ink/70">📝 네이버 블로그 자동 입력</p>
               <p className="mb-2 text-[11px] text-ink/40">
-                이 컴퓨터에서만 동작해요. 제목·본문만 채워줘요 (이미지는 직접 첨부해주세요). 네이버 에디터가
-                자주 바뀌어서 인스타/틱톡보다 실패할 수 있어요 - 실패하면 화면 캡처 경로를 같이 보여드려요.
+                이 컴퓨터에서만 동작해요. 제목·본문에 이어 위에서 첨부한 이미지도 자동으로 넣어봐요 (안 들어가면
+                직접 첨부해주세요). 네이버 에디터가 자주 바뀌어서 인스타/틱톡보다 실패할 수 있어요 - 실패하면
+                화면 캡처 경로를 같이 보여드려요.
                 마지막 "발행" 버튼만 네이버 창에서 직접 눌러주세요.
               </p>
               <div className="flex flex-wrap items-center gap-3">

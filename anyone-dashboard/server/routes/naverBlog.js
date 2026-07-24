@@ -1,5 +1,6 @@
 import { Router } from 'express'
-import { getPage, clickFirstVisible, saveErrorScreenshot } from '../lib/localBrowser.js'
+import fs from 'node:fs'
+import { getPage, clickFirstVisible, saveErrorScreenshot, dataUrlToFile } from '../lib/localBrowser.js'
 
 const router = Router()
 
@@ -18,12 +19,17 @@ router.post('/naverblog/open-login', async (req, res) => {
 })
 
 router.post('/naverblog/prepare', async (req, res) => {
-  const { title, body } = req.body || {}
+  const { title, body, images } = req.body || {}
   if (!title?.trim()) return res.status(400).json({ error: '제목이 비어 있어요.' })
   if (!body?.trim()) return res.status(400).json({ error: '본문이 비어 있어요.' })
 
+  const imageFiles = []
   let page
   try {
+    for (const dataUrl of images || []) {
+      imageFiles.push(dataUrlToFile(dataUrl, 'naverblog'))
+    }
+
     page = await getPage('naverblog')
     // 로그인된 계정의 블로그 글쓰기 화면으로 바로 이동시켜주는 네이버 자체 리다이렉트 주소
     // (블로그 아이디를 몰라도 됨 - 이미 로그인돼 있어야 정상 작동함)
@@ -55,10 +61,41 @@ router.post('/naverblog/prepare', async (req, res) => {
     await bodyBox.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {})
     await page.keyboard.type(body.trim())
 
+    let imagesInserted = 0
+    if (imageFiles.length > 0) {
+      await page.keyboard.press('Enter')
+      // 스마트에디터 ONE 툴바의 "사진" 버튼 - 버전에 따라 마크업이 달라서 여러 후보를 시도한다.
+      const photoButtonClicked = await clickFirstVisible(page, [
+        frame.locator('button[data-name="image"]'),
+        frame.locator('.se-image-toolbar-button'),
+        frame.getByRole('button', { name: /^사진$/ }),
+      ])
+      if (photoButtonClicked) {
+        for (const filePath of imageFiles) {
+          try {
+            const fileInput = frame.locator('input[type="file"]').first()
+            await fileInput.waitFor({ state: 'attached', timeout: 8000 })
+            await fileInput.setInputFiles(filePath)
+            await page.waitForTimeout(2000) // 업로드/렌더링 대기
+            imagesInserted += 1
+          } catch {
+            break // 이미지 삽입이 안 먹으면 나머지는 포기하고 본문/제목은 그대로 살린다
+          }
+        }
+      }
+    }
+
+    const imageNote =
+      imageFiles.length === 0
+        ? ''
+        : imagesInserted === imageFiles.length
+          ? ` 첨부한 이미지 ${imagesInserted}장도 넣었어요.`
+          : ` 이미지는 ${imagesInserted}/${imageFiles.length}장만 자동으로 들어갔어요 - 나머지는 직접 첨부해주세요.`
+
     res.json({
       ok: true,
       readyToPublish: true,
-      message: '제목과 본문을 채웠어요. 이미지는 직접 첨부해주시고, 내용 확인 후 열린 창에서 발행 버튼만 눌러주세요.',
+      message: `제목과 본문을 채웠어요.${imageNote} 내용 확인 후 열린 창에서 발행 버튼만 눌러주세요.`,
     })
   } catch (err) {
     const screenshotPath = await saveErrorScreenshot(page)
@@ -67,6 +104,10 @@ router.post('/naverblog/prepare', async (req, res) => {
         ? `${err.message} (실패 순간 화면이 여기 저장됐어요: ${screenshotPath})`
         : err.message,
     })
+  } finally {
+    for (const filePath of imageFiles) {
+      fs.promises.unlink(filePath).catch(() => {})
+    }
   }
 })
 
