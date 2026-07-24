@@ -3,7 +3,8 @@ FROM node:22-slim
 # 네이티브 WebSocket을 요구해서(Node 22부터 기본 제공) Node 20에서는 실행 중 에러가 났었다.
 
 # 쇼츠 자동 렌더링(video-maker 로직)에 필요: ffmpeg + 한글 자막용 CJK 폰트
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk curl ca-certificates \
+  && update-ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
