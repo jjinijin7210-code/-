@@ -32,8 +32,9 @@ export const PLATFORM_PREVIEW_SPECS = {
   '인스타/틱톡(영어)': { bodyMaxLen: 100, aspect: 'vertical', showHashtagsInline: true },
   '인스타/틱톡(일본어)': { bodyMaxLen: 100, aspect: 'vertical', showHashtagsInline: true },
   '유튜브(일본어)': { bodyMaxLen: 150, aspect: 'vertical', showHashtagsInline: false },
-  // 2026-07-23: 진희님 본인 채널(트롯충전소·감성채널·코코로의 모구모구식당)용 쇼츠 대본 채널 추가
-  '유튜브(한국어)': { bodyMaxLen: 400, aspect: 'vertical', showHashtagsInline: false },
+  // 2026-07-23: 진희님 본인 채널(트롯충전소·감성채널·코코로의 모구모구식당)용 대본 채널 추가
+  // 2026-07-24: 쇼츠+롱폼 두 버전을 한 body에 같이 담게 되면서 미리보기 길이 상한을 늘림
+  '유튜브(한국어)': { bodyMaxLen: 1500, aspect: 'vertical', showHashtagsInline: false },
 }
 
 // 채널별로 어떤 카테고리(기존 CS링크/벤치마킹 등에서 쓰는 인테리어·생활 / 푸드쇼핑 구분)에 해당하는지
