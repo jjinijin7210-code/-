@@ -235,7 +235,12 @@ function concatWithCrossfade(clips, transitionDuration, cfg, tmpDir, transition 
   filterComplex = filterComplex.replace(/;$/, '')
 
   const out = path.join(tmpDir, 'concatenated.mp4')
-  run([...inputArgs, '-filter_complex', filterComplex, '-map', '[vout]', '-r', String(cfg.fps), ...LOW_MEM_ENCODE_ARGS, out])
+  // 2026-07-25 발견: 'diagtl' 같은 일부 xfade 전환은 내부적으로 yuv444p(4:4:4)로 처리되면서
+  // 인코더가 "High 4:4:4 Predictive" 프로파일로 결과물을 만들어버림 - 이 프로파일은 곰플레이어
+  // 같은 범용 플레이어는 재생되지만 파이어폭스/크롬 등 브라우저 내장 재생기는 지원하지 않아서
+  // "파일이 깨져서 재생할 수 없습니다"로 뜸(사용자 실제 렌더링 결과로 확인). -pix_fmt yuv420p를
+  // 명시해서 어떤 전환을 쓰든 항상 웹 호환 포맷으로 강제함.
+  run([...inputArgs, '-filter_complex', filterComplex, '-map', '[vout]', '-pix_fmt', 'yuv420p', '-r', String(cfg.fps), ...LOW_MEM_ENCODE_ARGS, out])
   return { file: out, sceneStarts, totalDuration: cumulative }
 }
 
