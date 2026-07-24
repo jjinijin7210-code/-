@@ -1516,8 +1516,15 @@ export default function ContentDrafts() {
             onChange={(v) => setForm({ ...form, published_url: v })}
           />
 
-          {/* 구글 Blogger 발행 */}
-          {isBloggerChannel(form.platform) && (
+          {/* 구글 Blogger 발행 - 구글 계정 연결은 사용자별로 분리가 안 돼있어서(2026-07-24
+              확인됨) 테스트 계정에서 누르면 소유자의 실제 연결이 덮어써질 위험이 있음 - 소유자만
+              보이게 막고, 상용화 전까지는 발행 연결 기능 자체가 아직 없다고 안내함. */}
+          {isBloggerChannel(form.platform) && !isOwner && (
+            <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3 text-[11px] text-ink/50">
+              🔗 구글 블로그 발행 연결은 아직 테스트 계정에서는 지원하지 않아요. 정식 서비스가 되면 본인 블로그 계정으로 바로 연결할 수 있게 될 예정이에요.
+            </div>
+          )}
+          {isBloggerChannel(form.platform) && isOwner && (
             <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
               <p className="mb-2 text-xs font-bold text-ink/70">🔗 구글 블로그(Blogger) 발행</p>
               {bloggerConnected ? (
@@ -1569,8 +1576,13 @@ export default function ContentDrafts() {
             </div>
           )}
 
-          {/* 유튜브 업로드 (구글 계정 연결은 Blogger와 공유함) */}
-          {isYoutubeChannel(form.platform) && (
+          {/* 유튜브 업로드 (구글 계정 연결은 Blogger와 공유함) - 위 Blogger와 같은 이유로 소유자만 노출 */}
+          {isYoutubeChannel(form.platform) && !isOwner && (
+            <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3 text-[11px] text-ink/50">
+              ▶️ 유튜브 업로드 연결은 아직 테스트 계정에서는 지원하지 않아요. 정식 서비스가 되면 본인 유튜브 계정으로 바로 연결할 수 있게 될 예정이에요.
+            </div>
+          )}
+          {isYoutubeChannel(form.platform) && isOwner && (
             <div className="my-3 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
               <p className="mb-2 text-xs font-bold text-ink/70">▶️ 유튜브 업로드</p>
               {youtubeConnected ? (
