@@ -1261,15 +1261,13 @@ export default function ContentDrafts() {
               </div>
             )}
 
-            <AttachmentSection attachments={form.images} kinds={IMAGE_KIND} onChange={(next) => setForm({ ...form, images: next })} />
-            <button
-              type="button"
-              onClick={() => setForm((f) => ({ ...f, body: appendAiImageDisclosure(f.body) }))}
-              disabled={form.body?.includes(AI_IMAGE_DISCLOSURE)}
-              className="mt-2 rounded-md border border-ink/15 px-3 py-1.5 text-xs font-semibold text-ink/60 hover:bg-ink/5 disabled:opacity-40"
-            >
-              {form.body?.includes(AI_IMAGE_DISCLOSURE) ? '✓ AI 이미지 문구 추가됨' : '🏷 직접 만든 AI 이미지예요 - 문구 추가'}
-            </button>
+            <AttachmentSection
+              attachments={form.images}
+              kinds={IMAGE_KIND}
+              onChange={(next) => setForm({ ...form, images: next })}
+              onMarkAiImage={() => setForm((f) => ({ ...f, body: appendAiImageDisclosure(f.body) }))}
+              aiImageMarked={form.body?.includes(AI_IMAGE_DISCLOSURE)}
+            />
             {isBloggerChannel(form.platform) && (
               <p className="mt-1 text-[11px] text-ink/40">
                 구글 블로그는 이미지를 자동 삽입하지 않아요. 위에서 첨부한 이미지를 본문 원하는 위치에 직접 붙여넣어주세요.
