@@ -143,8 +143,14 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
     const filter =
       `scale=${rw}:${rw}:force_original_aspect_ratio=increase,crop=${rw}:${rw},` +
       `rotate='${angleExpr}':ow=${rw}:oh=${rw}:fillcolor=black,` +
-      `crop=${w}:${h},fps=${fps},format=yuv420p${textFilter}`
-    run(['-framerate', `1/${duration}`, '-loop', '1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out])
+      `crop=${w}:${h},format=yuv420p${textFilter}`
+    // 다른 효과(zoompan 기반)는 정지 이미지를 씬 전체에 딱 1프레임만 넣어도 zoompan의
+    // d= 파라미터가 알아서 프레임 수만큼 펼쳐주지만, rotate 필터엔 그런 기능이 없다. 그래서
+    // 1/${duration}fps로 입력하면(즉 프레임이 딱 1장) rotate의 각도(t)가 그 한 프레임에서
+    // 딱 한 번만 계산되고 그대로 복제돼 전혀 안 도는 것처럼 보였던 실제 버그가 있었음
+    // (2026-07-25 실제 렌더링 결과로 확인) - 입력 프레임레이트를 fps로 올려서 매 프레임마다
+    // rotate가 실제로 다른 t값으로 재계산되도록 수정.
+    run(['-framerate', String(fps), '-loop', '1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out])
     return { file: out, duration }
   }
 
