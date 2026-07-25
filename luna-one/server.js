@@ -16,6 +16,7 @@ loadEnv()
 
 import { generatePiece, LANGUAGE_NAMES, PLATFORM_NAMES } from './server/lib/promptBuilder.js'
 import { generateImage } from './server/lib/imageClient.js'
+import { getPage, clickFirstVisible, saveErrorScreenshot, dataUrlToFile } from './server/lib/localBrowser.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 4174)
@@ -171,11 +172,116 @@ app.post('/api/generate/card-image', async (req, res) => {
   }
 })
 
+// ------------------------------------------------------------
+// 네이버 블로그 자동 채우기 - anyone-dashboard의 검증된 패턴 그대로 재사용.
+// 로그인과 마지막 "발행" 버튼은 항상 사람이 직접 함 (로컬 실행 전용, Render 등 서버에선 동작 안 함).
+// ------------------------------------------------------------
+
+app.post('/api/naverblog/open-login', async (req, res) => {
+  try {
+    const page = await getPage('naverblog')
+    await page.goto('https://nid.naver.com/nidlogin.login', { waitUntil: 'domcontentloaded' })
+    res.json({ ok: true, message: '네이버 로그인 창을 열었어요. 처음 한 번만 직접 로그인해주세요.' })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  }
+})
+
+app.post('/api/naverblog/prepare', async (req, res) => {
+  const { title, body, images } = req.body || {}
+  if (!title?.trim()) return res.status(400).json({ error: '제목이 비어 있어요.' })
+  if (!body?.trim()) return res.status(400).json({ error: '본문이 비어 있어요.' })
+
+  const imageFiles = []
+  let page
+  try {
+    for (const dataUrl of images || []) {
+      imageFiles.push(dataUrlToFile(dataUrl, 'naverblog'))
+    }
+
+    page = await getPage('naverblog')
+    await page.goto('https://blog.naver.com/GoBlogWrite.naver', { waitUntil: 'domcontentloaded' })
+
+    const loginInput = page.locator('#id')
+    if (await loginInput.isVisible().catch(() => false)) {
+      return res.status(409).json({
+        error: '네이버 로그인이 필요해요. 열린 창에서 로그인한 뒤 다시 눌러주세요.',
+        loginRequired: true,
+      })
+    }
+
+    await page.waitForTimeout(1000)
+    await clickFirstVisible(page, [
+      page.getByRole('button', { name: /취소/ }),
+      page.getByText(/취소/),
+    ])
+
+    const frame = page.frameLocator('#mainFrame')
+    const titleBox = frame.locator('.se-title-text, [class*="title"][contenteditable="true"]').first()
+    await titleBox.waitFor({ state: 'visible', timeout: 15000 })
+    await titleBox.click()
+    await page.keyboard.type(title.trim())
+
+    await page.keyboard.press('Enter')
+    const bodyBox = frame.locator('.se-text-paragraph, .se-component-content [contenteditable="true"]').first()
+    await bodyBox.waitFor({ state: 'visible', timeout: 15000 }).catch(() => {})
+    await page.keyboard.type(body.trim())
+
+    let imagesInserted = 0
+    if (imageFiles.length > 0) {
+      await page.keyboard.press('Enter')
+      const photoButtonClicked = await clickFirstVisible(page, [
+        frame.locator('button[data-name="image"]'),
+        frame.locator('.se-image-toolbar-button'),
+        frame.getByRole('button', { name: /^사진$/ }),
+      ])
+      if (photoButtonClicked) {
+        for (const filePath of imageFiles) {
+          try {
+            const fileInput = frame.locator('input[type="file"]').first()
+            await fileInput.waitFor({ state: 'attached', timeout: 8000 })
+            await fileInput.setInputFiles(filePath)
+            await page.waitForTimeout(2000)
+            imagesInserted += 1
+          } catch {
+            break
+          }
+        }
+      }
+    }
+
+    const imageNote =
+      imageFiles.length === 0
+        ? ''
+        : imagesInserted === imageFiles.length
+          ? ` 첨부한 이미지 ${imagesInserted}장도 넣었어요.`
+          : ` 이미지는 ${imagesInserted}/${imageFiles.length}장만 자동으로 들어갔어요 - 나머지는 직접 첨부해주세요.`
+
+    res.json({
+      ok: true,
+      readyToPublish: true,
+      message: `제목과 본문을 채웠어요.${imageNote} 내용 확인 후 열린 창에서 발행 버튼만 눌러주세요.`,
+    })
+  } catch (err) {
+    const screenshotPath = await saveErrorScreenshot(page)
+    res.status(500).json({
+      error: screenshotPath
+        ? `${err.message} (실패 순간 화면이 여기 저장됐어요: ${screenshotPath})`
+        : err.message,
+    })
+  } finally {
+    for (const filePath of imageFiles) {
+      fs.promises.unlink(filePath).catch(() => {})
+    }
+  }
+})
+
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     provider: process.env.ANTHROPIC_API_KEY ? 'claude' : 'demo',
     imageProvider: process.env.OPENAI_API_KEY ? 'openai' : null,
+    localAutomation: process.env.ENABLE_LOCAL_BROWSER_AUTOMATION === 'true',
     version: '1.0.0',
   })
 })

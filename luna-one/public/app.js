@@ -40,6 +40,11 @@ function renderPhotoList() {
   $$("[data-photo-remove]").forEach(btn => btn.onclick = () => { photos.splice(Number(btn.dataset.photoRemove), 1); renderPhotoList(); });
 }
 
+$("#clearText").onclick = () => { $("#textTitle").value = ""; $("#textInput").value = ""; };
+$("#clearUrl").onclick = () => { $("#urlInput").value = ""; };
+$("#clearYoutube").onclick = () => { $("#youtubeInput").value = ""; };
+$("#clearScreenshot").onclick = () => { $("#imageInput").value = ""; };
+
 $(".platforms")?.addEventListener("change", () => {
   const cardsChecked = $$(".platforms input:checked").some(x => x.value === "cards");
   $("#cardPhotosBox").classList.toggle("hidden", !cardsChecked);
@@ -70,10 +75,25 @@ $$(".tab").forEach(btn => btn.addEventListener("click", () => {
   $(`#pane-${btn.dataset.tab}`).classList.add("active");
 }));
 
+let localAutomationOn = false;
 fetch("/api/health").then(r=>r.json()).then(data=>{
+  localAutomationOn = !!data.localAutomation;
+  $("#naverAutomationBox").classList.toggle("hidden", !localAutomationOn);
   const img = data.imageProvider ? " · 카드이미지 ON" : " · 카드이미지 OFF(OPENAI_API_KEY 없음)";
   $("#health").textContent = `● ${data.provider.toUpperCase()} 모드${img}`;
 }).catch(()=>$("#health").textContent="● 서버 연결 실패");
+
+$("#naverOpenLogin").onclick = async () => {
+  const btn = $("#naverOpenLogin");
+  btn.disabled = true;
+  try {
+    const res = await fetch("/api/naverblog/open-login", { method: "POST" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    alert(data.message);
+  } catch(e) { showError(e.message); }
+  finally { btn.disabled = false; }
+};
 
 $("#extractUrl").onclick = () => extractJson("/api/extract/url", { url: $("#urlInput").value });
 $("#extractYoutube").onclick = () => extractJson("/api/extract/youtube", { url: $("#youtubeInput").value });
@@ -211,21 +231,64 @@ function renderLanguage() {
     if (value.error) {
       return `<article class="output-card"><div class="output-head"><h3>${PLATFORM_NAMES[key]||key}</h3></div><p class="error" style="display:block">생성 실패: ${escapeHtml(value.error)}</p></article>`;
     }
+    const aiNote = `<p class="ai-note">⚠ AI가 생성한 콘텐츠예요. 게시 전 내용을 확인해주세요.</p>`;
     if (key === "cards") {
       return `<article class="output-card">
-        <div class="output-head"><h3>${PLATFORM_NAMES[key]}</h3><button class="copy" data-copy-cards="${key}">문구 복사</button></div>
+        <div class="output-head"><h3>${PLATFORM_NAMES[key]}</h3><div class="output-actions"><button class="copy" data-copy-cards="${key}">문구 복사</button><button class="copy" data-save-cards="${key}">💾 저장</button></div></div>
         <div class="cards-grid">${(value.cards||[]).map((card,i)=>renderCardHtml(card,i,(value.cards||[]).length)).join("")}</div>
+        ${aiNote}
       </article>`;
     }
     const siteUrl = PLATFORM_SITE_URL[key];
+    const fillBtn = key === "naverBlog" && localAutomationOn
+      ? `<button class="copy" data-naverblog-fill="${key}">✍ 자동 채우기</button>` : "";
     return `<article class="output-card">
-      <div class="output-head"><h3>${PLATFORM_NAMES[key] || key}</h3><div class="output-actions"><button class="copy" data-copy="${key}">복사</button>${siteUrl ? `<a class="copy" href="${siteUrl}" target="_blank" rel="noopener">사이트 열기 ↗</a>` : ""}</div></div>
-      <div class="output-body"><strong>${escapeHtml(value.title||"")}</strong>\n\n${escapeHtml(value.content||"")}</div>
+      <div class="output-head"><h3>${PLATFORM_NAMES[key] || key}</h3><div class="output-actions"><button class="copy" data-copy="${key}">복사</button><button class="copy" data-save="${key}">💾 저장</button>${siteUrl ? `<a class="copy" href="${siteUrl}" target="_blank" rel="noopener">사이트 열기 ↗</a>` : ""}${fillBtn}</div></div>
+      <div class="output-body-edit">
+        <input class="edit-title" data-edit-title="${key}" value="${escapeHtml(value.title||"")}">
+        <textarea class="edit-content" data-edit-content="${key}" rows="8">${escapeHtml(value.content||"")}</textarea>
+      </div>
+      ${aiNote}
     </article>`;
   }).join("");
 
   $$("[data-copy]").forEach(btn=>btn.onclick=async()=>{
-    const v=content[btn.dataset.copy]; await copyText(`${v.title}\n\n${v.content}`); flash(btn);
+    const key = btn.dataset.copy;
+    const title = $(`[data-edit-title="${key}"]`)?.value || "";
+    const text = $(`[data-edit-content="${key}"]`)?.value || "";
+    await copyText(`${title}\n\n${text}`); flash(btn);
+  });
+  $$("[data-save]").forEach(btn=>btn.onclick=()=>{
+    const key = btn.dataset.save;
+    const title = $(`[data-edit-title="${key}"]`)?.value || "";
+    const text = $(`[data-edit-content="${key}"]`)?.value || "";
+    downloadText(`${title}\n\n${text}`, `${key}.txt`);
+    flash(btn);
+  });
+  $$("[data-save-cards]").forEach(btn=>btn.onclick=()=>{
+    const v = content.cards;
+    const text = (v.cards||[]).map(c=>`${c.page}장\n${c.headline}\n${c.body}`).join("\n\n");
+    downloadText(text, `cards.txt`);
+    flash(btn);
+  });
+  $$("[data-naverblog-fill]").forEach(btn=>btn.onclick=async()=>{
+    const key = btn.dataset.naverblogFill;
+    const title = $(`[data-edit-title="${key}"]`)?.value.trim() || "";
+    const body = $(`[data-edit-content="${key}"]`)?.value.trim() || "";
+    btn.disabled = true;
+    const old = btn.textContent;
+    btn.textContent = "채우는 중…";
+    try {
+      const res = await fetch("/api/naverblog/prepare", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ title, body })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      showError("");
+      alert(data.message);
+    } catch(e) { showError(e.message); }
+    finally { btn.disabled = false; btn.textContent = old; }
   });
   $$("[data-copy-cards]").forEach(btn=>btn.onclick=async()=>{
     const v=content.cards; const text=(v.cards||[]).map(c=>`${c.page}장\n${c.headline}\n${c.body}`).join("\n\n");
@@ -278,4 +341,10 @@ function showError(message) {
 function langName(k){return ({ko:"🇰🇷 한국어",ja:"🇯🇵 日本語",en:"🇺🇸 English",zh:"🇨🇳 中文",es:"🇪🇸 Español"})[k]||k}
 function escapeHtml(v){return String(v??"").replace(/[&<>"']/g,m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[m]))}
 async function copyText(t){await navigator.clipboard.writeText(t)}
+function downloadText(text, filename){
+  const blob = new Blob([text], {type:"text/plain;charset=utf-8"});
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(blob); a.download = filename; a.click();
+  URL.revokeObjectURL(a.href);
+}
 function flash(btn){const old=btn.textContent;btn.textContent="복사됨";setTimeout(()=>btn.textContent=old,1000)}
