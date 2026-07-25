@@ -38,7 +38,6 @@ $("#photoInput")?.addEventListener("change", async (e) => {
 function renderPhotoList() {
   const box = $("#photoList");
   if (!box) return;
-  $("#photoListHead").classList.toggle("hidden", photos.length === 0);
   box.innerHTML = photos.map((p, i) => `
     <div class="photo-item">
       <img src="${p.dataUrl}" alt="사진 ${i+1}">
@@ -103,7 +102,6 @@ $("#resetSource").onclick = () => {
   $("#sourcePreview").classList.add("hidden");
   $("#sourceText").value = "";
   $("#photoList").innerHTML = "";
-  $("#photoListHead").classList.add("hidden");
   $("#results").classList.add("hidden");
   $("#resultContent").innerHTML = "";
   showError("");
