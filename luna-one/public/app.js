@@ -72,7 +72,12 @@ function renderPhotoList() {
   $$("[data-photo-caption]").forEach(inp => inp.oninput = () => { photos[Number(inp.dataset.photoCaption)].caption = inp.value; });
   $$("[data-photo-remove]").forEach(btn => btn.onclick = () => { photos.splice(Number(btn.dataset.photoRemove), 1); renderPhotoList(); });
 }
-$("#clearAllPhotos")?.addEventListener("click", () => { photos = []; renderPhotoList(); });
+$("#clearAllPhotos")?.addEventListener("click", () => {
+  photos = [];
+  renderPhotoList();
+  $("#photoSearchResults").innerHTML = ""; // 고른 사진뿐 아니라 위에 떠있는 검색결과도 같이 지움
+  $("#photoSearchInput").value = "";
+});
 
 async function runPhotoSearch() {
   const q = $("#photoSearchInput").value.trim();
