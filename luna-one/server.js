@@ -17,6 +17,7 @@ loadEnv()
 import { generatePiece, LANGUAGE_NAMES, PLATFORM_NAMES } from './server/lib/promptBuilder.js'
 import { generateImage } from './server/lib/imageClient.js'
 import { getPage, clickFirstVisible, saveErrorScreenshot, dataUrlToFile } from './server/lib/localBrowser.js'
+import { searchPhotos, fetchPhotoAsDataUrl } from './server/lib/pexelsClient.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 4174)
@@ -160,6 +161,25 @@ app.post('/api/generate', async (req, res) => {
 })
 
 // 카드 사진/아이콘 자동 배정으로 충분하지 않을 때만 쓰는 수동 AI 이미지 생성 (직접 눌러야 호출됨)
+// 무료 스톡 사진 검색(Pexels) - 카드뉴스용 대표 사진을 직접 업로드하는 대신 검색해서 고를 수 있음
+app.get('/api/photos/search', async (req, res) => {
+  try {
+    const results = await searchPhotos({ query: req.query.q })
+    res.json({ photos: results })
+  } catch (error) {
+    res.status(400).json({ error: error.message })
+  }
+})
+
+app.post('/api/photos/fetch', async (req, res) => {
+  try {
+    const dataUrl = await fetchPhotoAsDataUrl(req.body.url)
+    res.json({ dataUrl })
+  } catch (error) {
+    res.status(400).json({ error: error.message })
+  }
+})
+
 app.post('/api/generate/card-image', async (req, res) => {
   try {
     const { headline, body, visualHint } = req.body
@@ -282,6 +302,7 @@ app.get('/api/health', (_req, res) => {
     provider: process.env.ANTHROPIC_API_KEY ? 'claude' : 'demo',
     imageProvider: process.env.OPENAI_API_KEY ? 'openai' : null,
     localAutomation: process.env.ENABLE_LOCAL_BROWSER_AUTOMATION === 'true',
+    photoSearch: Boolean(process.env.PEXELS_API_KEY),
     version: '1.0.0',
   })
 })

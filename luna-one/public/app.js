@@ -40,6 +40,42 @@ function renderPhotoList() {
   $$("[data-photo-remove]").forEach(btn => btn.onclick = () => { photos.splice(Number(btn.dataset.photoRemove), 1); renderPhotoList(); });
 }
 
+async function runPhotoSearch() {
+  const q = $("#photoSearchInput").value.trim();
+  if (!q) return;
+  const box = $("#photoSearchResults");
+  box.innerHTML = `<p class="muted">검색 중…</p>`;
+  try {
+    const res = await fetch(`/api/photos/search?q=${encodeURIComponent(q)}`);
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    if (!data.photos.length) { box.innerHTML = `<p class="muted">검색 결과가 없어요.</p>`; return; }
+    box.innerHTML = data.photos.map(p => `<button type="button" data-pexels-pick="${encodeURIComponent(p.full)}" title="사진: ${escapeHtml(p.photographer)}"><img src="${p.thumb}" loading="lazy"></button>`).join("");
+    $$("[data-pexels-pick]").forEach(btn => btn.onclick = async () => {
+      if (photos.length >= 4) return showError("사진은 최대 4장까지예요.");
+      btn.disabled = true;
+      try {
+        const url = decodeURIComponent(btn.dataset.pexelsPick);
+        const fetchRes = await fetch("/api/photos/fetch", {
+          method: "POST", headers: {"Content-Type":"application/json"},
+          body: JSON.stringify({ url })
+        });
+        const fetchData = await fetchRes.json();
+        if (!fetchRes.ok) throw new Error(fetchData.error);
+        photos.push({ dataUrl: fetchData.dataUrl, caption: "" });
+        renderPhotoList();
+        showError("");
+      } catch(e) { showError(e.message); }
+      finally { btn.disabled = false; }
+    });
+  } catch(e) {
+    box.innerHTML = "";
+    showError(e.message);
+  }
+}
+$("#photoSearchBtn")?.addEventListener("click", runPhotoSearch);
+$("#photoSearchInput")?.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); runPhotoSearch(); } });
+
 $("#clearText").onclick = () => { $("#textTitle").value = ""; $("#textInput").value = ""; };
 $("#clearUrl").onclick = () => { $("#urlInput").value = ""; };
 $("#clearYoutube").onclick = () => { $("#youtubeInput").value = ""; };
@@ -137,7 +173,9 @@ async function extractJson(endpoint, body) {
 
 function setSource(data) {
   source = data;
-  $("#sourcePreview").classList.remove("hidden");
+  // "바로 입력"은 이미 위 textarea에 보이는 내용을 그대로 다시 보여주는 거라 중복이라,
+  // 그 경우만 미리보기 박스를 숨김 (링크/유튜브/스크린샷은 서버가 대신 가져온 내용이라 확인 필요)
+  $("#sourcePreview").classList.toggle("hidden", data.sourceType === "text");
   $("#sourceTitle").textContent = data.title || "제목 없음";
   $("#sourceType").textContent = data.sourceType || "source";
   $("#sourceText").value = data.text || "";
