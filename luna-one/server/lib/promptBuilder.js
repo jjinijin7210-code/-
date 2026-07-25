@@ -16,8 +16,8 @@ export const LANGUAGE_NAMES = {
   es: '스페인어',
 }
 
-// 진희님이 첫 공개 버전 범위로 정한 채널만: 블로그·인스타·틱톡·스레드 + 카드뉴스
-// (유튜브 쇼츠/롱폼은 이번 버전 범위 밖 - 2026-07-25)
+// 진희님이 첫 공개 버전 범위로 정한 채널: 블로그·인스타·틱톡·스레드 + 카드뉴스.
+// 유튜브는 실제 영상 제작(음성·렌더링)까지는 범위 밖이지만, 대본 텍스트만은 2026-07-25에 추가.
 export const PLATFORM_NAMES = {
   instagram: 'Instagram',
   tiktok: 'TikTok',
@@ -25,6 +25,8 @@ export const PLATFORM_NAMES = {
   cards: '카드뉴스',
   googleBlog: 'Google Blog',
   naverBlog: 'Naver Blog',
+  youtubeShorts: 'YouTube Shorts 대본',
+  youtubeLong: 'YouTube 롱폼 대본',
 }
 
 const PLATFORM_RULES = {
@@ -34,6 +36,20 @@ const PLATFORM_RULES = {
   cards: '카드뉴스. 표지 포함 지정 장수. 각 장은 headline과 body로 구성하며 body는 최대 두 문장.',
   googleBlog: '구글 블로그용 SEO 글. 제목, 도입, 소제목 3~5개, 본문, 요약.',
   naverBlog: '네이버 블로그용 친근한 정보 글. 검색형 제목, 공감 도입, 소제목, 핵심 요약, 태그 8~12개.',
+  youtubeShorts: '유튜브 쇼츠 30~60초 대본(텍스트만, 실제 영상/음성 제작은 아님). 첫 2초 후킹, 5~8개 짧은 장면(화면 지시+내레이션+자막), 마지막 CTA.',
+  youtubeLong: '유튜브 롱폼 5~20분 대본(텍스트만). 오프닝 훅, 목차, 본론(소제목별로 구성), 마무리 CTA.',
+}
+
+// 틱톡 대본/블로그처럼 분량이 긴 플랫폼은 maxTokens가 낮으면 JSON이 중간에 잘려서
+// 파싱 자체가 깨진다 (control-char 이스케이프 문제가 아니라 순수 길이 부족) - 2026-07-25 확인.
+const MAX_TOKENS_BY_PLATFORM = {
+  instagram: 900,
+  threads: 700,
+  tiktok: 2200,
+  googleBlog: 2400,
+  naverBlog: 2400,
+  youtubeShorts: 2200,
+  youtubeLong: 3400,
 }
 
 // 카드뉴스는 카드마다 AI 이미지를 새로 생성하지 않는다 (비용/속도 문제). 대신 사용자가 올린
@@ -133,7 +149,7 @@ ${buildOutputSchema(platform)}`
   return callClaudeJson({
     system,
     messages: [{ role: 'user', content: userText }],
-    maxTokens: platform === 'cards' ? 1800 : 900,
+    maxTokens: platform === 'cards' ? Math.min(4000, 300 + Number(cardCount) * 220) : (MAX_TOKENS_BY_PLATFORM[platform] || 1200),
     maxRetries: 2,
     parse: (text) => {
       const parsed = tryParseJsonLoose(text)

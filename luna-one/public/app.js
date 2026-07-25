@@ -45,6 +45,24 @@ $(".platforms")?.addEventListener("change", () => {
   $("#cardPhotosBox").classList.toggle("hidden", !cardsChecked);
 });
 
+$("#resetSource").onclick = () => {
+  source = null;
+  generated = null;
+  photos = [];
+  $("#textTitle").value = "";
+  $("#textInput").value = "";
+  $("#urlInput").value = "";
+  $("#youtubeInput").value = "";
+  $("#imageInput").value = "";
+  $("#sourcePreview").classList.add("hidden");
+  $("#sourceText").value = "";
+  $("#photoList").innerHTML = "";
+  $("#cardPhotosBox").classList.add("hidden");
+  $("#results").classList.add("hidden");
+  $("#resultContent").innerHTML = "";
+  showError("");
+};
+
 $$(".tab").forEach(btn => btn.addEventListener("click", () => {
   $$(".tab").forEach(x => x.classList.remove("active"));
   $$(".tab-pane").forEach(x => x.classList.remove("active"));
@@ -64,7 +82,7 @@ $("#useText").onclick = () => {
   const text = $("#textInput").value.trim();
   if (text.length < 30) return showError("글을 30자 이상 넣어 주세요.");
   setSource({
-    title: $("#textTitle").value.trim() || "복사한 글",
+    title: $("#textTitle").value.trim(),
     text,
     sourceType: "text"
   });
@@ -158,7 +176,7 @@ function renderResults(provider) {
   $("#results").scrollIntoView({behavior:"smooth"});
 }
 
-const PLATFORM_NAMES = {instagram:"Instagram",tiktok:"TikTok",threads:"Threads",cards:"카드뉴스",googleBlog:"Google Blog",naverBlog:"Naver Blog"};
+const PLATFORM_NAMES = {instagram:"Instagram",tiktok:"TikTok",threads:"Threads",cards:"카드뉴스",googleBlog:"Google Blog",naverBlog:"Naver Blog",youtubeShorts:"YouTube Shorts 대본",youtubeLong:"YouTube 롱폼 대본"};
 
 // 카드마다 새 AI 이미지를 만들지 않고, 업로드한 사진(zoom/blur/dark 등으로 재사용) 또는
 // 아이콘으로 배경을 채운다. "AI로 다시 만들기" 버튼은 그래도 안 맞을 때 쓰는 수동 예외.

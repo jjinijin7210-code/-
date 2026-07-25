@@ -52,6 +52,7 @@ export async function callClaudeJson({ system, messages, maxTokens = 1024, parse
     } catch (err) {
       lastErr = err
       console.error(`[callClaudeJson] 파싱 실패 (시도 ${attempt + 1}/${maxRetries + 1}):`, err.message)
+      console.error(`[callClaudeJson] 원문 응답(앞 500자):`, text.slice(0, 500))
     }
   }
   throw lastErr
