@@ -126,7 +126,7 @@ $("#generate").onclick = async () => {
         source, platforms, languages,
         cardCount:Number($("#cardCount").value),
         tone:$("#tone").value,
-        experienceMode:$("#experienceMode").value,
+        experienceMode:$("#experienceOn").checked ? "balanced" : "source",
         experienceText:$("#experienceText").value.trim(),
         smartEnhance:{travel:$("#travelEnhance").checked,time:$("#timeEnhance").checked,caution:$("#cautionEnhance").checked},
         photos: platforms.includes("cards") ? photos : []
