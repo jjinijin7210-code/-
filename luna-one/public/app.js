@@ -25,14 +25,39 @@ function fileToDataUrl(file) {
   });
 }
 
-$("#photoInput")?.addEventListener("change", async (e) => {
-  const files = [...e.target.files].slice(0, Math.max(0, 4 - photos.length));
+async function addPhotoFiles(fileList) {
+  const files = [...fileList].filter(f => f.type.startsWith("image/")).slice(0, Math.max(0, 4 - photos.length));
   for (const file of files) {
     try { photos.push({ dataUrl: await fileToDataUrl(file), caption: "" }); }
     catch (err) { showError(err.message); }
   }
-  e.target.value = "";
   renderPhotoList();
+}
+
+$("#photoInput")?.addEventListener("change", async (e) => {
+  await addPhotoFiles(e.target.files);
+  e.target.value = "";
+});
+
+// 파일 선택창 없이도 드래그앤드롭 / 복사-붙여넣기로 사진을 넣을 수 있게
+const photoDropZone = $("#photoDropZone");
+if (photoDropZone) {
+  ["dragover", "dragenter"].forEach(evt => photoDropZone.addEventListener(evt, e => {
+    e.preventDefault();
+    photoDropZone.classList.add("drag-over");
+  }));
+  ["dragleave", "drop"].forEach(evt => photoDropZone.addEventListener(evt, () => photoDropZone.classList.remove("drag-over")));
+  photoDropZone.addEventListener("drop", async (e) => {
+    e.preventDefault();
+    if (e.dataTransfer?.files?.length) await addPhotoFiles(e.dataTransfer.files);
+  });
+}
+window.addEventListener("paste", async (e) => {
+  const items = [...(e.clipboardData?.items || [])].filter(it => it.type.startsWith("image/"));
+  if (!items.length) return; // 이미지가 아니면 원래 붙여넣기(텍스트 등) 그대로 두기
+  e.preventDefault();
+  const files = items.map(it => it.getAsFile()).filter(Boolean);
+  await addPhotoFiles(files);
 });
 
 function renderPhotoList() {
@@ -74,8 +99,8 @@ async function runPhotoSearch() {
         photos.push({ dataUrl: fetchData.dataUrl, caption: "" });
         renderPhotoList();
         showError("");
-      } catch(e) { showError(e.message); }
-      finally { btn.disabled = false; }
+        btn.remove(); // 고른 사진은 검색결과 목록에서 빼서, 전체삭제 후에도 헷갈리지 않게
+      } catch(e) { showError(e.message); btn.disabled = false; }
     });
   } catch(e) {
     box.innerHTML = "";
