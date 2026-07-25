@@ -8,6 +8,14 @@ const $$ = s => [...document.querySelectorAll(s)];
 
 const ICON_EMOJI = {boat:"🚢",plane:"✈️",car:"🚗",train:"🚆",map:"🗺️",clock:"⏰",calendar:"📅",ticket:"🎫",money:"💰",star:"⭐",question:"💬",camera:"📷",food:"🍽️",hotel:"🏨"};
 
+// 게시물 본문에 "필요시" 직접 삽입하는 AI 이미지 사용 안내 문구 (화면에만 뜨는 ai-note와는 별개).
+// 3가지 버전 중 골라서 쓸 수 있게 - 어떤 걸 쓸지는 카드마다 있는 select로 고름.
+const AI_DISCLOSURE_VERSIONS = [
+  "※ 본 콘텐츠에는 AI로 제작된 이미지가 포함되어 있습니다.",
+  "이 콘텐츠의 일부 이미지는 AI 기술을 활용하여 제작되었습니다.",
+  "본 영상에는 AI로 제작된 이미지 및 시각 효과가 포함되어 있습니다.",
+];
+
 function fileToDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -30,6 +38,7 @@ $("#photoInput")?.addEventListener("change", async (e) => {
 function renderPhotoList() {
   const box = $("#photoList");
   if (!box) return;
+  $("#photoListHead").classList.toggle("hidden", photos.length === 0);
   box.innerHTML = photos.map((p, i) => `
     <div class="photo-item">
       <img src="${p.dataUrl}" alt="사진 ${i+1}">
@@ -39,6 +48,7 @@ function renderPhotoList() {
   $$("[data-photo-caption]").forEach(inp => inp.oninput = () => { photos[Number(inp.dataset.photoCaption)].caption = inp.value; });
   $$("[data-photo-remove]").forEach(btn => btn.onclick = () => { photos.splice(Number(btn.dataset.photoRemove), 1); renderPhotoList(); });
 }
+$("#clearAllPhotos")?.addEventListener("click", () => { photos = []; renderPhotoList(); });
 
 async function runPhotoSearch() {
   const q = $("#photoSearchInput").value.trim();
@@ -81,11 +91,6 @@ $("#clearUrl").onclick = () => { $("#urlInput").value = ""; };
 $("#clearYoutube").onclick = () => { $("#youtubeInput").value = ""; };
 $("#clearScreenshot").onclick = () => { $("#imageInput").value = ""; };
 
-$(".platforms")?.addEventListener("change", () => {
-  const cardsChecked = $$(".platforms input:checked").some(x => x.value === "cards");
-  $("#cardPhotosBox").classList.toggle("hidden", !cardsChecked);
-});
-
 $("#resetSource").onclick = () => {
   source = null;
   generated = null;
@@ -98,7 +103,7 @@ $("#resetSource").onclick = () => {
   $("#sourcePreview").classList.add("hidden");
   $("#sourceText").value = "";
   $("#photoList").innerHTML = "";
-  $("#cardPhotosBox").classList.add("hidden");
+  $("#photoListHead").classList.add("hidden");
   $("#results").classList.add("hidden");
   $("#resultContent").innerHTML = "";
   showError("");
@@ -280,8 +285,11 @@ function renderLanguage() {
     const siteUrl = PLATFORM_SITE_URL[key];
     const fillBtn = key === "naverBlog" && localAutomationOn
       ? `<button class="copy" data-naverblog-fill="${key}">✍ 자동 채우기</button>` : "";
+    const defaultVersion = ["tiktok","youtubeShorts","youtubeLong"].includes(key) ? 2 : 0;
+    const disclosureOptions = AI_DISCLOSURE_VERSIONS.map((t,i)=>`<option value="${i}"${i===defaultVersion?" selected":""}>${escapeHtml(t.length>18?t.slice(0,18)+"…":t)}</option>`).join("");
     return `<article class="output-card">
       <div class="output-head"><h3>${PLATFORM_NAMES[key] || key}</h3><div class="output-actions"><button class="copy" data-copy="${key}">복사</button><button class="copy" data-save="${key}">💾 저장</button>${siteUrl ? `<a class="copy" href="${siteUrl}" target="_blank" rel="noopener">사이트 열기 ↗</a>` : ""}${fillBtn}</div></div>
+      <div class="ai-disclosure-row"><select data-disclosure-version="${key}">${disclosureOptions}</select><button class="copy" data-insert-ai-note="${key}">🏷 문구 삽입</button></div>
       <div class="output-body-edit">
         <input class="edit-title" data-edit-title="${key}" value="${escapeHtml(value.title||"")}">
         <textarea class="edit-content" data-edit-content="${key}" rows="8">${escapeHtml(value.content||"")}</textarea>
@@ -289,6 +297,16 @@ function renderLanguage() {
       ${aiNote}
     </article>`;
   }).join("");
+
+  $$("[data-insert-ai-note]").forEach(btn=>btn.onclick=()=>{
+    const key = btn.dataset.insertAiNote;
+    const area = $(`[data-edit-content="${key}"]`);
+    const versionSelect = $(`[data-disclosure-version="${key}"]`);
+    if (!area || !versionSelect) return;
+    const text = AI_DISCLOSURE_VERSIONS[Number(versionSelect.value)];
+    if (!area.value.includes(text)) area.value = area.value.trim() + `\n\n${text}`;
+    flash(btn);
+  });
 
   $$("[data-copy]").forEach(btn=>btn.onclick=async()=>{
     const key = btn.dataset.copy;
