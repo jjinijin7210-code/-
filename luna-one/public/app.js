@@ -269,7 +269,7 @@ function renderLanguage() {
     if (value.error) {
       return `<article class="output-card"><div class="output-head"><h3>${PLATFORM_NAMES[key]||key}</h3></div><p class="error" style="display:block">생성 실패: ${escapeHtml(value.error)}</p></article>`;
     }
-    const aiNote = `<p class="ai-note">⚠ AI가 생성한 콘텐츠예요. 게시 전 내용을 확인해주세요.</p>`;
+    const aiNote = `<p class="ai-note">⚠ AI가 포함된 콘텐츠일 수 있어요. 게시 전 내용을 확인해주세요.</p>`;
     if (key === "cards") {
       return `<article class="output-card">
         <div class="output-head"><h3>${PLATFORM_NAMES[key]}</h3><div class="output-actions"><button class="copy" data-copy-cards="${key}">문구 복사</button><button class="copy" data-save-cards="${key}">💾 저장</button></div></div>
