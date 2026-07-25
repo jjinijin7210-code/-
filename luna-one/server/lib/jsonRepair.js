@@ -26,9 +26,11 @@ function escapeRawControlCharsInStrings(str) {
 }
 
 export function tryParseJsonLoose(text) {
-  const candidates = [text]
+  // 가끔 ```json ... ``` 코드블록으로 감싸서 응답하는 경우가 있어 방어적으로 벗겨낸다
+  const unfenced = text.replace(/^```(?:json)?\s*/i, '').replace(/```\s*$/, '')
+  const candidates = [text, unfenced]
 
-  const match = text.match(/\{[\s\S]*\}/)
+  const match = unfenced.match(/\{[\s\S]*\}/)
   if (match && match[0] !== text) candidates.push(match[0])
 
   for (const candidate of [...candidates]) {

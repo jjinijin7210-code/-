@@ -43,8 +43,8 @@ const PLATFORM_RULES = {
 // 틱톡 대본/블로그처럼 분량이 긴 플랫폼은 maxTokens가 낮으면 JSON이 중간에 잘려서
 // 파싱 자체가 깨진다 (control-char 이스케이프 문제가 아니라 순수 길이 부족) - 2026-07-25 확인.
 const MAX_TOKENS_BY_PLATFORM = {
-  instagram: 900,
-  threads: 700,
+  instagram: 1600,
+  threads: 1000,
   tiktok: 2200,
   googleBlog: 2400,
   naverBlog: 2400,

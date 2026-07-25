@@ -178,6 +178,16 @@ function renderResults(provider) {
 
 const PLATFORM_NAMES = {instagram:"Instagram",tiktok:"TikTok",threads:"Threads",cards:"카드뉴스",googleBlog:"Google Blog",naverBlog:"Naver Blog",youtubeShorts:"YouTube Shorts 대본",youtubeLong:"YouTube 롱폼 대본"};
 
+// 로그인/자동입력/자동게시는 안 함 - 그냥 해당 사이트를 새 탭으로 열어주기만 함
+// (메타 등 SNS의 로그인 자동화·화면 조작은 정책상 하면 안 되는 영역이라 의도적으로 여기까지만)
+const PLATFORM_SITE_URL = {
+  instagram: "https://www.instagram.com/",
+  tiktok: "https://www.tiktok.com/upload",
+  threads: "https://www.threads.net/",
+  googleBlog: "https://www.blogger.com/",
+  naverBlog: "https://blog.naver.com/",
+};
+
 // 카드마다 새 AI 이미지를 만들지 않고, 업로드한 사진(zoom/blur/dark 등으로 재사용) 또는
 // 아이콘으로 배경을 채운다. "AI로 다시 만들기" 버튼은 그래도 안 맞을 때 쓰는 수동 예외.
 function renderCardHtml(card, i, total) {
@@ -207,8 +217,9 @@ function renderLanguage() {
         <div class="cards-grid">${(value.cards||[]).map((card,i)=>renderCardHtml(card,i,(value.cards||[]).length)).join("")}</div>
       </article>`;
     }
+    const siteUrl = PLATFORM_SITE_URL[key];
     return `<article class="output-card">
-      <div class="output-head"><h3>${PLATFORM_NAMES[key] || key}</h3><button class="copy" data-copy="${key}">복사</button></div>
+      <div class="output-head"><h3>${PLATFORM_NAMES[key] || key}</h3><div class="output-actions"><button class="copy" data-copy="${key}">복사</button>${siteUrl ? `<a class="copy" href="${siteUrl}" target="_blank" rel="noopener">사이트 열기 ↗</a>` : ""}</div></div>
       <div class="output-body"><strong>${escapeHtml(value.title||"")}</strong>\n\n${escapeHtml(value.content||"")}</div>
     </article>`;
   }).join("");
