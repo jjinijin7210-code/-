@@ -33,12 +33,6 @@ export function generateDraftsFromSource({ sourceArticle, channels, topic }) {
   return postJson('/api/draft/from-source', { sourceArticle, channels, topic })
 }
 
-// 심리학 유튜브(일본어) 영상을 실제로 제작해서 content_drafts에 바로 저장 (대본→내레이션→이미지→배경음악 합성이라 1~2분 걸림)
-// topic을 주면(소재 직접 입력) 랜덤 주제풀 대신 그 소재로 만든다.
-export function generatePsychologyVideoNow({ format = 'shorts', topic } = {}) {
-  return postJson('/api/youtube/psychology-video-run-manual', { format, topic })
-}
-
 // AI 자동 검수 (팩트체크/과장표현/AI스러운 문체)
 export function reviewDraftWithAi({ title, body, channel }) {
   return postJson('/api/review', { title, body, channel })
@@ -102,6 +96,18 @@ export async function searchYoutubeVideos({ query, minLikes = 10000, regionCodes
   return data.videos || []
 }
 
+// 콘텐츠 DNA 분석 - 채널 URL 또는 영상 파일(2026-07-27, "파일 바로넣기" 요청) 넣으면
+// 주제/톤/포맷 분석 + 비슷한 채널 추천/벤치마킹
+export async function analyzeContentDna({ channelUrl, videoFile }) {
+  const fd = new FormData()
+  if (videoFile) fd.append('video', videoFile)
+  else if (channelUrl) fd.append('channelUrl', channelUrl)
+  const res = await fetch(`${API_BASE}/api/content-dna/analyze`, { method: 'POST', body: fd })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `분석이 실패했어요 (${res.status})`)
+  return data
+}
+
 // 1688 상품 소싱 검색 (베스트셀러순 기본)
 export async function search1688Products({ query, maxProducts, sortType }) {
   const params = new URLSearchParams({ q: query })
@@ -162,6 +168,11 @@ export async function generateAiImage({ prompt, size }) {
 // 참고 사진을 올리면 그 느낌으로 비슷한 새 이미지를 AI가 다시 그려서 생성
 export async function generateSimilarImage({ imageDataUrl, prompt, size }) {
   return postJson('/api/images/edit', { imageDataUrl, prompt, size })
+}
+
+// 이미지 형식 변환 (jpg/png/webp) - 서버에 파일을 남기지 않고 바로 data URL로 결과를 돌려받음
+export async function convertImageFormat({ imageDataUrl, format }) {
+  return postJson('/api/images/convert', { imageDataUrl, format })
 }
 
 // 인스타그램 자동 입력 (진희님 컴퓨터에서만 동작 - 실제 크롬을 열어서 조작)
@@ -281,6 +292,14 @@ export async function renderVideoStudio(formData) {
   return data
 }
 
+// 영상 제작실 - 후킹 썸네일 추천 (상품 사진 첨부 또는 방금 렌더링한 영상 장면 기반)
+export async function suggestVideoThumbnail(formData) {
+  const res = await fetch(`${API_BASE}/api/video-studio/thumbnail-suggest`, { method: 'POST', body: formData })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `썸네일 추천이 실패했어요 (${res.status})`)
+  return data
+}
+
 // 영상 제작실 - 추천 배경음악 목록(server/assets/bgm/) 조회
 export async function getBgmList() {
   const res = await fetch(`${API_BASE}/api/video-studio/bgm-list`)
@@ -292,6 +311,21 @@ export async function getBgmList() {
 // 유튜브 트렌드 분석 - 장르별 급상승 영상을 상승 속도 기준으로 채점 + AI 분석/리포트
 export async function scanYoutubeTrend({ genre, keywords, days }) {
   return postJson('/api/youtube-trend/scan', { genre, keywords, days })
+}
+
+// 해외(도우인/웨이보/빌리비리 등) 링크 영상 다운로드 - 쇼핑쇼츠 벤치마킹용 참고 시청 목적 (재업로드 금지)
+export async function downloadVideoFromLink(url) {
+  return postJson('/api/video-download', { url })
+}
+
+// 받아둔 영상 파일 삭제
+export async function deleteDownloadedVideo(fileName) {
+  const res = await fetch(`${API_BASE}/api/video-download/${encodeURIComponent(fileName)}`, { method: 'DELETE' })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `삭제가 실패했어요 (${res.status})`)
+  }
+  return data
 }
 
 // 자동화 실행 로그에서 "이슈발생" 난 항목을 버튼 하나로 재시도 (같은 내부 파이프라인을 다시 호출)

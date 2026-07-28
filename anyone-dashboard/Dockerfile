@@ -7,6 +7,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-no
   && update-ca-certificates \
   && rm -rf /var/lib/apt/lists/*
 
+# 해외 쇼핑쇼츠 벤치마킹용 영상 다운로드(server/lib/videoDownloader.js)에 필요: yt-dlp
+# 파이썬 설치 없이 바로 실행되는 독립 실행형 바이너리를 받아씀 (병합은 위에서 설치한 ffmpeg가 처리)
+RUN curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp_linux -o /usr/local/bin/yt-dlp \
+  && chmod a+rx /usr/local/bin/yt-dlp
+
 WORKDIR /app
 COPY package.json package-lock.json ./
 # 인스타그램 자동 입력 기능(server/routes/instagram.js)의 playwright 패키지는 여기서

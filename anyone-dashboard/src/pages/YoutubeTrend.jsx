@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
 import PageHeader from '../components/PageHeader'
-import { scanYoutubeTrend } from '../lib/apiClient'
+import { scanYoutubeTrend, downloadVideoFromLink, deleteDownloadedVideo } from '../lib/apiClient'
 
 const GENRE_OPTIONS = ['트로트', '감성음악', '감동사연', 'AI영상', '쇼핑쇼츠']
 
@@ -27,6 +27,39 @@ export default function YoutubeTrend() {
   const [result, setResult] = useState(null)
   const [saving, setSaving] = useState(false)
   const [saveMessage, setSaveMessage] = useState(null)
+
+  const [dlUrl, setDlUrl] = useState('')
+  const [dlLoading, setDlLoading] = useState(false)
+  const [dlError, setDlError] = useState(null)
+  const [dlHistory, setDlHistory] = useState([])
+  const [deletingFile, setDeletingFile] = useState(null)
+
+  const handleDownload = async () => {
+    if (!dlUrl.trim()) return
+    setDlLoading(true)
+    setDlError(null)
+    try {
+      const data = await downloadVideoFromLink(dlUrl.trim())
+      setDlHistory((prev) => [data, ...prev])
+      setDlUrl('')
+    } catch (err) {
+      setDlError(err.message)
+    } finally {
+      setDlLoading(false)
+    }
+  }
+
+  const handleDeleteDownload = async (fileName) => {
+    setDeletingFile(fileName)
+    try {
+      await deleteDownloadedVideo(fileName)
+      setDlHistory((prev) => prev.filter((v) => v.fileName !== fileName))
+    } catch (err) {
+      setDlError(err.message)
+    } finally {
+      setDeletingFile(null)
+    }
+  }
 
   const runScan = async () => {
     setLoading(true)
@@ -135,6 +168,54 @@ export default function YoutubeTrend() {
           📈 24시간/7일 급상승, ⚠️ 조회수는 적지만 성장 속도가 빠른 영상까지 같이 찾아요. 단순 누적 조회수가 아니라
           "게시 후 얼마나 빠르게 반응이 붙었는지"로 점수를 매겨요.
         </p>
+      </div>
+
+      <div className="mb-4 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
+        <p className="mb-1 text-xs font-bold text-ink/70">🎬 해외 쇼핑쇼츠 벤치마킹 (도우인·웨이보·빌리비리 등)</p>
+        <p className="mb-2 text-[11px] text-ink/40">
+          링크를 넣으면 참고·벤치마킹용으로 영상을 받아와요. 그대로 재업로드하지 말고, 왜 잘됐는지 참고하는 용도로만 쓰세요.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <input
+            type="text"
+            placeholder="https://..."
+            className="min-w-[240px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm"
+            value={dlUrl}
+            onChange={(e) => setDlUrl(e.target.value)}
+          />
+          <button
+            type="button"
+            onClick={handleDownload}
+            disabled={dlLoading || !dlUrl.trim()}
+            className="rounded-md bg-stamp-amber px-3 py-2 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+          >
+            {dlLoading ? '받는 중...' : '⬇️ 다운로드'}
+          </button>
+        </div>
+        {dlError && <p className="mt-2 text-xs text-stamp-reject">⚠️ {dlError}</p>}
+        {dlHistory.length > 0 && (
+          <div className="mt-3 space-y-3">
+            {dlHistory.map((v) => (
+              <div key={v.fileName} className="rounded-lg bg-white p-3 shadow-card">
+                <div className="mb-1 flex items-start justify-between gap-2">
+                  <p className="text-xs text-ink/60">{v.title}</p>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteDownload(v.fileName)}
+                    disabled={deletingFile === v.fileName}
+                    className="flex-shrink-0 text-xs text-stamp-reject hover:underline disabled:opacity-50"
+                  >
+                    {deletingFile === v.fileName ? '삭제 중...' : '🗑️ 삭제'}
+                  </button>
+                </div>
+                <video src={v.videoUrl} controls className="w-full max-w-sm rounded-lg" />
+                <a href={v.videoUrl} download className="mt-1 block text-xs font-semibold text-stamp-amber hover:underline">
+                  파일로 저장하기
+                </a>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       {error && (

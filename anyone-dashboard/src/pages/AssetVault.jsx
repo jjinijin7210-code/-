@@ -8,6 +8,8 @@ import FormField from '../components/FormField'
 import StatusBadge from '../components/StatusBadge'
 import AttachmentSection from '../components/AttachmentSection'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
+import { fileToDataUrl } from '../lib/attachments'
+import { convertImageFormat } from '../lib/apiClient'
 import {
   DEFAULT_BRAND_NAMES,
   ASSET_CATEGORIES,
@@ -15,6 +17,8 @@ import {
   APPROVAL_STATUS_OPTIONS,
   getEmptyAsset,
 } from '../data/brandCenter'
+
+const CONVERT_FORMAT_OPTIONS = ['jpg', 'png', 'webp']
 
 const FILE_KIND = [{ key: 'file', label: '파일' }]
 
@@ -30,6 +34,36 @@ export default function AssetVault() {
 
   const [filterBrand, setFilterBrand] = useState('전체')
   const [filterCategory, setFilterCategory] = useState('전체')
+
+  const [convertFormat, setConvertFormat] = useState('jpg')
+  const [convertLoading, setConvertLoading] = useState(false)
+  const [convertError, setConvertError] = useState(null)
+  const [convertResults, setConvertResults] = useState([])
+
+  const handleConvertFile = async (e) => {
+    const file = e.target.files?.[0]
+    e.target.value = ''
+    if (!file) return
+    setConvertLoading(true)
+    setConvertError(null)
+    try {
+      const imageDataUrl = await fileToDataUrl(file)
+      const { dataUrl } = await convertImageFormat({ imageDataUrl, format: convertFormat })
+      const baseName = file.name.replace(/\.[^.]+$/, '')
+      setConvertResults((prev) => [
+        { id: crypto.randomUUID(), name: `${baseName}.${convertFormat}`, dataUrl },
+        ...prev,
+      ])
+    } catch (err) {
+      setConvertError(err.message)
+    } finally {
+      setConvertLoading(false)
+    }
+  }
+
+  const removeConvertResult = (id) => {
+    setConvertResults((prev) => prev.filter((r) => r.id !== id))
+  }
 
   const [modalOpen, setModalOpen] = useState(false)
   const [editing, setEditing] = useState(null)
@@ -68,6 +102,55 @@ export default function AssetVault() {
         onAddClick={openAdd}
         addLabel="에셋 추가"
       />
+
+      <div className="mb-4 rounded-lg border border-ink/10 bg-ink/[0.03] p-3">
+        <p className="mb-1 text-xs font-bold text-ink/70">🔄 이미지 형식 변환</p>
+        <p className="mb-2 text-[11px] text-ink/40">
+          webp 등으로 받은 이미지를 jpg/png/webp로 바꿔요. 서버에 저장하지 않고 바로 변환해서 돌려줘요.
+        </p>
+        <div className="flex flex-wrap items-center gap-2">
+          <select
+            value={convertFormat}
+            onChange={(e) => setConvertFormat(e.target.value)}
+            className="rounded-md border border-ink/15 bg-white px-2 py-1.5 text-xs"
+          >
+            {CONVERT_FORMAT_OPTIONS.map((f) => (
+              <option key={f} value={f}>
+                {f.toUpperCase()}로 변환
+              </option>
+            ))}
+          </select>
+          <label className="cursor-pointer rounded-md bg-stamp-amber px-3 py-2 text-xs font-semibold text-white hover:bg-stamp-amber/90">
+            {convertLoading ? '변환 중...' : '📁 이미지 선택'}
+            <input type="file" accept="image/*" className="hidden" disabled={convertLoading} onChange={handleConvertFile} />
+          </label>
+        </div>
+        {convertError && <p className="mt-2 text-xs text-stamp-reject">⚠️ {convertError}</p>}
+        {convertResults.length > 0 && (
+          <div className="mt-3 space-y-2">
+            {convertResults.map((r) => (
+              <div key={r.id} className="flex items-center gap-3 rounded-lg bg-white p-2 shadow-card">
+                <img src={r.dataUrl} alt="" className="h-14 w-14 flex-shrink-0 rounded object-cover" />
+                <p className="min-w-0 flex-1 truncate text-xs text-ink/60">{r.name}</p>
+                <a
+                  href={r.dataUrl}
+                  download={r.name}
+                  className="flex-shrink-0 text-xs font-semibold text-stamp-amber hover:underline"
+                >
+                  저장
+                </a>
+                <button
+                  type="button"
+                  onClick={() => removeConvertResult(r.id)}
+                  className="flex-shrink-0 text-xs text-stamp-reject hover:underline"
+                >
+                  🗑️
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="mb-4 flex flex-wrap gap-2">
         <select

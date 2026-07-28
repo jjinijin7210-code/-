@@ -24,17 +24,24 @@ import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview
 import { callClaude } from '../lib/anthropicClient.js'
 import { buildMarketAnalysisMessages } from '../lib/marketAnalysis.js'
 import { saveMarketInsight, getLatestMarketInsight } from '../lib/marketInsights.js'
+import { pickAvoidingRecent, getRecentDraftTitles, getRecentSourceTags } from '../lib/topicRotation.js'
 
 const router = Router()
 const RESEARCHER_ROLE = '심리학 콘텐츠 리서처 (일본 채널 · 다지역 인기 영상 검색)'
 const VIDEO_ROLE = '영상 제작 담당 (심리학 유튜브)'
 // 2026-07-19: 크로스마켓 비교는 우선 미국·일본으로 한정 - 상용화 단계에서 한국/영국/프랑스 등
 // 더 많은 나라로 넓히기로 함(사용자 결정, 지금은 스코프 최소화).
-const REGIONS = ['US', 'JP']
+// 2026-07-26: 콘텐츠 반복 문제 해결하면서 사용자 요청으로 예정대로 확장 - 처음엔 한국/영국/
+// 프랑스만 추가했다가, "세계로 넓히자"는 추가 요청으로 대륙별로 고르게 더 넓힘(북미·유럽·아시아·
+// 남미). 나라가 늘어나면 리서치 결과(benchmark_reports) 자체의 다양성도 늘어서 심리학 영상
+// 참고자료가 덜 겹치는 효과도 같이 있음. YouTube Data API 쿼터는 나라 하나당 검색 1회(약 100
+// 유닛)라 8개면 실행 1번에 약 800유닛 - 하루 10,000 기본 쿼터 안에서 여유 있음.
+const REGIONS = ['US', 'JP', 'KR', 'GB', 'FR', 'DE', 'BR', 'IN']
 const YOUTUBE_CHANNEL = '유튜브(일본어)'
 
 // 소재가 마르지 않도록 돌아가면서 검색할 주제 후보 (매번 랜덤으로 하나 고름)
 // 2026-07-19: 범용 심리학 팩트 대신 "가족 간 심리"(자식·배우자와의 관계)로 좁힘(사용자 결정)
+// 2026-07-26: 후보가 6개뿐이라 반복된다는 피드백(사용자 보고) - 같은 방향성 안에서 후보를 늘림.
 const QUERY_POOL = [
   'family relationship psychology',
   'parents and adult children psychology',
@@ -42,6 +49,10 @@ const QUERY_POOL = [
   'why adult children distance from parents psychology',
   'psychology of aging parents relationship',
   'wife husband relationship psychology',
+  'sibling relationship psychology',
+  'empty nest syndrome psychology',
+  'in-law relationship psychology',
+  'grandparent grandchildren relationship psychology',
 ]
 
 // 일본은 한국이랑 생활상이 비슷한 부분이 많다는 판단(사용자 결정, 2026-07-19)으로, 일본 자료가
@@ -49,6 +60,7 @@ const QUERY_POOL = [
 // 주제를 잡는다. 이 결과도 category='심리학'으로 저장되어 psychology-video-run의 참고자료에
 // 자동으로 같이 실린다.
 // 2026-07-19: 가족/부부 관계 고민으로 좁힘(사용자 결정)
+// 2026-07-26: 후보가 6개뿐이라 반복된다는 피드백(사용자 보고) - 같은 방향성 안에서 후보를 늘림.
 const KR_WORRY_QUERY_POOL = [
   '자식과 소통 안되는 부모 심리',
   '노후 부부관계 심리',
@@ -56,11 +68,17 @@ const KR_WORRY_QUERY_POOL = [
   '황혼이혼 부부 심리',
   '부모 자식 갈등 심리학',
   '아내 남편 서운한 마음 심리',
+  '형제자매 갈등 심리',
+  '고부갈등 심리',
+  '손주 육아 갈등 심리',
+  '빈둥지증후군 부모 심리',
 ]
 
 // 실제 영상 제작용 주제 후보 (스크립트 작성 지시문이라 한글로 구체적으로)
 // 2026-07-19: 시니어 대상 "자식과의 심리", "가족 간 심리", "아내와의 심리" 등 공감형 주제로
 // 전면 교체(사용자 결정) - psychologyScript.js의 대본 톤도 이 방향에 맞춰 함께 조정함.
+// 2026-07-26: 후보가 7개뿐이라 자동 제작이 반복될 때마다 금방 겹친다는 피드백(사용자 보고) -
+// 같은 방향성 안에서 후보를 늘리고, pickAvoidingRecent()로 최근에 실제로 만든 주제는 피해서 뽑음.
 const VIDEO_TOPIC_POOL = [
   '자식이 연락을 잘 안 하는 이유 - 부모 자녀 심리',
   '나이 들수록 부부 사이가 멀어지는 심리적 이유',
@@ -69,6 +87,11 @@ const VIDEO_TOPIC_POOL = [
   '자식 독립 후 찾아오는 빈둥지 증후군 심리',
   '배우자에게 인정받고 싶은 마음의 심리학',
   '가족인데도 자꾸 서운한 이유 - 기대와 애착의 심리',
+  '형제자매인데도 자꾸 비교하게 되는 심리',
+  '며느리·사위를 대하는 마음이 어려운 이유 - 고부간 심리',
+  '손주를 대신 키우며 느끼는 부모 세대의 심리',
+  '나이 들수록 친구가 줄어드는 게 서운한 이유',
+  '자식한테 표현 못하는 부모 마음의 심리학',
 ]
 
 router.post('/youtube/auto-research', async (req, res) => {
@@ -81,8 +104,19 @@ router.post('/youtube/auto-research', async (req, res) => {
     return res.status(500).json({ error: 'AUTO_TARGET_USER_ID가 서버 .env에 설정되어 있지 않아요.' })
   }
 
-  const query = QUERY_POOL[Math.floor(Math.random() * QUERY_POOL.length)]
   const supabase = getSupabaseAdmin()
+  // 2026-07-26: QUERY_POOL이 작아서(원래 6개) 순수 랜덤이면 며칠 안에 같은 검색어가 반복됨 -
+  // 실행 이력(automation_runs.run_type에 검색어가 그대로 심어져 있음)에서 최근 검색어를 뽑아
+  // 최대한 피해서 고름.
+  const { data: recentRuns } = await supabase
+    .from('automation_runs')
+    .select('run_type')
+    .eq('user_id', targetUserId)
+    .ilike('run_type', '유튜브 트렌드 리서치%')
+    .order('created_at', { ascending: false })
+    .limit(10)
+  const recentQueries = (recentRuns || []).map((r) => r.run_type?.match(/\(([^)]+)\)/)?.[1]).filter(Boolean)
+  const query = pickAvoidingRecent(QUERY_POOL, recentQueries)
   const run = await startAutomationRun(supabase, targetUserId, `유튜브 트렌드 리서치 (${query})`, {
     endpoint: '/api/youtube/auto-research',
     payload: {},
@@ -109,7 +143,18 @@ router.post('/youtube/auto-research', async (req, res) => {
     // 콘텐츠를 참고해서 심리학 채널 주제를 잡을 수 있게 (사용자 결정, 2026-07-19)
     let krWorrySavedCount = 0
     try {
-      const worryQuery = KR_WORRY_QUERY_POOL[Math.floor(Math.random() * KR_WORRY_QUERY_POOL.length)]
+      const { data: recentWorryReports } = await supabase
+        .from('benchmark_reports')
+        .select('note')
+        .eq('user_id', targetUserId)
+        .eq('category', '심리학')
+        .ilike('note', '%한국 고민 콘텐츠%')
+        .order('collected_at', { ascending: false })
+        .limit(10)
+      const recentWorryQueries = (recentWorryReports || [])
+        .map((r) => r.note?.match(/검색어:\s*([^)]+)/)?.[1])
+        .filter(Boolean)
+      const worryQuery = pickAvoidingRecent(KR_WORRY_QUERY_POOL, recentWorryQueries)
       const krVideos = await searchPopularVideosMultiRegion({ query: worryQuery, minLikes: 3000, maxResults: 10, regionCodes: ['KR'] })
       const krTop = krVideos.slice(0, 5)
       for (const v of krTop) {
@@ -120,7 +165,9 @@ router.post('/youtube/auto-research', async (req, res) => {
           source_type: '공식 API',
           category: '심리학',
           popularity_score: v.viewCount,
-          note: `[한국 고민 콘텐츠 벤치마킹 - 일본어 채널 주제 참고용] ${v.channelTitle} · 조회수 ${v.viewCount} · 좋아요 ${v.likeCount} · ${v.url}`,
+          // "검색어: xxx" 표식은 위쪽 최근 검색어 중복 방지 로직이 다시 읽어가는 값이라
+          // 형식을 바꾸면 안 됨.
+          note: `[한국 고민 콘텐츠 벤치마킹 - 일본어 채널 주제 참고용] (검색어: ${worryQuery}) ${v.channelTitle} · 조회수 ${v.viewCount} · 좋아요 ${v.likeCount} · ${v.url}`,
         })
       }
       krWorrySavedCount = krTop.length
@@ -177,9 +224,15 @@ async function runPsychologyVideoRun({ videoFormat, customTopic }) {
   if (!targetUserId) {
     throw new Error('AUTO_TARGET_USER_ID가 서버 .env에 설정되어 있지 않아요.')
   }
-  const topic = customTopic && customTopic.trim() ? customTopic.trim() : VIDEO_TOPIC_POOL[Math.floor(Math.random() * VIDEO_TOPIC_POOL.length)]
-
   const supabase = getSupabaseAdmin()
+  // 2026-07-26: VIDEO_TOPIC_POOL이 작아서(원래 7개) 자동 제작을 반복 실행하면 며칠 안에 같은
+  // 주제가 나온다는 피드백(사용자 보고) - source에 심어둔 "주제: xxx" 표식으로 최근에 실제로
+  // 만든 주제를 찾아 최대한 피해서 고름.
+  const recentlyUsedTopics = customTopic
+    ? []
+    : await getRecentSourceTags(supabase, targetUserId, { platform: YOUTUBE_CHANNEL, marker: '주제' })
+  const topic =
+    customTopic && customTopic.trim() ? customTopic.trim() : pickAvoidingRecent(VIDEO_TOPIC_POOL, recentlyUsedTopics)
   const run = await startAutomationRun(supabase, targetUserId, `심리학 유튜브 영상 제작 (${videoFormat})`, {
     endpoint: '/api/youtube/psychology-video-run',
     payload: { format: videoFormat },
@@ -199,7 +252,16 @@ async function runPsychologyVideoRun({ videoFormat, customTopic }) {
     const linkNote = references?.length ? references.map((r) => `- ${r.keyword}: ${r.note}`).join('\n') : ''
     // 국가별 비교 분석(있으면)도 같이 참고자료로 넣어서 포맷/스타일 결정에 반영
     const marketNote = await getLatestMarketInsight(supabase, targetUserId)
-    const referenceNote = [linkNote, marketNote ? `[국가별 트렌드 비교]\n${marketNote}` : ''].filter(Boolean).join('\n\n') || undefined
+    // 2026-07-26: 주제가 겹치지 않아도 대본 각도가 비슷할 수 있어서, 최근에 실제로 만든 영상
+    // 제목을 넣어 다른 각도로 쓰도록 명시 지시(참고자료가 겹쳐도 걸리는 마지막 방어선,
+    // benchmark.js/threadBlogAuto.js와 동일 원리).
+    const recentTitles = await getRecentDraftTitles(supabase, targetUserId, { platform: YOUTUBE_CHANNEL, limit: 8 })
+    const avoidNote =
+      recentTitles.length > 0
+        ? `[최근에 이미 만든 영상 제목들 - 아래와 겹치지 않는 다른 소재/각도로 새롭게 써줘]\n${recentTitles.map((t) => `- ${t}`).join('\n')}`
+        : ''
+    const referenceNote =
+      [linkNote, marketNote ? `[국가별 트렌드 비교]\n${marketNote}` : '', avoidNote].filter(Boolean).join('\n\n') || undefined
 
     // 레딧에서 실제 고민 사연 후보를 찾아서(2026-07-23, "평면적인 정보보다 각색한 사연 소개도
     // 같이 넣어달라"는 요청) 대본에 각색 소재로 전달 - 못 찾아도(레딧 차단 등) 그냥 진행함(best-effort)

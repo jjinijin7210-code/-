@@ -48,7 +48,10 @@ const KOKORO_CHARACTER_PROMPT = `캐릭터: "Kokoro(こころ)" - 심리를 쉽�
 // 진희님이 ElevenLabs Voice Library에서 직접 골라 지정한 목소리 (2026-07-22).
 // 이전엔 River(SAz9YHcvj6GT2YYXdXww)를 썼음 - 기본 목소리(Rachel)가 상품 홍보용 톤이라
 // 심리학 콘텐츠엔 안 맞아서(2026-07-19 피드백) River로 바꿨다가, 이번에 다시 교체.
-const PSYCHOLOGY_VOICE_ID = 't3iNwCjYhE9IEQPVBlys'
+// 2026-07-26: Kinako(차분한 중년 여성 톤)에서 Romaco(KgETZ36CCLD1Cob4xpkv)로 재교체 -
+// ElevenLabs에 "characters_animation" 용도로 등록된 목소리라 코코로 같은 캐릭터 나레이션에
+// 더 잘 어울림(밝고 또렷한 톤). 둘 다 여성 목소리 - 남녀 문제가 아니라 톤 변경 요청이었음.
+const PSYCHOLOGY_VOICE_ID = 'KgETZ36CCLD1Cob4xpkv'
 // stability를 높여서(기본 0.5→0.8) 톤 기복(음성이 "떨리는" 느낌)을 줄임 - 차분한 낭독 톤에 맞춤.
 const PSYCHOLOGY_VOICE_STABILITY = 0.8
 

@@ -3,13 +3,7 @@ import crypto from 'node:crypto'
 import { search1688Products } from '../lib/sourcingClient.js'
 import { callClaude } from '../lib/anthropicClient.js'
 import { buildDraftMessages, parseDraftResponse } from '../lib/promptBuilder.js'
-import {
-  buildReviewMessages,
-  parseReviewResponse,
-  combineStageResults,
-  REVIEW_STAGES,
-  STAGE_CHECK_KEYS,
-} from '../lib/reviewParser.js'
+import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { fetchImageAsDataUrl } from '../lib/fetchImageAsDataUrl.js'
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js'
 import { generateShortsVideo } from '../lib/shortsGenerator.js'
@@ -77,27 +71,23 @@ router.post('/auto/run', async (req, res) => {
     const draftText = await callClaude({ system: draftSystem, messages: draftMessages, maxTokens: 1024 })
     const draft = parseDraftResponse(draftText)
 
-    // 4) 2중3중 검수 - 하나라도 반려면 전체 반려 (fail-safe)
-    const stageResults = []
-    for (const stage of REVIEW_STAGES) {
-      const { system, messages } = buildReviewMessages({
-        title: draft.title,
-        body: draft.body,
-        channel: targetChannel,
-        stage,
-      })
-      // 512로는 반려 사유가 길게 나올 때 응답이 중간에 잘려 JSON 파싱이 깨지는 경우가 있어 여유있게 올림
-      const text = await callClaude({ system, messages, maxTokens: 1024 })
-      stageResults.push({ stage, result: parseReviewResponse(text, STAGE_CHECK_KEYS[stage]) })
-    }
-    const review = combineStageResults(stageResults)
+    // 4) 2중3중 검수 - 반려면 반려 사유를 그대로 반려 문구로 남기지 않고, AI가 사유에 맞춰
+    // 스스로 고쳐서 재검수(최대 2회)한 뒤에도 반려면 그때 반려로 남긴다 (benchmark.js/
+    // youtubeAuto.js/threadBlogAuto.js와 동일한 방식으로 통일, 사용자 요청)
+    const initialReview = await runReviewStages({ title: draft.title, body: draft.body, channel: targetChannel })
+    const { title: finalTitle, body: finalBody, review } = await reviseUntilPassOrGiveUp({
+      title: draft.title,
+      body: draft.body,
+      channel: targetChannel,
+      initialReview,
+    })
     const passed = review.result === '통과'
 
     // 5) 비슷한 상품 여러 장을 모아 팬/줌 영상으로 합성 (실패하면 상품 사진 1장으로 대체)
     const images = []
     try {
       const { fileName, videoUrl: storageUrl } = await generateShortsVideo({
-        title: draft.title,
+        title: finalTitle,
         imageUrls: sourceProducts.map((p) => p.imageUrl),
         note: `${keyword} 카테고리 소개 영상`,
       })
@@ -140,9 +130,9 @@ router.post('/auto/run', async (req, res) => {
       .from('content_drafts')
       .insert({
         user_id: targetUserId,
-        title: draft.title,
+        title: finalTitle,
         platform: targetChannel,
-        body: draft.body,
+        body: finalBody,
         images,
         hashtags: draft.hashtags,
         source: `자동소싱: 1688 "${keyword}" / 쿠팡 매칭 상품: ${coupangMatch.title} (${coupangMatch.productUrl})`,

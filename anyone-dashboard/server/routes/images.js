@@ -1,5 +1,6 @@
 import { Router } from 'express'
 import { generateImage, editImage } from '../lib/imageClient.js'
+import { convertImageFormat } from '../lib/imageFormatConverter.js'
 
 const router = Router()
 
@@ -31,6 +32,20 @@ router.post('/images/edit', async (req, res) => {
 
   try {
     const dataUrl = await editImage({ imageDataUrl, prompt, size })
+    res.json({ dataUrl })
+  } catch (err) {
+    res.status(502).json({ error: err.message })
+  }
+})
+
+// 이미지 형식 변환 (예: Meta AI가 만든 webp를 jpg로) - AssetVault.jsx에서 사용
+router.post('/images/convert', async (req, res) => {
+  const { imageDataUrl, format } = req.body || {}
+  if (!imageDataUrl) {
+    return res.status(400).json({ error: '이미지 파일이 필요해요.' })
+  }
+  try {
+    const dataUrl = await convertImageFormat({ imageDataUrl, format })
     res.json({ dataUrl })
   } catch (err) {
     res.status(502).json({ error: err.message })

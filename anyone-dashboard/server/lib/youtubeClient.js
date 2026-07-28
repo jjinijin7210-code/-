@@ -5,6 +5,8 @@
 
 const SEARCH_URL = 'https://www.googleapis.com/youtube/v3/search'
 const VIDEOS_URL = 'https://www.googleapis.com/youtube/v3/videos'
+const CHANNELS_URL = 'https://www.googleapis.com/youtube/v3/channels'
+const PLAYLIST_ITEMS_URL = 'https://www.googleapis.com/youtube/v3/playlistItems'
 
 export async function searchPopularVideos({ query, minLikes = 10000, maxResults = 15, regionCode, videoDuration }) {
   const apiKey = process.env.YOUTUBE_API_KEY
@@ -63,7 +65,7 @@ export async function searchPopularVideos({ query, minLikes = 10000, maxResults 
 }
 
 // ISO8601 재생시간(PT4M13S 등)을 초 단위 숫자로 변환
-function parseIso8601Duration(iso) {
+export function parseIso8601Duration(iso) {
   if (!iso) return null
   const match = /^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/.exec(iso)
   if (!match) return null
@@ -232,4 +234,154 @@ export async function searchPopularVideosMultiRegion({ query, minLikes = 10000, 
     }
   }
   return [...seen.values()].sort((a, b) => b.viewCount - a.viewCount)
+}
+
+// ============================================================
+// 2026-07-27: "콘텐츠 DNA" 기능용 - 채널 URL을 넣으면 분석해서 비슷한 채널을 추천해주는 기능.
+// VidIQ의 신경망 기반 유사채널 매칭만큼 정교하진 않지만, 이미 있는 유튜브 공식 API +
+// Claude만으로 추가 비용 없이 자동화할 수 있음(사용자 확인, 2026-07-27).
+// ============================================================
+
+// 채널 URL/핸들/이름에서 채널 ID를 알아냄 - 형식이 여러 가지라(/channel/UC.../@handle/
+// /c/이름/그냥 채널명 검색어) 순서대로 시도한다.
+export async function resolveChannelId(input) {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  if (!apiKey) throw new Error('YOUTUBE_API_KEY가 서버 .env에 설정되어 있지 않아요.')
+  const raw = (input || '').trim()
+  if (!raw) throw new Error('채널 URL이나 이름이 필요해요.')
+
+  // 이미 채널 ID 형태(UC로 시작하는 24자)면 그대로 사용
+  if (/^UC[\w-]{22}$/.test(raw)) return raw
+
+  let handle = null
+  let pathSearch = null
+  try {
+    const u = new URL(raw.startsWith('http') ? raw : `https://${raw}`)
+    const channelMatch = u.pathname.match(/\/channel\/(UC[\w-]{22})/)
+    if (channelMatch) return channelMatch[1]
+    const handleMatch = u.pathname.match(/\/@([\w.-]+)/)
+    if (handleMatch) handle = handleMatch[1]
+    const legacyMatch = u.pathname.match(/\/(?:c|user)\/([\w.-]+)/)
+    if (legacyMatch) pathSearch = legacyMatch[1]
+  } catch {
+    // URL이 아니면(그냥 채널명/핸들 텍스트) 아래에서 검색으로 처리
+    if (raw.startsWith('@')) handle = raw.slice(1)
+    else pathSearch = raw
+  }
+
+  if (handle) {
+    const params = new URLSearchParams({ part: 'id', forHandle: handle, key: apiKey })
+    const res = await fetch(`${CHANNELS_URL}?${params.toString()}`)
+    if (res.ok) {
+      const data = await res.json()
+      const id = data.items?.[0]?.id
+      if (id) return id
+    }
+  }
+
+  // 핸들로 못 찾았거나 /c/user 형식이면 검색으로 폴백(검색은 정확도가 좀 떨어질 수 있음)
+  const searchParams = new URLSearchParams({
+    part: 'snippet',
+    q: handle || pathSearch || raw,
+    type: 'channel',
+    maxResults: '1',
+    key: apiKey,
+  })
+  const searchRes = await fetch(`${SEARCH_URL}?${searchParams.toString()}`)
+  if (!searchRes.ok) throw new Error('채널을 찾지 못했어요. URL을 다시 확인해주세요.')
+  const searchData = await searchRes.json()
+  const channelId = searchData.items?.[0]?.id?.channelId
+  if (!channelId) throw new Error('채널을 찾지 못했어요. URL을 다시 확인해주세요.')
+  return channelId
+}
+
+export async function getChannelInfo(channelId) {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  if (!apiKey) throw new Error('YOUTUBE_API_KEY가 서버 .env에 설정되어 있지 않아요.')
+  const params = new URLSearchParams({ part: 'snippet,statistics,contentDetails', id: channelId, key: apiKey })
+  const res = await fetch(`${CHANNELS_URL}?${params.toString()}`)
+  if (!res.ok) {
+    const errText = await res.text().catch(() => '')
+    throw new Error(`YouTube 채널 정보 API 오류 (${res.status}): ${errText.slice(0, 300)}`)
+  }
+  const data = await res.json()
+  const c = data.items?.[0]
+  if (!c) throw new Error('채널 정보를 찾지 못했어요.')
+  return {
+    channelId: c.id,
+    title: c.snippet.title,
+    description: c.snippet.description || '',
+    thumbnail: c.snippet.thumbnails?.medium?.url || c.snippet.thumbnails?.default?.url,
+    subscriberCount: Number(c.statistics?.subscriberCount || 0),
+    videoCount: Number(c.statistics?.videoCount || 0),
+    viewCount: Number(c.statistics?.viewCount || 0),
+    uploadsPlaylistId: c.contentDetails?.relatedPlaylists?.uploads || null,
+  }
+}
+
+// 채널의 최근 업로드 영상들 - uploads 재생목록으로 가져와서(검색 API보다 훨씬 저렴함,
+// 1유닛 vs 100유닛) 업로드 주기·영상 길이·조회수 패턴을 계산할 수 있게 함.
+export async function getChannelRecentVideos(uploadsPlaylistId, maxResults = 15) {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  if (!apiKey) throw new Error('YOUTUBE_API_KEY가 서버 .env에 설정되어 있지 않아요.')
+  if (!uploadsPlaylistId) return []
+
+  const playlistParams = new URLSearchParams({
+    part: 'snippet',
+    playlistId: uploadsPlaylistId,
+    maxResults: String(Math.min(maxResults, 50)),
+    key: apiKey,
+  })
+  const playlistRes = await fetch(`${PLAYLIST_ITEMS_URL}?${playlistParams.toString()}`)
+  if (!playlistRes.ok) return []
+  const playlistData = await playlistRes.json()
+  const videoIds = (playlistData.items || []).map((item) => item.snippet?.resourceId?.videoId).filter(Boolean)
+  if (videoIds.length === 0) return []
+
+  const videosParams = new URLSearchParams({ part: 'snippet,statistics,contentDetails', id: videoIds.join(','), key: apiKey })
+  const videosRes = await fetch(`${VIDEOS_URL}?${videosParams.toString()}`)
+  if (!videosRes.ok) return []
+  const videosData = await videosRes.json()
+
+  return (videosData.items || []).map((v) => ({
+    videoId: v.id,
+    title: v.snippet.title,
+    publishedAt: v.snippet.publishedAt,
+    thumbnail: v.snippet.thumbnails?.medium?.url || v.snippet.thumbnails?.default?.url,
+    durationSeconds: parseIso8601Duration(v.contentDetails?.duration),
+    viewCount: Number(v.statistics?.viewCount || 0),
+    likeCount: Number(v.statistics?.likeCount || 0),
+    url: `https://www.youtube.com/watch?v=${v.id}`,
+  }))
+}
+
+// 채널 검색(이름/키워드로) - 콘텐츠 DNA 분석에서 뽑은 키워드로 비슷한 채널 후보를 찾을 때 씀
+export async function searchChannels({ query, maxResults = 8, regionCode }) {
+  const apiKey = process.env.YOUTUBE_API_KEY
+  if (!apiKey) throw new Error('YOUTUBE_API_KEY가 서버 .env에 설정되어 있지 않아요.')
+  const params = new URLSearchParams({
+    part: 'snippet',
+    q: query,
+    type: 'channel',
+    maxResults: String(Math.min(maxResults, 50)),
+    key: apiKey,
+  })
+  if (regionCode) params.set('regionCode', regionCode)
+  const res = await fetch(`${SEARCH_URL}?${params.toString()}`)
+  if (!res.ok) return []
+  const data = await res.json()
+  return (data.items || [])
+    .map((item) => item.snippet?.channelId || item.id?.channelId)
+    .filter(Boolean)
+}
+
+// 업로드 주기(주당 몇 개) - 최근 영상들의 게시 시각 간격 평균으로 추정
+export function estimateUploadsPerWeek(videos) {
+  if (!videos || videos.length < 2) return null
+  const sorted = [...videos].sort((a, b) => new Date(b.publishedAt) - new Date(a.publishedAt))
+  const newest = new Date(sorted[0].publishedAt)
+  const oldest = new Date(sorted[sorted.length - 1].publishedAt)
+  const daysSpan = (newest - oldest) / (1000 * 60 * 60 * 24)
+  if (daysSpan <= 0) return null
+  return Math.round(((sorted.length - 1) / daysSpan) * 7 * 10) / 10
 }

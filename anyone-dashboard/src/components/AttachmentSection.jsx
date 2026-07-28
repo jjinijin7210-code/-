@@ -18,6 +18,7 @@ export default function AttachmentSection({
   aiImageMarked = false,
 }) {
   const [error, setError] = useState(null)
+  const [zoomImage, setZoomImage] = useState(null)
 
   const handleFileSelect = async (kind, e) => {
     const file = e.target.files?.[0]
@@ -70,8 +71,32 @@ export default function AttachmentSection({
               <ul className="space-y-2">
                 {items.map((a) => (
                   <li key={a.id} className="space-y-1 text-[11px]">
+                    {a.source_url && (
+                      <a
+                        href={a.source_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="block truncate text-ink/50 underline decoration-dotted hover:text-stamp-amber"
+                      >
+                        🔗 {a.source_url}
+                      </a>
+                    )}
                     {a.kind === 'video' && (
                       <video src={a.data_url} controls className="max-h-48 w-full rounded-md bg-black" />
+                    )}
+                    {a.kind === 'image' && (
+                      <button
+                        type="button"
+                        onClick={() => setZoomImage(a)}
+                        className="block w-full"
+                        title="크게보기"
+                      >
+                        <img
+                          src={a.data_url}
+                          alt={a.filename}
+                          className="max-h-48 w-full cursor-zoom-in rounded-md object-cover"
+                        />
+                      </button>
                     )}
                     <div className="flex items-center justify-between gap-2">
                       <a
@@ -97,6 +122,34 @@ export default function AttachmentSection({
           </div>
         )
       })}
+      {zoomImage && (
+        <div
+          className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-4 bg-black/80 p-6"
+          onClick={() => setZoomImage(null)}
+        >
+          <button
+            type="button"
+            onClick={() => setZoomImage(null)}
+            className="absolute right-4 top-4 rounded-full bg-white/10 px-3 py-1 text-sm text-white hover:bg-white/20"
+          >
+            ✕ 닫기
+          </button>
+          <img
+            src={zoomImage.data_url}
+            alt={zoomImage.filename}
+            className="max-h-[80vh] max-w-full rounded-lg object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
+          <a
+            href={zoomImage.data_url}
+            download={zoomImage.filename}
+            onClick={(e) => e.stopPropagation()}
+            className="rounded-lg bg-stamp-amber px-5 py-2 text-sm font-bold text-white hover:bg-stamp-amber/90"
+          >
+            ⬇ 다운로드
+          </a>
+        </div>
+      )}
     </div>
   )
 }

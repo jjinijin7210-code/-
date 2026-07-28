@@ -1,35 +1,19 @@
 // ============================================================
-// 틱톡 자동 입력 - 인스타그램 자동 입력(server/routes/instagram.js)과 완전히 같은 원리.
-// 같은 로컬 브라우저 창(server/lib/localBrowser.js)을 같이 쓰되, 도메인이 달라서
-// 로그인 쿠키는 인스타그램과 별도로 저장된다 (틱톡은 처음 한 번만 따로 로그인하면 됨).
-// 안전 모드: 사진과 캡션을 채운 뒤 마지막 "게시" 버튼은 사람이 직접 누른다.
+// 틱톡 자동 입력 - 2026-07-26 이전엔 인스타그램 자동 입력(server/routes/instagram.js)과 완전히
+// 같은 원리(Playwright로 로그인된 세션에 들어가서 화면을 자동 조작)로 동작했음.
 //
-// 2026-07-18: 틱톡 스튜디오 업로드 화면에서 "사진" 모드 자체가 사라지고 동영상만
-// 받게 됨(실측 확인함) - 그래서 사진을 그대로 올리는 대신, 사진 1~3장을 짧은
-// 슬라이드쇼 영상(videoRenderer.js)으로 먼저 만든 다음 그 영상 파일을 올림.
+// 2026-07-26: 진희님 실제 틱톡 계정이 영구정지됨 - 원인이 100% 확정되진 않았지만, 바로 이
+// 방식(공식 API가 아니라 로그인 세션을 스크립트가 자동 조작)이 플랫폼이 봇으로 의심할 만한
+// 패턴이라 유력한 원인으로 보임. 같은 위험이 인스타그램에도 그대로 있어 진희님 확인 및
+// 지시로 두 자동화(인스타/틱톡)를 동시에 즉시 중단함. 원래 구현(사진→슬라이드쇼 영상 합성→
+// 업로드→캡션 자동 채움)은 git 이력에 남아있음 - 다시 켤 땐 틱톡 공식 Content Posting API
+// 경로로 새로 만들 것, 이 브라우저 자동화 방식으로 되살리면 안 됨.
 // ============================================================
 
 import { Router } from 'express'
-import fs from 'node:fs'
-import os from 'node:os'
-import path from 'node:path'
-import crypto from 'node:crypto'
-import { getPage, saveErrorScreenshot, dataUrlToFile } from '../lib/localBrowser.js'
-import { composeSimpleSlideshow } from '../lib/videoRenderer.js'
-import { getSupabaseAdmin } from '../lib/supabaseAdmin.js'
-import { setEmployeeStatus } from '../lib/employeeStatusSync.js'
+import { getPage } from '../lib/localBrowser.js'
 
 const router = Router()
-const UPLOAD_URL = 'https://www.tiktok.com/tiktokstudio/upload?from=webapp'
-const SHORTS_ROLE = '쇼츠 제작 담당 (사진→영상 합성)'
-
-// 이 라우트는 진희님 컴퓨터에서만 쓰는 로컬 전용 기능이라 로그인 세션이 따로 없어서,
-// 직원 현황 갱신은 AUTO_TARGET_USER_ID(진희님 계정)를 그대로 씀 (instagramComments.js와 같은 패턴)
-async function updateShortsStatus(status, task) {
-  const targetUserId = process.env.AUTO_TARGET_USER_ID
-  if (!targetUserId) return
-  await setEmployeeStatus(getSupabaseAdmin(), targetUserId, SHORTS_ROLE, status, task)
-}
 
 router.post('/tiktok/open-login', async (req, res) => {
   try {
@@ -42,75 +26,9 @@ router.post('/tiktok/open-login', async (req, res) => {
 })
 
 router.post('/tiktok/prepare', async (req, res) => {
-  // 하위 호환: 예전 방식(imageDataUrl 하나)으로 호출해도 배열로 취급해서 그대로 동작함
-  const { caption, imageDataUrl, imageDataUrls } = req.body || {}
-  const images = imageDataUrls?.length ? imageDataUrls : imageDataUrl ? [imageDataUrl] : []
-  if (!caption?.trim()) return res.status(400).json({ error: '본문/캡션이 비어 있어요.' })
-  if (images.length === 0) return res.status(400).json({ error: '게시할 이미지가 없어요.' })
-  if (images.length > 3) return res.status(400).json({ error: '이미지는 최대 3장까지만 붙일 수 있어요.' })
-
-  const tempFiles = []
-  let videoFile
-  let page
-  try {
-    page = await getPage('tiktok')
-    await page.goto(UPLOAD_URL, { waitUntil: 'domcontentloaded' })
-    await page.waitForTimeout(1500)
-
-    // 로그인 안 된 상태면 업로드 페이지가 로그인 선택 화면(/login)으로 리다이렉트된다.
-    // (예전엔 "로그인"이라는 글자만 정확히 찾았는데, 실제 화면엔 "TikTok에 로그인"처럼
-    // 다른 글자와 붙어있어서 못 찾는 경우가 있었음 - 주소(URL) 자체로 판단하는 게 더 확실함)
-    const loginNeeded = page.url().includes('/login') || (await page.getByText(/QR 코드 사용|전화\/이메일\/아이디/i).first().isVisible().catch(() => false))
-    if (loginNeeded) {
-      return res.status(409).json({
-        error: '틱톡 로그인이 필요해요. 열린 창에서 로그인한 뒤 다시 눌러주세요.',
-        loginRequired: true,
-      })
-    }
-
-    // 사진들을 짧은 슬라이드쇼 영상으로 합성 (사진 1장이어도 3초짜리 영상 하나로 만듦)
-    await updateShortsStatus('작업중', `사진 ${images.length}장 → 영상 합성 중`)
-    images.forEach((dataUrl, i) => tempFiles.push(dataUrlToFile(dataUrl, `tiktok-src-${i}`)))
-    const videoOutDir = path.join(os.tmpdir(), 'anyone-tiktok-video')
-    fs.mkdirSync(videoOutDir, { recursive: true })
-    videoFile = path.join(videoOutDir, `${crypto.randomUUID()}.mp4`)
-    composeSimpleSlideshow(tempFiles, videoFile)
-    await updateShortsStatus('완료', `사진 ${images.length}장 → 영상 합성 완료`)
-
-    const fileInput = page.locator('input[type="file"]')
-    await fileInput.waitFor({ state: 'attached', timeout: 20000 })
-    await fileInput.setInputFiles(videoFile)
-
-    // 업로드 후 편집 화면(캡션 입력창)이 뜰 때까지 대기 - 틱톡은 업로드 처리에 시간이 좀 더 걸림
-    const captionBox = page
-      .locator('[contenteditable="true"][data-e2e*="caption" i], [contenteditable="true"][aria-label*="설명" i], [contenteditable="true"]')
-      .first()
-    await captionBox.waitFor({ state: 'visible', timeout: 45000 })
-    await page.waitForTimeout(500)
-    // 틱톡이 영상 파일명(랜덤 UUID)을 캡션창에 기본값으로 미리 채워넣어서, fill()이 그걸 못 지우고
-    // 뒤에 그냥 이어붙이는 문제가 있었음 - 클릭 후 전체선택+삭제로 확실히 비우고 나서 입력함
-    await captionBox.click()
-    await page.keyboard.press('ControlOrMeta+A')
-    await page.keyboard.press('Delete')
-    await captionBox.fill(caption.trim())
-
-    res.json({
-      ok: true,
-      readyToShare: true,
-      message: `사진 ${images.length}장을 영상으로 만들어서 글까지 채웠어요. 열린 틱톡 창에서 내용을 확인하고 마지막 게시 버튼만 눌러주세요.`,
-    })
-  } catch (err) {
-    const screenshotPath = await saveErrorScreenshot(page)
-    await updateShortsStatus('이슈발생', err.message)
-    res.status(500).json({
-      error: screenshotPath
-        ? `${err.message} (실패 순간 화면이 여기 저장됐어요: ${screenshotPath})`
-        : err.message,
-    })
-  } finally {
-    for (const f of tempFiles) fs.promises.unlink(f).catch(() => {})
-    if (videoFile) fs.promises.unlink(videoFile).catch(() => {})
-  }
+  res.status(403).json({
+    error: '계정 보호를 위해 틱톡 자동 입력을 껐어요 (계정 영구정지 후 안전 조치). 캡션/이미지는 위에서 복사해서 틱톡 앱/웹에 직접 올려주세요.',
+  })
 })
 
 export default router

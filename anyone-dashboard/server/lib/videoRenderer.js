@@ -103,7 +103,18 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
     // 로컬 개발 검증(scripts/test-*)에서 실제로 발견된 버그(2026-07-19) - Render(Linux)는 경로에
     // 콜론이 없어서 지금까지 드러나지 않았을 뿐, 어느 OS에서든 안전하도록 항상 이스케이프함.
     const escapedPath = textFile.replace(/\\/g, '/').replace(/:/g, '\\:')
-    return `,drawtext=font='Noto Sans CJK KR':textfile='${escapedPath}':fontcolor=white:fontsize=${(h * 0.045) | 0}:x=(w-text_w)/2:y=h-h*0.12:box=1:boxcolor=black@0.45:boxborderw=16`
+    // 2026-07-26: 로컬 윈도우(winget ffmpeg 빌드)에서 font='Noto Sans CJK KR'처럼 이름으로 폰트를
+    // 찾으면 fontconfig가 설정 파일을 못 찾아("Fontconfig error: Cannot load default config file")
+    // drawtext가 그대로 하드크래시(exit 0xC0000005)하는 버그를 실측으로 확인 - 코코로 영상 자막
+    // 뿐 아니라 drawtext를 쓰는 모든 씬(이미지 포함)에서 똑같이 재현됨. Render(Linux)는
+    // Dockerfile에서 fonts-noto-cjk를 apt로 설치해 fontconfig가 정상 동작하므로 그대로 이름으로
+    // 찾게 두고, 로컬 윈도우에서만 fontconfig를 아예 안 거치도록 실제 폰트 파일 경로(맑은 고딕)를
+    // 직접 지정(fontfile=)해서 우회함.
+    const fontArg =
+      process.platform === 'win32'
+        ? `fontfile='${'C:\\Windows\\Fonts\\malgun.ttf'.replace(/\\/g, '/').replace(/:/g, '\\:')}'`
+        : `font='Noto Sans CJK KR'`
+    return `,drawtext=${fontArg}:textfile='${escapedPath}':fontcolor=white:fontsize=${(h * 0.045) | 0}:x=(w-text_w)/2:y=h-h*0.12:box=1:boxcolor=black@0.45:boxborderw=16`
   })()
 
   const out = path.join(tmpDir, `clip_${idx}.mp4`)
@@ -115,9 +126,48 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
   // 실패해서 영상 전체가 날아가는 문제가 있어 - scene.fallbackSrc(같은 표정의 정지 이미지)가
   // 있으면 그걸로 대체해서 계속 진행한다("혹시 모르니까" 안전장치, 사용자 요청).
   if (scene.isVideo) {
+    // 시작 지점(scene.startTime)을 지정하면 그 지점부터 자름 - -ss를 -stream_loop -1과 같이
+    // 쓰면 두 번째 바퀴부터 seek이 무시되고 원본 처음(0초)으로 돌아가는 버그를 실측으로 확인해서
+    // (2026-07-26), 시작 지점이 있을 땐 반복을 끄고 그 지점부터 쭉 재생함 - 남은 분량이
+    // 씬 길이보다 짧으면 ffmpeg이 있는 만큼만 출력하고 끝냄(에러 아님, 자연스러운 동작).
+    const startTime = scene.startTime || 0
+    const charInputArgs =
+      startTime > 0 ? ['-ss', String(startTime), '-i', scene.src] : ['-stream_loop', '-1', '-i', scene.src]
+
+    // 2026-07-26: 코코로 입모양 영상이 화면을 꽉 채워서 나오는 게 답답하다는 요청 - scene.background가
+    // 있으면(코코로 영상엔 항상 있음, fallbackSrc가 있는 자산이면 psychologyVideoGenerator.js에서
+    // 항상 켬) 화면 높이의 70%로 작게 줄여서 파스텔 배경 위에 올림(정지 이미지 경로의 overlay
+    // 패턴과 동일). 덤으로 "화면이 흔들린다"던 2026-07-19 피드백은 줌 폭이 컸어서(1.0→1.3)
+    // 그랬던 걸로 보여서, 이번엔 아주 은은하게만(1.0→1.06) 살아있는 느낌을 준다.
+    if (scene.background) {
+      const charH = Math.round(h * 0.7)
+      const zoomExpr = `(1+0.06*min(t/${duration}\\,1))`
+      const filterComplex =
+        `[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h}[bg];` +
+        `[1:v]scale=-2:${charH}:force_original_aspect_ratio=decrease,` +
+        `scale=w='trunc(iw*${zoomExpr}/2)*2':h='trunc(ih*${zoomExpr}/2)*2':eval=frame[fg];` +
+        `[bg][fg]overlay=(W-w)/2:(H-h)*0.6:eval=frame[merged];` +
+        `[merged]fps=${fps},format=yuv420p${textFilter}[vout]`
+      try {
+        run([
+          '-framerate', `1/${duration}`, '-loop', '1', '-i', scene.background,
+          ...charInputArgs,
+          '-t', String(duration),
+          '-filter_complex', filterComplex,
+          '-map', '[vout]',
+          '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out,
+        ])
+        return { file: out, duration }
+      } catch (err) {
+        if (!scene.fallbackSrc) throw err
+        console.error(`[videoRenderer] 입모양 영상 렌더링 실패, 정지 이미지로 대체: ${err.message}`)
+        return buildImageClip({ ...scene, isVideo: false, src: scene.fallbackSrc }, idx, cfg, tmpDir)
+      }
+    }
+
     const filter = `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps},format=yuv420p${textFilter}`
     try {
-      run(['-stream_loop', '-1', '-i', scene.src, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out])
+      run([...charInputArgs, '-t', String(duration), '-vf', filter, '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out])
       return { file: out, duration }
     } catch (err) {
       if (!scene.fallbackSrc) throw err

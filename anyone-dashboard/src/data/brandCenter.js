@@ -37,6 +37,7 @@ export const ASSET_CATEGORIES = [
   '음원',
   '프롬프트',
   '문서',
+  '전자책',
   '게시물 완성본',
 ]
 

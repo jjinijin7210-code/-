@@ -29,6 +29,8 @@ import youtubeAutoRoutes from './routes/youtubeAuto.js'
 import automationRetryRoutes from './routes/automationRetry.js'
 import youtubeTrendRoutes from './routes/youtubeTrend.js'
 import youtubeUploadRoutes from './routes/youtubeUpload.js'
+import contentDnaRoutes from './routes/contentDna.js'
+import videoDownloadRoutes from './routes/videoDownload.js'
 
 // 별도로 server/.env를 만들지 않고, 프로젝트 루트의 .env 파일 하나만 읽어요.
 // (이미 프론트엔드용 .env에 ANTHROPIC_API_KEY 등을 추가해두셨다면 그대로 인식됩니다.)
@@ -74,6 +76,8 @@ app.use('/api', youtubeAutoRoutes)
 app.use('/api', automationRetryRoutes)
 app.use('/api', youtubeTrendRoutes)
 app.use('/api', youtubeUploadRoutes)
+app.use('/api', contentDnaRoutes)
+app.use('/api', videoDownloadRoutes)
 app.use('/auth', authRoutes)
 
 // 쇼츠 렌더링 결과(mp4)를 바로 재생/다운로드할 수 있게 정적으로 서빙

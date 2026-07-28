@@ -6,9 +6,9 @@ import { searchTiktokHashtag } from '../lib/tiktokHashtagClient.js'
 import { BENCHMARK_CATEGORIES, getCategoryByLabel } from '../lib/benchmarkCategories.js'
 import { setEmployeeStatus } from '../lib/employeeStatusSync.js'
 import { startAutomationRun, finishAutomationRun } from '../lib/automationLog.js'
-import { ensureCsLink, CS_TRIGGER_KEYWORD } from '../lib/csLink.js'
 import { callClaudeJson } from '../lib/anthropicClient.js'
 import { buildDraftMessages, buildTranslateMessages, parseDraftResponse } from '../lib/promptBuilder.js'
+import { getRecentDraftTitles } from '../lib/topicRotation.js'
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { generateImage } from '../lib/imageClient.js'
 import { searchPhotos, fetchPhotoAsDataUrl } from '../lib/pexelsClient.js'
@@ -18,7 +18,6 @@ const TOP_PER_HASHTAG = 3 // 해시태그마다 상위 몇 개만 저장할지 (
 const SOURCING_ROLE = '소싱 담당 (1688 · 쿠팡 교차 확인)'
 const WRITER_ROLE = '작성자 (AI 초안 생성)'
 const REVIEWER_ROLES = ['검수자 A (1차 - 팩트체크·과장표현·AI스러움)', '검수자 B (교차 검수)', '검수자 C (가독성)']
-const CS_ROLE = 'CS 담당 (댓글 트리거 → 인포크 안내)'
 // 한국어 초안이 통과하면 영어/일본어로 자동 번역+검수까지 이어감(2026-07-19,
 // 원래 조직도에 있던 언어별 번역 담당을 실제로 자동화에 연결).
 // 2026-07-21 사용자 결정: 실제 계정(anyone.living/anyonejin)이 일본 타겟 하나뿐이라 영어 번역은
@@ -147,7 +146,11 @@ router.post('/benchmark/content-run', async (req, res) => {
     const MIN_POPULARITY_SCORE = 10000
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
-    const { data: benchmarks } = await supabase
+    // 2026-07-26: 이 카테고리가 하루 최대 4번(00,04,08,12시)까지 돌기 때문에, "오늘 수집된 상위
+    // 3개"를 그대로 고정 조회하면 같은 날 여러 번 도는 슬롯이 전부 똑같은 참고자료를 받아서
+    // 사실상 같은 내용이 반복 생성되는 문제가 있었음(사용자 보고) - 후보를 3개가 아니라 넉넉히
+    // 8개 뽑아두고, 오늘 이미 참고로 쓴 키워드는 아래에서 제외한 뒤 남은 것 중 상위 3개만 씀.
+    const { data: benchmarkCandidates } = await supabase
       .from('benchmark_reports')
       .select('keyword, platform, popularity_score, note')
       .eq('user_id', targetUserId)
@@ -155,7 +158,22 @@ router.post('/benchmark/content-run', async (req, res) => {
       .gte('collected_at', todayStart.toISOString())
       .gte('popularity_score', MIN_POPULARITY_SCORE)
       .order('popularity_score', { ascending: false })
-      .limit(3)
+      .limit(8)
+
+    // 오늘 이 카테고리로 이미 저장된 초안이 참고로 썼던 키워드는 제외(source에 심어둔 표식으로
+    // 추적) - 후보가 다 소진되면(같은 키워드밖에 없으면) 어쩔 수 없이 원래 후보 그대로 씀.
+    const { data: todaysDrafts } = await supabase
+      .from('content_drafts')
+      .select('source')
+      .eq('user_id', targetUserId)
+      .eq('category', category.label)
+      .gte('created_at', todayStart.toISOString())
+    const usedKeywordsToday = new Set(
+      (todaysDrafts || []).flatMap((d) => d.source?.match(/참고키워드:\s*([^)]+)/)?.[1]?.split(',').map((k) => k.trim()) || [])
+    )
+    const freshCandidates = (benchmarkCandidates || []).filter((b) => !usedKeywordsToday.has(b.keyword))
+    const benchmarks = (freshCandidates.length > 0 ? freshCandidates : benchmarkCandidates || []).slice(0, 3)
+    const usedKeywordsNote = benchmarks.map((b) => b.keyword).join(', ')
 
     // 2026-07-24: 국가별 트렌드 비교(marketInsights)는 유튜브 심리학 채널 리서치에서 나온
     // 내용(가족관계/부부심리 등)이라 동물·재밌는영상 카테고리에는 맞지 않음 - 여기 섞여 들어가면서
@@ -166,12 +184,25 @@ router.post('/benchmark/content-run', async (req, res) => {
         ? benchmarks.map((b) => `[${b.platform} ${b.keyword}] ${b.note}`).join('\n')
         : `(오늘 수집된 좋아요 ${MIN_POPULARITY_SCORE.toLocaleString()}건 이상 벤치마킹 자료 없음 - "${category.label}" 카테고리 일반적인 특징으로 작성)`
 
+    // 2026-07-26: 참고자료가 겹치지 않아도 AI가 비슷한 각도로 쓸 수 있어서, 최근에 실제로
+    // 저장된 제목들을 직접 프롬프트에 넣어 "이거랑 겹치지 않게" 명시적으로 지시 - 소재 풀
+    // 크기와 무관하게 걸리는 마지막 방어선.
+    const recentTitles = await getRecentDraftTitles(supabase, targetUserId, {
+      platform: '인스타/틱톡(일본어)',
+      category: category.label,
+      limit: 8,
+    })
+    const avoidNote =
+      recentTitles.length > 0
+        ? `\n\n[최근에 이미 만든 제목들 - 아래와 겹치지 않는 다른 소재/각도로 새롭게 써줘]\n${recentTitles.map((t) => `- ${t}`).join('\n')}`
+        : ''
+
     // 2) AI 초안 생성 - 참고 자료를 그대로 번역/복제하지 않고 "왜 인기 있는지"만 반영해 새로 재구성
     // (buildDraftUserPrompt의 LOCALIZATION_RULES가 이 원칙을 이미 강제함)
-    const topic = `카테고리: ${category.label} (일본 인스타/틱톡 트렌드 벤치마킹 기반)
-
-[필수 지시사항] 게시물 마지막 부분에 "댓글에 '${CS_TRIGGER_KEYWORD}'라고 남겨주시면 관련 정보 보내드릴게요!" 같은
-자연스러운 유도 문구를 반드시 포함해서 작성해줘. 이게 없으면 안 돼.`
+    // 2026-07-27: "댓글에 정보라고 남겨주시면" CTA 문구 제거(사용자 요청) - 그 트리거워드는
+    // 1688 상품소싱(실제 구매 링크가 있는 콘텐츠) 전용으로 쓰기로 함. 이 카테고리(신기한동물/
+    // 해외재밌는영상)는 실제 상품이 없는 콘텐츠라 CS 트리거를 붙이는 게 맞지 않았음.
+    const topic = `카테고리: ${category.label} (일본 인스타/틱톡 트렌드 벤치마킹 기반)${avoidNote}`
     const { system: draftSystem, messages: draftMessages } = buildDraftMessages({
       channel: targetChannel,
       topic,
@@ -305,7 +336,8 @@ router.post('/benchmark/content-run', async (req, res) => {
         })
         translationPassed = trResult.review.result === '통과'
 
-        const csLinkId = await ensureCsLink(supabase, targetUserId)
+        // 2026-07-27: 실제 상품 링크가 없는 카테고리라 CS 트리거(정보/핑크 댓글→인포크 안내)는
+        // 안 붙임(사용자 요청) - 그 트리거는 1688 상품소싱 콘텐츠 전용으로 남겨둠.
         const { data: trSaved, error: trInsertError } = await supabase
           .from('content_drafts')
           .insert({
@@ -316,21 +348,19 @@ router.post('/benchmark/content-run', async (req, res) => {
             body: trResult.body,
             images,
             hashtags: trDraft.hashtags,
-            source: `일본어 자동 번역 (해외 벤치마킹 기반, 카테고리: ${category.label})`,
+            // 참고키워드 표식은 위쪽 "오늘 이미 참고로 쓴 키워드 제외" 로직이 다음 실행에서
+            // 다시 읽어가는 값이라 형식(참고키워드: a, b, c)을 바꾸면 안 됨.
+            source: `일본어 자동 번역 (해외 벤치마킹 기반, 카테고리: ${category.label}, 참고키워드: ${usedKeywordsNote || '없음'})`,
             status: translationPassed ? '통과' : '반려',
             review_opinion: trResult.review.reasons.join(' / '),
             reject_reason: translationPassed ? null : trResult.review.reasons.join(' / '),
             checked_no_real_person_image: true,
             checked_no_overseas_reuse: true,
-            trigger_keyword: CS_TRIGGER_KEYWORD,
-            cs_link_id: csLinkId,
           })
           .select()
           .single()
         if (trInsertError) throw new Error(trInsertError.message)
         savedDraft = trSaved
-
-        await setEmployeeStatus(supabase, targetUserId, CS_ROLE, '완료', 'CS 트리거 링크 연결 완료')
 
         for (const stage of trResult.review.stages) {
           const { error: logError } = await supabase.from('review_log').insert({

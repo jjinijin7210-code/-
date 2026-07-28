@@ -18,6 +18,7 @@ import {
   fetchSourcingImage,
   generateDraft,
   reviewDraftWithAi,
+  analyzeContentDna,
 } from '../lib/apiClient'
 import { getCategoryForChannel } from '../lib/contentPreview'
 
@@ -76,6 +77,89 @@ export default function BenchmarkReports() {
 
   const toggleRegion = (value) => {
     setRegions((prev) => (prev.includes(value) ? prev.filter((r) => r !== value) : [...prev, value]))
+  }
+
+  // 2026-07-27: "콘텐츠 DNA" 분석 - 채널 URL 또는 영상 파일 직접 업로드("파일 바로넣기" 요청,
+  // 아직 유튜브에 안 올린 영상도 분석할 수 있게) 넣으면 주제/톤/포맷 분석 + 비슷한 채널 추천
+  const [dnaChannelUrl, setDnaChannelUrl] = useState('')
+  const [dnaVideoFile, setDnaVideoFile] = useState(null)
+  // <input type="file">는 브라우저가 선택된 파일명을 자체적으로 표시하는데, React state만
+  // null로 바꿔서는 그 네이티브 표시가 안 지워짐(실측 확인, 2026-07-27 사용자 보고 "지웠는데
+  // 안지워져") - key를 바꿔서 입력창 자체를 새로 마운트시켜야 진짜로 지워짐.
+  const [dnaFileInputKey, setDnaFileInputKey] = useState(0)
+  const [dnaLoading, setDnaLoading] = useState(false)
+  const [dnaError, setDnaError] = useState('')
+  const [dnaResult, setDnaResult] = useState(null)
+  const resetDnaForm = () => {
+    setDnaChannelUrl('')
+    setDnaVideoFile(null)
+    setDnaFileInputKey((k) => k + 1)
+    setDnaResult(null)
+    setDnaError('')
+  }
+  const runDnaAnalysis = async (e) => {
+    e.preventDefault()
+    if (!dnaChannelUrl.trim() && !dnaVideoFile) return
+    setDnaLoading(true)
+    setDnaError('')
+    setDnaResult(null)
+    try {
+      const data = await analyzeContentDna(dnaVideoFile ? { videoFile: dnaVideoFile } : { channelUrl: dnaChannelUrl.trim() })
+      setDnaResult(data)
+    } catch (err) {
+      setDnaError(err.message)
+    } finally {
+      setDnaLoading(false)
+    }
+  }
+  const formatDuration = (sec) => {
+    if (!sec) return '-'
+    const m = Math.floor(sec / 60)
+    const s = Math.round(sec % 60)
+    return m > 0 ? `${m}분 ${s}초` : `${s}초`
+  }
+
+  // 2026-07-27: "리서치가 결과물로 바로 이어지게" 요청 - 1688 소싱(검색→승인→초안)과 같은
+  // 방식으로, 비슷한 채널을 벤치마크 삼아 원하는 플랫폼용 초안을 바로 만들 수 있게 함.
+  // 채널을 고를 수 있으면 좋겠다는 사용자 확인(2026-07-27) - sourcingChannel과 같은 패턴.
+  const DNA_TARGET_CHANNELS = ['인스타/틱톡', '스레드', '블로그(네이버)-여행', '블로그(구글 Blogger)', '유튜브(한국어)']
+  const [dnaTargetChannel, setDnaTargetChannel] = useState(DNA_TARGET_CHANNELS[0])
+  const [dnaDraftState, setDnaDraftState] = useState({}) // channelId -> { loading, error }
+  const createDraftFromBenchmark = async (similarChannel) => {
+    const key = similarChannel.channelId
+    setDnaDraftState((prev) => ({ ...prev, [key]: { loading: true, error: null } }))
+    try {
+      const channel = dnaTargetChannel
+      const topic = `주제: ${dnaResult.dna.topic}
+톤: ${dnaResult.dna.tone}
+타겟: ${dnaResult.dna.targetAudience}
+포맷: ${dnaResult.dna.format}
+
+이 콘텐츠 방향으로 ${channel}용 게시물을 만들어줘.`
+      // 참고자료는 "왜 인기 있는지"만 반영하고 그대로 베끼지 않기 - promptBuilder.js의
+      // LOCALIZATION_RULES가 이미 이 원칙을 강제함(benchmark.js와 동일 패턴).
+      const referenceNote = `[벤치마크 채널] ${similarChannel.title} (구독자 ${similarChannel.subscriberCount}, 주 ${similarChannel.uploadsPerWeek ?? '?'}회 업로드)
+최근 영상 제목들:
+${similarChannel.sampleThumbnails.map((t) => `- ${t.title}`).join('\n')}`
+
+      const draft = await generateDraft({ channel, topic, referenceNote })
+      const review = await reviewDraftWithAi({ title: draft.title, body: draft.body, channel })
+      const saved = await insertContentDraft({
+        title: draft.title,
+        platform: channel,
+        category: getCategoryForChannel(channel),
+        body: draft.body,
+        images: [],
+        hashtags: draft.hashtags,
+        source: `콘텐츠 DNA 분석 기반 (벤치마크: ${similarChannel.title})`,
+        status: review.result,
+        review_opinion: review.reasons?.join(' / ') || (review.result === '통과' ? '문제 없음' : ''),
+        reject_reason: review.result === '반려' ? review.reasons?.join(' / ') || '' : null,
+      })
+      navigate(`/drafts?id=${saved.id}`)
+    } catch (err) {
+      setDnaDraftState((prev) => ({ ...prev, [key]: { loading: false, error: err.message } }))
+    }
   }
 
   // 검색이 아니라 직접 찾은 영상 URL을 바로 목록에 넣고 싶을 때 씀 (2026-07-19 요청)
@@ -511,6 +595,146 @@ export default function BenchmarkReports() {
                 </div>
               </div>
             ))}
+          </div>
+        )}
+      </div>
+
+      {/* 콘텐츠 DNA 분석 - 채널 URL 넣으면 주제/톤/포맷 분석 + 비슷한 채널 추천/벤치마킹 (2026-07-27) */}
+      <div className="mb-4 rounded-xl bg-paper-card p-4 shadow-card">
+        <h2 className="mb-1 text-sm font-semibold text-ink">🧬 콘텐츠 DNA 분석</h2>
+        <p className="mb-2 text-[11px] text-ink/40">
+          채널 URL이나 아직 유튜브에 안 올린 영상 파일을 넣으면 AI가 콘텐츠 성격을 분석하고, 비슷한 채널을 찾아서 썸네일·영상 길이·업로드 주기를 벤치마킹해줘요.
+        </p>
+        <form onSubmit={runDnaAnalysis} className="flex flex-wrap gap-2">
+          <input
+            className="min-w-[240px] flex-1 rounded-md border border-ink/15 px-3 py-2 text-sm focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber disabled:bg-ink/5 disabled:text-ink/30"
+            placeholder="채널 URL (예: https://youtube.com/@채널명 또는 채널 ID)"
+            value={dnaChannelUrl}
+            onChange={(e) => setDnaChannelUrl(e.target.value)}
+            disabled={!!dnaVideoFile}
+          />
+          <button
+            type="submit"
+            disabled={dnaLoading || (!dnaChannelUrl.trim() && !dnaVideoFile)}
+            className="rounded-md bg-stamp-amber px-4 py-2 text-sm font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+          >
+            {dnaLoading ? '분석 중...' : '분석하기'}
+          </button>
+        </form>
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          <span className="text-[11px] text-ink/40">또는 영상 파일 바로 넣기:</span>
+          <input
+            key={dnaFileInputKey}
+            type="file"
+            accept="video/*"
+            onChange={(e) => setDnaVideoFile(e.target.files?.[0] || null)}
+            className="text-xs"
+          />
+          {dnaVideoFile && (
+            <button
+              type="button"
+              onClick={() => {
+                setDnaVideoFile(null)
+                setDnaFileInputKey((k) => k + 1)
+              }}
+              className="text-[11px] text-ink/40 hover:text-stamp-reject"
+            >
+              ✕ 파일 지우기
+            </button>
+          )}
+        </div>
+        {dnaError && <p className="mt-2 text-xs text-stamp-reject">{dnaError}</p>}
+
+        {dnaResult && (
+          <div className="mt-3 space-y-4">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-ink/70">분석 결과</span>
+              <button
+                type="button"
+                onClick={resetDnaForm}
+                className="rounded-md px-3 py-1 text-[11px] text-ink/40 hover:text-stamp-reject"
+              >
+                🗑 결과 지우고 새로 분석하기
+              </button>
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border border-ink/10 p-3">
+              {dnaResult.channel.thumbnail && (
+                <img src={dnaResult.channel.thumbnail} alt="" className="h-12 w-12 flex-shrink-0 rounded-full object-cover" />
+              )}
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-ink">{dnaResult.channel.title}</p>
+                <p className="text-xs text-ink/50">
+                  {dnaResult.channel.subscriberCount != null
+                    ? `구독자 ${formatCount(dnaResult.channel.subscriberCount)} · 영상 ${dnaResult.channel.videoCount}개`
+                    : '업로드한 영상 파일 분석 결과 (아직 채널 정보 없음)'}
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg bg-ink/[0.03] p-3 text-xs text-ink/70">
+              <p><span className="font-semibold text-ink">주제:</span> {dnaResult.dna.topic}</p>
+              <p><span className="font-semibold text-ink">톤:</span> {dnaResult.dna.tone}</p>
+              <p><span className="font-semibold text-ink">타겟:</span> {dnaResult.dna.targetAudience}</p>
+              <p><span className="font-semibold text-ink">포맷:</span> {dnaResult.dna.format}</p>
+            </div>
+
+            <div>
+              <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                <p className="text-xs font-semibold text-ink/70">비슷한 채널 (구독자순)</p>
+                <label className="flex items-center gap-2 text-[11px] text-ink/50">
+                  초안 만들 채널:
+                  <select
+                    value={dnaTargetChannel}
+                    onChange={(e) => setDnaTargetChannel(e.target.value)}
+                    className="rounded-md border border-ink/15 px-2 py-1 text-xs"
+                  >
+                    {DNA_TARGET_CHANNELS.map((ch) => (
+                      <option key={ch} value={ch}>{ch}</option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+              <div className="space-y-2">
+                {dnaResult.similarChannels.map((c) => (
+                  <div key={c.channelId} className="rounded-lg border border-ink/10 p-3">
+                    <div className="flex items-center gap-3">
+                      {c.thumbnail && <img src={c.thumbnail} alt="" className="h-10 w-10 flex-shrink-0 rounded-full object-cover" />}
+                      <div className="min-w-0 flex-1">
+                        <a href={c.channelUrl} target="_blank" rel="noreferrer" className="block truncate text-sm font-medium text-ink hover:underline">
+                          {c.title}
+                        </a>
+                        <p className="text-[11px] text-ink/50">
+                          구독자 {formatCount(c.subscriberCount)} · 주 {c.uploadsPerWeek ?? '?'}회 업로드 · 평균 {formatDuration(c.avgDurationSeconds)} · 평균 조회수 {formatCount(c.avgViews || 0)}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={dnaDraftState[c.channelId]?.loading}
+                        onClick={() => createDraftFromBenchmark(c)}
+                        className="flex-shrink-0 rounded-md bg-stamp-amber px-3 py-1.5 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+                      >
+                        {dnaDraftState[c.channelId]?.loading ? '만드는 중...' : '📝 초안 만들기'}
+                      </button>
+                    </div>
+                    {dnaDraftState[c.channelId]?.error && (
+                      <p className="mt-2 text-xs text-stamp-reject">{dnaDraftState[c.channelId].error}</p>
+                    )}
+                    {c.sampleThumbnails?.length > 0 && (
+                      <div className="mt-2 flex gap-2 overflow-x-auto">
+                        {c.sampleThumbnails.map((t) => (
+                          <a key={t.url} href={t.url} target="_blank" rel="noreferrer" title={t.title} className="flex-shrink-0">
+                            <img src={t.thumbnail} alt={t.title} className="h-14 w-24 rounded object-cover" />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {dnaResult.similarChannels.length === 0 && (
+                  <p className="text-xs text-ink/40">비슷한 채널을 찾지 못했어요.</p>
+                )}
+              </div>
+            </div>
           </div>
         )}
       </div>

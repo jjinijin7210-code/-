@@ -10,9 +10,14 @@
 // 영상"만 집중적으로 벤치마킹하는 걸로 전면 교체(사용자 결정). 실제 영상을 그대로 재사용하지
 // 않고(저작권 리스크) 트렌드 포인트만 참고해 AI가 새로 창작하는 기존 원칙은 유지 - 해시태그도
 // 일본이 아니라 전세계 콘텐츠를 넓게 잡기 위해 영어로 검색.
+// 2026-07-26: 하루 7번(00,02,04,06,08,10,12시) 실행이 이 2개 카테고리로만 계속 돌다 보니
+// 콘텐츠 관리에 반복된 내용만 나온다는 피드백(사용자 보고) - 카테고리 자체를 늘리는 건
+// 2026-07-19 결정(패션뷰티소품/상품소싱/여행지 제외, 이 2개로 집중)을 뒤집는 거라 안 하고,
+// 대신 각 카테고리 안의 해시태그를 늘려서 매일 수집되는 원본 소스 자체의 다양성을 넓힘 +
+// benchmark.js에서 참고자료 중복 사용 방지 로직을 별도로 추가함.
 export const BENCHMARK_CATEGORIES = [
-  { label: '신기한동물', hashtags: ['wildanimals', 'weirdanimals', 'amazinganimals', 'animalfacts'] },
-  { label: '해외재밌는영상', hashtags: ['funnyvideos', 'viralvideos', 'oddlysatisfying', 'wow'] },
+  { label: '신기한동물', hashtags: ['wildanimals', 'weirdanimals', 'amazinganimals', 'animalfacts', 'cutestanimals', 'rareanimals'] },
+  { label: '해외재밌는영상', hashtags: ['funnyvideos', 'viralvideos', 'oddlysatisfying', 'wow', 'lifehacks', 'unexpected'] },
 ]
 
 export function getCategoryByLabel(label) {

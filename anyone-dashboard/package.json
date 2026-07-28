@@ -8,17 +8,25 @@
     "build": "vite build",
     "preview": "vite preview",
     "server": "node server/index.js",
-    "dev:all": "concurrently -n FRONT,BACK -c blue,green \"npm run dev\" \"npm run server\""
+    "dev:all": "concurrently -n FRONT,BACK -c blue,green \"npm run dev\" \"npm run server\"",
+    "remotion:studio": "remotion studio remotion/index.jsx"
   },
   "dependencies": {
+    "@remotion/bundler": "^4.0.499",
+    "@remotion/captions": "^4.0.499",
+    "@remotion/install-whisper-cpp": "^4.0.499",
+    "@remotion/renderer": "^4.0.499",
+    "@remotion/transitions": "^4.0.499",
     "@supabase/supabase-js": "^2.45.4",
     "multer": "^2.2.0",
     "playwright": "^1.61.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
-    "react-router-dom": "^6.26.2"
+    "react-router-dom": "^6.26.2",
+    "remotion": "^4.0.499"
   },
   "devDependencies": {
+    "@remotion/cli": "^4.0.499",
     "@vitejs/plugin-react": "^4.3.1",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.0.1",

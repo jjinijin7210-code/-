@@ -66,7 +66,13 @@ function computeAutomationHealth(runs) {
 
 export default function Home() {
   const employees = useSupabaseTable('employee_status', { orderBy: 'updated_at' })
-  const drafts = useSupabaseTable('content_drafts')
+  // 2026-07-26: content_drafts는 images 컬럼에 사진을 base64로 통째로 담고 있어서, 데이터가
+  // 쌓일수록 select('*')가 매번 수십MB를 불러오다 statement timeout까지 나는 걸 실측 확인함
+  // (useSupabaseTable.js의 select 옵션은 이걸 위해 만들어져 있었는데 이 화면만 안 쓰고 있었음).
+  // 홈 화면은 목록 요약용이라 무거운 컬럼(images/body/hashtags 등) 없이 필요한 것만 가져옴.
+  const drafts = useSupabaseTable('content_drafts', {
+    select: 'id,title,platform,status,reject_reason,source,created_at,published_at',
+  })
   const automationRuns = useSupabaseTable('automation_runs', { orderBy: 'started_at' })
 
   const [quickType, setQuickType] = useState('image') // 'image' | 'text'
