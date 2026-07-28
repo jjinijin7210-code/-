@@ -2,6 +2,7 @@ let source = null;
 let generated = null;
 let activeLanguage = "ko";
 let photos = []; // {dataUrl, caption} - 카드뉴스에서 재사용할 실사진, 서버에는 생성 요청 때만 보냄
+let lastVideoFile = null; // 썸네일 추천이 실제 영상 장면을 다시 쓸 수 있게 마지막 업로드한 영상 파일 기억
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -65,12 +66,39 @@ function renderPhotoList() {
   if (!box) return;
   box.innerHTML = photos.map((p, i) => `
     <div class="photo-item">
-      <img src="${p.dataUrl}" alt="사진 ${i+1}">
+      ${p.sourceUrl ? `<div class="photo-source-row"><input class="photo-source-input" readonly value="${escapeHtml(p.sourceUrl)}"><button type="button" data-photo-copy="${i}" title="주소 복사">📋</button></div>` : ""}
+      <img src="${p.dataUrl}" alt="사진 ${i+1}" data-photo-zoom="${i}" title="크게보기">
+      <div class="photo-item-actions">
+        ${p.sourceUrl ? `<a class="photo-source-link" href="${p.sourceUrl}" target="_blank" rel="noopener">원본 주소 ↗</a>` : ""}
+        <a class="photo-download-link" href="${p.dataUrl}" download="photo-${i+1}.jpg">⬇ 다운로드</a>
+      </div>
       <input data-photo-caption="${i}" placeholder="사진 설명 (예: 대표 전경)" value="${escapeHtml(p.caption)}">
       <button data-photo-remove="${i}">삭제</button>
     </div>`).join("");
   $$("[data-photo-caption]").forEach(inp => inp.oninput = () => { photos[Number(inp.dataset.photoCaption)].caption = inp.value; });
   $$("[data-photo-remove]").forEach(btn => btn.onclick = () => { photos.splice(Number(btn.dataset.photoRemove), 1); renderPhotoList(); });
+  $$("[data-photo-zoom]").forEach(img => img.onclick = () => openPhotoZoom(photos[Number(img.dataset.photoZoom)], Number(img.dataset.photoZoom)));
+  $$("[data-photo-copy]").forEach(btn => btn.onclick = async () => {
+    const url = photos[Number(btn.dataset.photoCopy)].sourceUrl;
+    try { await navigator.clipboard.writeText(url); flash(btn); } catch { showError("주소 복사에 실패했어요."); }
+  });
+}
+
+function openPhotoZoom(photo, index) {
+  let overlay = $("#photoZoomOverlay");
+  if (!overlay) {
+    overlay = document.createElement("div");
+    overlay.id = "photoZoomOverlay";
+    overlay.className = "photo-zoom-overlay";
+    overlay.innerHTML = `<button type="button" class="photo-zoom-close">✕ 닫기</button><img alt="크게보기"><a class="photo-zoom-download">⬇ 다운로드</a>`;
+    overlay.addEventListener("click", (e) => { if (e.target === overlay || e.target.classList.contains("photo-zoom-close")) overlay.classList.add("hidden"); });
+    document.body.appendChild(overlay);
+  }
+  overlay.querySelector("img").src = photo.dataUrl;
+  const dl = overlay.querySelector(".photo-zoom-download");
+  dl.href = photo.dataUrl;
+  dl.setAttribute("download", `photo-${index + 1}.jpg`);
+  overlay.classList.remove("hidden");
 }
 $("#clearAllPhotos")?.addEventListener("click", () => {
   photos = [];
@@ -101,7 +129,7 @@ async function runPhotoSearch() {
         });
         const fetchData = await fetchRes.json();
         if (!fetchRes.ok) throw new Error(fetchData.error);
-        photos.push({ dataUrl: fetchData.dataUrl, caption: "" });
+        photos.push({ dataUrl: fetchData.dataUrl, sourceUrl: url, caption: "" });
         renderPhotoList();
         showError("");
         btn.remove(); // 고른 사진은 검색결과 목록에서 빼서, 전체삭제 후에도 헷갈리지 않게
@@ -119,16 +147,23 @@ $("#clearText").onclick = () => { $("#textTitle").value = ""; $("#textInput").va
 $("#clearUrl").onclick = () => { $("#urlInput").value = ""; };
 $("#clearYoutube").onclick = () => { $("#youtubeInput").value = ""; };
 $("#clearScreenshot").onclick = () => { $("#imageInput").value = ""; };
+$("#clearVideo").onclick = () => { $("#videoInput").value = ""; };
+$("#clearPdf").onclick = () => { $("#pdfInput").value = ""; };
 
 $("#resetSource").onclick = () => {
   source = null;
   generated = null;
   photos = [];
+  lastVideoFile = null;
+  $("#thumbnailResult").classList.add("hidden");
+  $("#thumbnailResult").innerHTML = "";
   $("#textTitle").value = "";
   $("#textInput").value = "";
   $("#urlInput").value = "";
   $("#youtubeInput").value = "";
   $("#imageInput").value = "";
+  $("#videoInput").value = "";
+  $("#pdfInput").value = "";
   $("#sourcePreview").classList.add("hidden");
   $("#sourceText").value = "";
   $("#photoList").innerHTML = "";
@@ -191,6 +226,50 @@ $("#extractOcr").onclick = async () => {
   finally { setBusy(false); }
 };
 
+$("#extractVideo").onclick = async () => {
+  const file = $("#videoInput").files[0];
+  if (!file) return showError("영상 파일을 선택해 주세요.");
+  lastVideoFile = file;
+  setBusy(true, "영상에서 나레이션을 글로 옮기고 있어요… (처음엔 오래 걸려요)");
+  try {
+    const fd = new FormData(); fd.append("video", file);
+    const res = await fetch("/api/extract/video", { method:"POST", body:fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    setSource(data);
+  } catch(e) { showError(e.message); }
+  finally { setBusy(false); }
+};
+
+$("#extractVideoScript").onclick = async () => {
+  const file = $("#videoInput").files[0];
+  if (!file) return showError("영상 파일을 선택해 주세요.");
+  lastVideoFile = file;
+  setBusy(true, "영상 장면을 보고 대본을 쓰고 있어요…");
+  try {
+    const fd = new FormData(); fd.append("video", file);
+    const res = await fetch("/api/extract/video-script", { method:"POST", body:fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    setSource(data);
+  } catch(e) { showError(e.message); }
+  finally { setBusy(false); }
+};
+
+$("#extractPdf").onclick = async () => {
+  const file = $("#pdfInput").files[0];
+  if (!file) return showError("전자책(PDF) 파일을 선택해 주세요.");
+  setBusy(true, "전자책 본문을 읽고 있어요…");
+  try {
+    const fd = new FormData(); fd.append("pdf", file);
+    const res = await fetch("/api/extract/pdf", { method:"POST", body:fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    setSource(data);
+  } catch(e) { showError(e.message); }
+  finally { setBusy(false); }
+};
+
 async function extractJson(endpoint, body) {
   setBusy(true, "내용을 안전하게 불러오고 있어요…");
   try {
@@ -220,6 +299,8 @@ function setSource(data) {
 
 function updateCount(){ $("#charCount").textContent = $("#sourceText").value.length.toLocaleString(); }
 
+let generateController = null;
+
 $("#generate").onclick = async () => {
   if (!source) return showError("먼저 원본 내용을 넣어 주세요.");
   source.text = $("#sourceText").value.trim();
@@ -227,10 +308,12 @@ $("#generate").onclick = async () => {
   const languages = $$(".languages input:checked").map(x=>x.value);
   if (!platforms.length || !languages.length) return showError("플랫폼과 언어를 하나 이상 선택해 주세요.");
 
+  generateController = new AbortController();
   setBusy(true, "선택한 언어와 플랫폼별로 콘텐츠를 만들고 있어요…");
   try {
     const res = await fetch("/api/generate", {
       method:"POST", headers:{"Content-Type":"application/json"},
+      signal: generateController.signal,
       body:JSON.stringify({
         source, platforms, languages,
         cardCount:Number($("#cardCount").value),
@@ -246,6 +329,37 @@ $("#generate").onclick = async () => {
     generated = data.result;
     activeLanguage = languages[0];
     renderResults(data.provider);
+  } catch(e) {
+    // 사용자가 취소 버튼을 눌러 fetch를 중단한 경우 - 실패가 아니라 취소니까 다르게 안내
+    if (e.name === "AbortError") showError("콘텐츠 만들기를 취소했어요.");
+    else showError(e.message);
+  }
+  finally { setBusy(false); generateController = null; }
+};
+
+$("#cancelGenerate").onclick = () => { generateController?.abort(); };
+
+$("#suggestThumbnail").onclick = async () => {
+  if (!source) return showError("먼저 원본 내용을 넣어 주세요.");
+  const box = $("#thumbnailResult");
+  setBusy(true, "후킹 썸네일을 추천하고 있어요…");
+  try {
+    const fd = new FormData();
+    fd.append("title", source.title || "");
+    fd.append("text", ($("#sourceText").value || source.text || "").slice(0, 4000));
+    if (lastVideoFile) fd.append("video", lastVideoFile);
+    const res = await fetch("/api/thumbnail/suggest", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+
+    const image = data.recommendedFrame || data.aiImage;
+    box.innerHTML = `
+      ${image ? `<img src="${image}" alt="추천 썸네일">` : `<p class="muted">이미지 후보는 없어요 - 아래 문구를 직접 만든 썸네일에 얹어 보세요.</p>`}
+      <ul class="thumbnail-hooks">
+        ${data.hooks.map(h => `<li><span>${escapeHtml(h)}</span><button type="button" class="copy" data-hook-copy="${encodeURIComponent(h)}">복사</button></li>`).join("")}
+      </ul>`;
+    box.classList.remove("hidden");
+    $$("[data-hook-copy]").forEach(btn => btn.onclick = async () => { await copyText(decodeURIComponent(btn.dataset.hookCopy)); flash(btn); });
   } catch(e) { showError(e.message); }
   finally { setBusy(false); }
 };
@@ -305,7 +419,7 @@ function renderLanguage() {
     const aiNote = `<p class="ai-note">⚠ AI가 포함된 콘텐츠일 수 있어요. 게시 전 내용을 확인해주세요.</p>`;
     if (key === "cards") {
       return `<article class="output-card">
-        <div class="output-head"><h3>${PLATFORM_NAMES[key]}</h3><div class="output-actions"><button class="copy" data-copy-cards="${key}">문구 복사</button><button class="copy" data-save-cards="${key}">💾 저장</button></div></div>
+        <div class="output-head"><h3>${PLATFORM_NAMES[key]}</h3><div class="output-actions"><button class="copy" data-copy-cards="${key}">문구 복사</button><button class="copy" data-save-cards="${key}">💾 텍스트로 저장</button><button class="copy" data-save-cards-image="${key}">🖼 이미지로 저장</button></div></div>
         <div class="cards-grid">${(value.cards||[]).map((card,i)=>renderCardHtml(card,i,(value.cards||[]).length)).join("")}</div>
         ${aiNote}
       </article>`;
@@ -354,6 +468,25 @@ function renderLanguage() {
     const text = (v.cards||[]).map(c=>`${c.page}장\n${c.headline}\n${c.body}`).join("\n\n");
     downloadText(text, `cards.txt`);
     flash(btn);
+  });
+  $$("[data-save-cards-image]").forEach(btn=>btn.onclick=async()=>{
+    const v = content.cards;
+    const old = btn.textContent;
+    btn.disabled = true; btn.textContent = "이미지 만드는 중…";
+    try {
+      const res = await fetch("/api/cards/render-images", {
+        method: "POST", headers: {"Content-Type":"application/json"},
+        body: JSON.stringify({ cards: v.cards || [], photos })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      data.images.forEach((dataUrl, i) => {
+        const a = document.createElement("a");
+        a.href = dataUrl; a.download = `카드_${i+1}.png`; a.click();
+      });
+      flash(btn);
+    } catch(e) { showError(e.message); }
+    finally { btn.disabled = false; btn.textContent = old; }
   });
   $$("[data-naverblog-fill]").forEach(btn=>btn.onclick=async()=>{
     const key = btn.dataset.naverblogFill;
@@ -406,11 +539,42 @@ function renderLanguage() {
   });
 }
 
+// 2026-07-27: "메모장으로 딱 정리돼서 보일 수 있게 저장 안 될까?" 요청 - 기존엔 JSON 원본
+// 그대로 내려받아서 메모장으로 열면 중괄호/따옴표투성이라 못 읽을 정도였음. 언어·플랫폼별로
+// 사람이 바로 읽을 수 있는 평문으로 정리해서 .txt로 저장하도록 바꿈.
+function formatGeneratedAsText(generated) {
+  const lines = [];
+  const langs = Object.keys(generated.outputs || {});
+  for (const lang of langs) {
+    const platforms = generated.outputs[lang] || {};
+    for (const key of Object.keys(platforms)) {
+      const piece = platforms[key];
+      const label = `${langName(lang)} · ${PLATFORM_NAMES[key] || key}`;
+      lines.push("=".repeat(40));
+      lines.push(label);
+      lines.push("=".repeat(40));
+      if (piece.error) {
+        lines.push(`(생성 실패: ${piece.error})`);
+      } else if (Array.isArray(piece.cards)) {
+        if (piece.title) lines.push(piece.title, "");
+        piece.cards.forEach((c) => {
+          lines.push(`${c.page}. ${c.headline}`);
+          lines.push(c.body || "");
+          lines.push("");
+        });
+      } else {
+        if (piece.title) lines.push(piece.title, "");
+        lines.push(piece.content || "");
+      }
+      lines.push("");
+    }
+  }
+  return lines.join("\n");
+}
+
 $("#downloadJson").onclick = () => {
   if (!generated) return;
-  const blob = new Blob([JSON.stringify(generated,null,2)],{type:"application/json"});
-  const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="luna-one-result.json"; a.click();
-  URL.revokeObjectURL(a.href);
+  downloadText(formatGeneratedAsText(generated), "luna-one-결과.txt");
 };
 
 function setBusy(on, text="") {
