@@ -9,6 +9,7 @@ import { getSupabaseAdmin } from '../lib/supabaseAdmin.js'
 import { generateShortsVideo } from '../lib/shortsGenerator.js'
 import { searchCoupangProducts } from '../lib/coupangClient.js'
 import { ensureCsLink, CS_TRIGGER_KEYWORD } from '../lib/csLink.js'
+import { getRecentSourceTags } from '../lib/topicRotation.js'
 
 const SOURCE_PRODUCT_COUNT = 4 // 특정 한 상품 소재를 그대로 쓰지 않도록 비슷한 상품 여러 개를 모아 영상으로 합성
 
@@ -41,23 +42,37 @@ router.post('/auto/run', async (req, res) => {
   }
   const targetChannel = channel || '인스타/틱톡'
 
+  const supabase = getSupabaseAdmin()
+
   try {
     // 1) 쿠팡에 실제로 파는 상품인지부터 확인 - 없으면 애초에 초안을 만들지 않는다
     // (인포크 링크는 사람이 직접 만들어서 넣는 구조라, 쿠팡에 없는 상품은 게시해도 연결할 링크가 없음)
+    // 같은 카테고리가 며칠 뒤 다시 돌아올 때(요일 순환) 매번 검색 1등 상품만 쓰면 계속 같은
+    // 상품이 반복되므로(사용자 보고, "컨텐츠 중복금지"), 최근에 이미 쓴 상품은 최대한 피해서 고른다.
     const coupangProducts = await searchCoupangProducts({ query: keywordKo })
-    const coupangMatch = coupangProducts[0]
-    if (!coupangMatch) {
+    if (coupangProducts.length === 0) {
       return res.status(200).json({ ok: true, skipped: true, reason: `쿠팡에서 '${keywordKo}' 검색 결과가 없어요.` })
     }
+    const recentCoupangTitles = await getRecentSourceTags(supabase, targetUserId, {
+      platform: targetChannel,
+      marker: '쿠팡 매칭 상품',
+    })
+    const coupangMatch =
+      coupangProducts.find((p) => !recentCoupangTitles.includes(p.title)) || coupangProducts[0]
 
     // 2) 상품 소싱 (1688) - Apify 액터가 maxProducts 20 미만을 허용하지 않아 20으로 호출.
     // 특정 한 상품의 사진/영상을 그대로 가져다 쓰지 않기 위해, 비슷한 상품 여러 개를 모아
-    // 나중에 영상으로 합성한다 (원본 그대로 재사용 금지 원칙).
+    // 나중에 영상으로 합성한다 (원본 그대로 재사용 금지 원칙). 대표 상품(product) 자체도
+    // 위와 같은 이유로 최근에 쓴 적 없는 걸 우선으로 고른다.
     const products = await search1688Products({ query: keyword, maxProducts: 20 })
-    const product = products[0]
-    if (!product) {
+    if (products.length === 0) {
       return res.status(404).json({ error: `'${keyword}' 검색 결과 상품이 없어요.` })
     }
+    const recentSourceTitles = await getRecentSourceTags(supabase, targetUserId, {
+      platform: targetChannel,
+      marker: '1688상품',
+    })
+    const product = products.find((p) => !recentSourceTitles.includes(p.title)) || products[0]
     const sourceProducts = products.filter((p) => p.imageUrl).slice(0, SOURCE_PRODUCT_COUNT)
 
     // 3) AI 초안 생성 - 실제 판매 가격은 쿠팡 기준이어야 함(1688/타오바오 가격은 도매/외산 가격이라 부적절).
@@ -123,8 +138,9 @@ router.post('/auto/run', async (req, res) => {
     }
 
     // 6) content_drafts에 저장 - 통과면 사람이 마지막 발행 버튼만 누르면 되는 상태로, 반려면 반려 사유와 함께 남김
-    // source에 쿠팡 매칭 상품 링크를 남겨서, 회원님이 인포크에 넣을 파트너스 링크를 쉽게 찾을 수 있게 함
-    const supabase = getSupabaseAdmin()
+    // source에 쿠팡 매칭 상품 링크를 남겨서, 회원님이 인포크에 넣을 파트너스 링크를 쉽게 찾을 수 있게 함.
+    // "1688상품:"/"쿠팡 매칭 상품:" 표식은 위쪽 중복 방지 로직이 다음 실행 때 다시 읽어가는
+    // 값이라 형식을 바꾸면 안 됨.
     const csLinkId = await ensureCsLink(supabase, targetUserId)
     const { data: savedDraft, error: insertError } = await supabase
       .from('content_drafts')
@@ -135,7 +151,10 @@ router.post('/auto/run', async (req, res) => {
         body: finalBody,
         images,
         hashtags: draft.hashtags,
-        source: `자동소싱: 1688 "${keyword}" / 쿠팡 매칭 상품: ${coupangMatch.title} (${coupangMatch.productUrl})`,
+        // "쿠팡 매칭 상품:" 뒤에 바로 "(URL)"이 오면 getRecentSourceTags()의 추출 정규식이
+        // "(" 안 "https://..."의 첫 "/"에서 멈춰버려 title이 깨끗하게 안 잡힘 - 구매링크를
+        // 별도 항목으로 분리해서 title 뒤에 " / "가 바로 오게 함 (다른 마커들과 동일한 패턴).
+        source: `자동소싱: 1688 "${keyword}" / 1688상품: ${product.title} / 쿠팡 매칭 상품: ${coupangMatch.title} / 구매링크: ${coupangMatch.productUrl}`,
         status: passed ? '통과' : '반려',
         review_opinion: review.reasons.join(' / '),
         reject_reason: passed ? null : review.reasons.join(' / '),
