@@ -52,13 +52,16 @@ function parseDnaResponse(text) {
   return parsed
 }
 
-const DNA_SYSTEM_PROMPT = `당신은 유튜브 채널 분석 전문가입니다. 주어진 자료(채널 정보+영상 제목들, 또는 영상 장면 이미지)를
+const DNA_SYSTEM_PROMPT = `당신은 유튜브 채널 분석 전문가입니다. 주어진 자료(채널 정보+영상 제목들, 또는 영상 장면/썸네일 이미지)를
 보고 이 콘텐츠의 "콘텐츠 DNA"(핵심 주제, 톤/분위기, 타겟 시청자, 포맷 - 쇼츠/롱폼/브이로그 등)를 분석하고,
-이것과 비슷한 다른 유튜브 채널을 찾을 때 쓸 검색 키워드를 만들어주세요.
+이것과 비슷한 다른 유튜브 채널을 찾을 때 쓸 검색 키워드를 만들어주세요. 이미지가 주어졌다면 색상/폰트
+스타일도 같이 분석해서 우리 썸네일 제작에 참고할 수 있게 해주세요(이미지가 없으면 이 두 항목은 빈 값으로).
 - 검색 키워드는 유튜브 검색창에 실제로 넣을 법한 짧은 문구로, 한국어와 영어 섞어서 4~6개
 - 채널 자체 이름이나 고유명사는 검색어에 넣지 마세요(그 채널만 다시 나옴)
+- colorPalette: 이미지에서 실제로 눈에 띄는 주요 색상 3~5개, 각각 정확한 hex 코드와 어디에 쓰였는지(예: "배경", "강조 텍스트")
+- fontStyle: 폰트 굵기/느낌(예: "두꺼운 고딕체, 그림자 강조"), 텍스트 배치 특징을 한두 줄로
 반드시 아래 JSON 형식으로만 답하세요 (다른 설명 없이):
-{"topic":"핵심 주제 한 줄","tone":"톤/분위기 한 줄","targetAudience":"타겟 시청자 한 줄","format":"포맷(쇼츠/롱폼/브이로그 등)","searchKeywords":["키워드1","키워드2","키워드3"]}`
+{"topic":"핵심 주제 한 줄","tone":"톤/분위기 한 줄","targetAudience":"타겟 시청자 한 줄","format":"포맷(쇼츠/롱폼/브이로그 등)","searchKeywords":["키워드1","키워드2","키워드3"],"colorPalette":[{"hex":"#000000","role":"배경"}],"fontStyle":"폰트 스타일 설명"}`
 
 // 키워드로 후보 채널을 찾아서 상세 정보 + 벤치마크 지표(업로드 주기/평균 길이/평균 조회수)까지
 // 계산 - 채널 URL 입력이든 영상 파일 입력이든 이 단계부터는 완전히 공유됨.
@@ -105,8 +108,38 @@ router.post('/content-dna/analyze', upload.single('video'), async (req, res) => 
   try {
     const channelUrl = req.body?.channelUrl
 
+    if (req.file && req.file.mimetype.startsWith('image/')) {
+      // ---- 입력 방식 1-A: 썸네일 스크린샷 한 장 - 링크 없이 이미지 그대로 색상/폰트 벤치마킹
+      // (2026-07-29 요청: "잘 나가는 썸네일 같은거 긁어와서 색상 폰트 벤치마킹" - URL이 없는
+      // 스크린샷도 루나원 사진 첨부처럼 파일로 바로 넣을 수 있게 함)
+      const originalName = Buffer.from(req.file.originalname || '', 'latin1').toString('utf8').replace(/\.[^.]+$/, '')
+      const image = {
+        type: 'image',
+        source: { type: 'base64', media_type: req.file.mimetype, data: fs.readFileSync(req.file.path).toString('base64') },
+      }
+      const raw = await callClaude({
+        system: DNA_SYSTEM_PROMPT,
+        messages: [{
+          role: 'user',
+          content: [image, { type: 'text', text: `파일명(참고용): ${originalName || '(제목 없음)'}\n\n이 썸네일/스크린샷을 보고 콘텐츠 DNA와 색상/폰트 스타일을 분석해주세요.` }],
+        }],
+        maxTokens: 700,
+      })
+      const dna = parseDnaResponse(raw)
+      const similarChannels = await findSimilarChannels(dna.searchKeywords, null)
+
+      return res.json({
+        channel: { title: originalName || '(업로드한 썸네일)', thumbnail: null, subscriberCount: null, videoCount: null },
+        dna: {
+          topic: dna.topic, tone: dna.tone, targetAudience: dna.targetAudience, format: dna.format,
+          searchKeywords: dna.searchKeywords, colorPalette: dna.colorPalette || [], fontStyle: dna.fontStyle || '',
+        },
+        similarChannels,
+      })
+    }
+
     if (req.file) {
-      // ---- 입력 방식 1: 로컬 영상 파일 - 장면을 뽑아 Claude Vision으로 DNA 분석 ----
+      // ---- 입력 방식 1-B: 로컬 영상 파일 - 장면을 뽑아 Claude Vision으로 DNA 분석 ----
       const probe = spawnSync(ffprobeBin(), [
         '-v', 'error', '-show_entries', 'format=duration', '-of', 'default=noprint_wrappers=1:nokey=1', req.file.path,
       ])

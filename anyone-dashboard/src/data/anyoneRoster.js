@@ -21,8 +21,8 @@ export const DEFAULT_ANYONE_ROSTER = [
   { department: '스레드블로그팀 · 콘텐츠제작', role_name: '작성자 (스레드·블로그 AI 초안 생성)', role_emoji: '✍️' },
   { department: '스레드블로그팀 · 검수', role_name: '검수자 (스레드·블로그 팩트체크·과장표현·AI스러움)', role_emoji: '🧐' },
 
-  { department: '유튜브팀 · 리서치', role_name: '심리학 콘텐츠 리서처 (일본 채널 · 다지역 인기 영상 검색)', role_emoji: '🧠' },
-  { department: '유튜브팀 · 콘텐츠제작', role_name: '영상 제작 담당 (심리학 유튜브)', role_emoji: '🎬' },
+  { department: '유튜브팀 · 리서치', role_name: '역사경제 콘텐츠 리서처 (다지역 인기 영상 검색)', role_emoji: '🧠' },
+  { department: '유튜브팀 · 콘텐츠제작', role_name: '영상 제작 담당 (역사경제 유튜브)', role_emoji: '🎬' },
 ]
 
 // 화면에 보여줄 팀 순서 (총괄이 맨 위, 그 아래 채널별 3개 팀)

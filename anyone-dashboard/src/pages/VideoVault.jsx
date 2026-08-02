@@ -8,8 +8,15 @@ import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
 
 // content_drafts.images 배열 안에 kind:'video'로 저장된 항목들을 전부 모아서
 // 초안 하나하나를 열어보지 않아도 만든 영상을 한 화면에서 다 볼 수 있게 해요.
+// 2026-07-30: select('*')로 body/hashtags/revision_history 같은 안 쓰는 무거운 텍스트 컬럼까지
+// 매번 통째로 불러오고 있던 걸 발견(Supabase egress 초과의 원인 중 하나) - 이 화면이 실제로
+// 쓰는 컬럼만 select해서 불필요한 전송량을 줄임 (Home.jsx의 2026-07-26 수정과 같은 방식).
+const VIDEO_VAULT_SELECT = 'id, title, platform, status, images, created_at'
+
 export default function VideoVault() {
-  const { rows: drafts, loading, error, updateRow } = useSupabaseTable('content_drafts')
+  const { rows: drafts, loading, error, updateRow } = useSupabaseTable('content_drafts', {
+    select: VIDEO_VAULT_SELECT,
+  })
   const confirm = useConfirm()
   const [filterPlatform, setFilterPlatform] = useState('전체')
   const [deletingId, setDeletingId] = useState(null)

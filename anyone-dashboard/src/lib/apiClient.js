@@ -33,6 +33,13 @@ export function generateDraftsFromSource({ sourceArticle, channels, topic }) {
   return postJson('/api/draft/from-source', { sourceArticle, channels, topic })
 }
 
+// 역사경제 유튜브(한국어) 영상을 실제로 제작해서 content_drafts에 바로 저장 (대본→내레이션→AI
+// 일러스트→줌인/줌아웃 랜덤 합성이라 몇 분 걸림). topic을 주면(소재 직접 입력) 랜덤 주제풀 대신
+// 그 소재로 만든다. format은 'long'(기본, 5~10분 롱폼) 또는 'shorts'.
+export function generateHistoryEconomyVideoNow({ format = 'long', topic } = {}) {
+  return postJson('/api/youtube/history-economy-video-run-manual', { format, topic })
+}
+
 // AI 자동 검수 (팩트체크/과장표현/AI스러운 문체)
 export function reviewDraftWithAi({ title, body, channel }) {
   return postJson('/api/review', { title, body, channel })
@@ -65,6 +72,21 @@ export async function getYoutubeUploadStatus() {
   const res = await fetch(`${API_BASE}/api/youtube/upload-status`)
   if (!res.ok) return { connected: false }
   return res.json()
+}
+
+// 카드뉴스 텍스트(제목+카드 목록) 생성 - returns { title, cards, trendNote }
+export function generateCardNews({ topic, sourceArticle, cardCount, photos }) {
+  return postJson('/api/card-news/generate', { topic, sourceArticle, cardCount, photos })
+}
+
+// 생성된 카드를 실제 PNG 이미지 배열로 렌더링 - returns { images: [dataUrl, ...] }
+export function renderCardNewsImages({ cards, photos, decoration, template }) {
+  return postJson('/api/card-news/render-images', { cards, photos, decoration, template })
+}
+
+// 쇼핑쇼츠 기획실 - 가벼운 소재 후보 3개 생성 (최근 선택/스킵 이력을 취향 신호로 같이 보냄)
+export function generateShoppingShortsTopics({ likedTopics, skippedTopics }) {
+  return postJson('/api/shopping-shorts/topics/generate', { likedTopics, skippedTopics })
 }
 
 // 유튜브로 실제 영상 업로드
@@ -289,6 +311,49 @@ export async function renderVideoStudio(formData) {
   if (!res.ok) {
     throw new Error(data.error || `영상 렌더링이 실패했어요 (${res.status})`)
   }
+  return data
+}
+
+// 영상 제작실 - CapCut에서 마무리 편집하도록 소재(이미지/영상+오디오+자막)만 zip으로 내보내기
+export async function exportVideoStudioCapcut(formData) {
+  const res = await fetch(`${API_BASE}/api/video-studio/export-capcut`, { method: 'POST', body: formData })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `CapCut 내보내기가 실패했어요 (${res.status})`)
+  }
+  return data
+}
+
+// 영상 제작실 - 렌더링/내보내기 결과 파일(mp4/zip)을 서버에서 삭제
+export async function deleteVideoStudioGenerated(fileUrl) {
+  const fileName = fileUrl.split('/').pop()
+  const res = await fetch(`${API_BASE}/api/video-studio/generated/${fileName}`, { method: 'DELETE' })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `파일 삭제가 실패했어요 (${res.status})`)
+  }
+  return data
+}
+
+// 영상 제작실 - 우측 하단에 고정된 워터마크(기본은 노트북LM 위치) 지우기
+export async function removeVideoWatermark(formData) {
+  const res = await fetch(`${API_BASE}/api/video-studio/remove-watermark`, { method: 'POST', body: formData })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `워터마크 제거가 실패했어요 (${res.status})`)
+  }
+  return data
+}
+
+// 영상 제작실 - 씬 자막/나레이션 흐름을 읽고 장면별 모션+효과(하트 등) 자동 추천 (2026-08-02)
+export async function autoDirectVideoStudio(scenes) {
+  const res = await fetch(`${API_BASE}/api/video-studio/auto-direct`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ scenes }),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `자동 연출이 실패했어요 (${res.status})`)
   return data
 }
 

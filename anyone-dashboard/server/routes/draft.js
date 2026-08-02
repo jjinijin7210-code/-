@@ -2,7 +2,17 @@ import { Router } from 'express'
 import { callClaudeJson } from '../lib/anthropicClient.js'
 import { buildDraftMessages, buildTranslateMessages, parseDraftResponse } from '../lib/promptBuilder.js'
 import { getCurrentWeatherNote } from '../lib/weatherClient.js'
+import { getLatestTrendNote } from '../lib/trendNote.js'
 import { searchPhotos, fetchPhotoAsDataUrl } from '../lib/pexelsClient.js'
+import { uploadToStorage } from '../lib/supabaseStorage.js'
+
+// data: URI -> Supabase Storage에 업로드하고 공개 URL을 돌려줌. base64를 DB에 그대로 저장하던
+// 게 이그레스 할당량 초과(2026-07-29)의 원인이라, 여기서 만들어지는 시점에 바로 Storage로 보냄.
+async function uploadDataUrlServerSide(dataUrl, fileName, contentType) {
+  const base64 = dataUrl.replace(/^data:[^;]+;base64,/, '')
+  const buffer = Buffer.from(base64, 'base64')
+  return uploadToStorage(buffer, { fileName: `uploads/${fileName}`, contentType })
+}
 
 const router = Router()
 
@@ -20,14 +30,15 @@ router.post('/draft', async (req, res) => {
   }
 
   try {
-    const { system, messages } = buildDraftMessages({ channel, topic, referenceNote })
+    const trendNote = await getLatestTrendNote()
+    const { system, messages } = buildDraftMessages({ channel, topic, referenceNote, trendNote })
     // 블로그는 소제목이 있는 긴 article 형태, 유튜브(한국어)는 쇼츠 나레이션 대본이라 둘 다
     // 1024토큰으로는 JSON이 중간에 잘려서 파싱 실패가 났음(실측 확인) - 넉넉하게 늘림
-    const maxTokens = channel.startsWith('블로그') || channel === '유튜브(한국어)' ? 3000 : 1024
+    const maxTokens = channel.startsWith('블로그') || channel.startsWith('유튜브(한국어)') ? 3000 : 1024
     // 2026-07-23: 가끔 AI 응답이 JSON 파싱에 실패하는 문제(대부분 그날그날의 응답 변동) - 같은
     // 프롬프트로 재시도하면 대부분 성공한다는 게 dailyAutofill.mjs 등에서 이미 확인된 방식이라 동일 적용
     const draft = await callClaudeJson({ system, messages, maxTokens, parse: parseDraftResponse })
-    res.json(draft)
+    res.json({ ...draft, trendNote })
   } catch (err) {
     res.status(502).json({ error: err.message })
   }
@@ -46,21 +57,23 @@ router.post('/draft/from-source', async (req, res) => {
     return res.status(400).json({ error: '생성할 채널을 하나 이상 선택해주세요.' })
   }
 
-  // 날씨 조회는 실패해도 전체 생성을 막지 않음 (best-effort)
-  const weatherNote = await getCurrentWeatherNote()
+  // 날씨/트렌드 조회는 실패해도 전체 생성을 막지 않음 (best-effort)
+  const [weatherNote, trendNote] = await Promise.all([getCurrentWeatherNote(), getLatestTrendNote()])
 
   const results = []
   for (const channel of channels) {
     try {
       const isBlog = channel.startsWith('블로그')
-      const isLongForm = isBlog || channel === '유튜브(한국어)'
+      const isCardNews = channel.includes('카드뉴스')
+      const isLongForm = isBlog || isCardNews || channel.startsWith('유튜브(한국어)')
       const { system, messages } = buildDraftMessages({
         channel,
         topic,
         sourceArticle,
         includeSeasonWeather: true,
         weatherNote,
-        needsPhotoQuery: isBlog, // 블로그는 본문에 사진 언급이 자연스레 들어가니, 실제로 매칭되는 무료 스톡사진을 찾아 첨부하기 위한 검색어를 같이 받음
+        trendNote,
+        needsPhotoQuery: isBlog || isCardNews,
       })
       const maxTokens = isLongForm ? 3000 : 1024
       // 2026-07-23: 가끔 AI 응답이 JSON 파싱에 실패하는 문제 - 같은 프롬프트로 재시도하면 대부분
@@ -95,13 +108,18 @@ router.post('/draft/from-source', async (req, res) => {
           const photos = await searchPhotos({ query: draft.photoQuery, perPage: 3 })
           const picked = photos.slice(0, 2)
           images = await Promise.all(
-            picked.map(async (p) => ({
-              kind: 'image',
-              filename: `pexels-${p.id}.jpg`,
-              mime_type: 'image/jpeg',
-              data_url: await fetchPhotoAsDataUrl(p.full),
-              note: `무료 스톡 사진 (Pexels · ${p.photographer}) - 검색어: ${draft.photoQuery}`,
-            }))
+            picked.map(async (p) => {
+              const dataUrl = await fetchPhotoAsDataUrl(p.full)
+              const fileName = `pexels-${p.id}-${Date.now()}.jpg`
+              const url = await uploadDataUrlServerSide(dataUrl, fileName, 'image/jpeg')
+              return {
+                kind: 'image',
+                filename: `pexels-${p.id}.jpg`,
+                mime_type: 'image/jpeg',
+                data_url: url,
+                note: `무료 스톡 사진 (Pexels · ${p.photographer}) - 검색어: ${draft.photoQuery}`,
+              }
+            })
           )
         } catch (photoErr) {
           console.error('[draft/from-source] 스톡사진 검색 실패, 사진 없이 진행:', photoErr.message)
@@ -114,7 +132,7 @@ router.post('/draft/from-source', async (req, res) => {
     }
   }
 
-  res.json({ results, weatherNote })
+  res.json({ results, weatherNote, trendNote })
 })
 
 // 완성된 초안을 다른 언어 채널로 현지화(번역) - 직역이 아니라 자연스럽게 다시 씀

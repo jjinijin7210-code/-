@@ -8,6 +8,8 @@ import { spawnSync } from 'node:child_process'
 import { renderVideo, ffprobeDuration } from '../lib/videoRenderer.js'
 import { renderVideoRemotion } from '../lib/remotionRenderer.js'
 import { renderThumbnails } from '../lib/thumbnailRenderer.js'
+import { buildCapcutExport } from '../lib/capcutExport.js'
+import { removeWatermark } from '../lib/watermarkRemover.js'
 import { callClaude } from '../lib/anthropicClient.js'
 import { GENERATED_DIR } from './shorts.js'
 import { BGM_DIR } from '../lib/backgroundMusic.js'
@@ -35,58 +37,67 @@ router.get('/video-studio/bgm-list', (req, res) => {
   res.json({ tracks: files.map((f) => ({ filename: f, url: `/bgm-assets/${encodeURIComponent(f)}` })) })
 })
 
-router.post('/video-studio/render', upload.any(), async (req, res) => {
-  try {
-    const scenesMeta = JSON.parse(req.body.scenesMeta || '[]')
-    if (!scenesMeta.length) {
-      return res.status(400).json({ error: '씬이 하나도 없어요.' })
+// /render와 /export-capcut이 공유하는 요청 파싱 - 씬 구성 규칙이 두 곳에서 어긋나지 않도록
+// 한 곳에서만 관리한다.
+function buildCfgFromRequest(req) {
+  const scenesMeta = JSON.parse(req.body.scenesMeta || '[]')
+  if (!scenesMeta.length) {
+    throw new Error('씬이 하나도 없어요.')
+  }
+
+  const fileMap = {}
+  ;(req.files || []).forEach((f) => {
+    fileMap[f.fieldname] = f
+  })
+
+  const scenes = scenesMeta.map((s, i) => {
+    const file = fileMap[`scene_image_${i}`]
+    if (!file) throw new Error(`씬 ${i + 1}의 이미지 파일이 없어요.`)
+    // multer가 저장하는 파일명엔 확장자가 없어서, 진짜 영상인지 사진인지는 업로드
+    // 당시의 mimetype으로만 구분 가능함 (내가 만든 영상을 씬으로 그대로 넣고 싶다는 요청, 2026-07-19)
+    const isVideo = (file.mimetype || '').startsWith('video/')
+    const scene = { src: file.path, duration: Number(s.duration) || 4, motion: s.motion || 'zoom-in', isVideo }
+    if (s.effect === 'heart') scene.effect = 'heart'
+    if (s.text) scene.text = s.text
+    if (isVideo && s.startTime) scene.startTime = Number(s.startTime) || 0
+    const voiceFile = fileMap[`scene_voice_${i}`]
+    if (voiceFile) {
+      scene.voice = voiceFile.path
+      if (s.voiceVolume) scene.voiceVolume = Number(s.voiceVolume)
     }
+    return scene
+  })
 
-    const fileMap = {}
-    ;(req.files || []).forEach((f) => {
-      fileMap[f.fieldname] = f
-    })
-
-    const scenes = scenesMeta.map((s, i) => {
-      const file = fileMap[`scene_image_${i}`]
-      if (!file) throw new Error(`씬 ${i + 1}의 이미지 파일이 없어요.`)
-      // multer가 저장하는 파일명엔 확장자가 없어서, 진짜 영상인지 사진인지는 업로드
-      // 당시의 mimetype으로만 구분 가능함 (내가 만든 영상을 씬으로 그대로 넣고 싶다는 요청, 2026-07-19)
-      const isVideo = (file.mimetype || '').startsWith('video/')
-      const scene = { src: file.path, duration: Number(s.duration) || 4, motion: s.motion || 'zoom-in', isVideo }
-      if (s.text) scene.text = s.text
-      if (isVideo && s.startTime) scene.startTime = Number(s.startTime) || 0
-      const voiceFile = fileMap[`scene_voice_${i}`]
-      if (voiceFile) {
-        scene.voice = voiceFile.path
-        if (s.voiceVolume) scene.voiceVolume = Number(s.voiceVolume)
-      }
-      return scene
-    })
-
-    const cfg = {
-      width: Number(req.body.width) || 1080,
-      height: Number(req.body.height) || 1920,
-      fps: Number(req.body.fps) || 30,
-      transitionDuration: req.body.transitionDuration !== undefined ? Number(req.body.transitionDuration) : 0.6,
-      transitionType: ['rotate', 'diagonal'].includes(req.body.transitionType) ? req.body.transitionType : 'fade',
-      autoCaptionVoice: req.body.autoCaptionVoice === '1',
-      autoCaptionBgm: req.body.autoCaptionBgm === '1',
-      scenes,
-    }
-    if (fileMap.audio) {
-      cfg.audio = fileMap.audio.path
+  const cfg = {
+    width: Number(req.body.width) || 1080,
+    height: Number(req.body.height) || 1920,
+    fps: Number(req.body.fps) || 30,
+    transitionDuration: req.body.transitionDuration !== undefined ? Number(req.body.transitionDuration) : 0.6,
+    transitionType: ['rotate', 'diagonal'].includes(req.body.transitionType) ? req.body.transitionType : 'fade',
+    decoration: ['hearts', 'stars', 'ribbon', 'gold'].includes(req.body.decoration) ? req.body.decoration : 'none',
+    autoCaptionVoice: req.body.autoCaptionVoice === '1',
+    autoCaptionBgm: req.body.autoCaptionBgm === '1',
+    scenes,
+  }
+  if (fileMap.audio) {
+    cfg.audio = fileMap.audio.path
+    cfg.audioVolume = Number(req.body.audioVolume) || 1
+    cfg.loopAudio = true
+  } else if (req.body.bgmFilename) {
+    // 추천 목록(server/assets/bgm/)에서 고른 경우 - 매번 새로 업로드 안 하고 파일명으로 바로 참조
+    const bgmPath = path.join(BGM_DIR, path.basename(req.body.bgmFilename))
+    if (fs.existsSync(bgmPath)) {
+      cfg.audio = bgmPath
       cfg.audioVolume = Number(req.body.audioVolume) || 1
       cfg.loopAudio = true
-    } else if (req.body.bgmFilename) {
-      // 추천 목록(server/assets/bgm/)에서 고른 경우 - 매번 새로 업로드 안 하고 파일명으로 바로 참조
-      const bgmPath = path.join(BGM_DIR, path.basename(req.body.bgmFilename))
-      if (fs.existsSync(bgmPath)) {
-        cfg.audio = bgmPath
-        cfg.audioVolume = Number(req.body.audioVolume) || 1
-        cfg.loopAudio = true
-      }
     }
+  }
+  return cfg
+}
+
+router.post('/video-studio/render', upload.any(), async (req, res) => {
+  try {
+    const cfg = buildCfgFromRequest(req)
 
     fs.mkdirSync(GENERATED_DIR, { recursive: true })
     const fileName = `${crypto.randomUUID()}.mp4`
@@ -94,7 +105,7 @@ router.post('/video-studio/render', upload.any(), async (req, res) => {
 
     if (req.body.engine === 'remotion') {
       // 베타(Phase 1)는 사진 씬만 지원 - 영상 씬은 다음 phase로 미룸(계획 문서 참고)
-      if (scenes.some((s) => s.isVideo)) {
+      if (cfg.scenes.some((s) => s.isVideo)) {
         return res.status(400).json({ error: '베타는 아직 영상 씬을 지원하지 않아요. 사진 씬만 사용해주세요.' })
       }
       await renderVideoRemotion(cfg, outPath)
@@ -108,6 +119,64 @@ router.post('/video-studio/render', upload.any(), async (req, res) => {
   } finally {
     ;(req.files || []).forEach((f) => fs.unlink(f.path, () => {}))
   }
+})
+
+// 2026-07-30: 완전 자동 렌더링 대신 CapCut에서 마무리 편집하도록 소재(이미지/영상+오디오+자막)만
+// zip으로 묶어서 내보내는 옵션 - 다른 창작자의 AI 영상 툴을 벤치마킹해서 추가함(렌더링 버그
+// 리스크를 줄이는 대안 경로). autoCaptionVoice를 함께 보내면 whisper.cpp로 자동 자막까지 만든다.
+router.post('/video-studio/export-capcut', upload.any(), async (req, res) => {
+  try {
+    const cfg = buildCfgFromRequest(req)
+
+    fs.mkdirSync(GENERATED_DIR, { recursive: true })
+    const fileName = `${crypto.randomUUID()}.zip`
+    const outPath = path.join(GENERATED_DIR, fileName)
+
+    await buildCapcutExport(cfg, outPath)
+
+    res.json({ zipUrl: `/generated/${fileName}` })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  } finally {
+    ;(req.files || []).forEach((f) => fs.unlink(f.path, () => {}))
+  }
+})
+
+// 2026-08-01 요청: "노트북LM 워터마크 지우기 나도 할 수 있게 해줘" - 영상 하나 업로드하면
+// 우측 하단 워터마크(기본은 노트북LM 위치)를 지워서 돌려줌. 결과는 기존 render/export-capcut과
+// 같은 GENERATED_DIR/UUID 규칙을 써서, 위에 있는 DELETE 정리 엔드포인트를 그대로 재사용함.
+router.post('/video-studio/remove-watermark', upload.single('video'), async (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ error: '영상 파일이 필요해요.' })
+    }
+    fs.mkdirSync(GENERATED_DIR, { recursive: true })
+    const fileName = `${crypto.randomUUID()}.mp4`
+    const outPath = path.join(GENERATED_DIR, fileName)
+
+    removeWatermark(req.file.path, outPath)
+
+    res.json({ videoUrl: `/generated/${fileName}` })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  } finally {
+    if (req.file) fs.unlink(req.file.path, () => {})
+  }
+})
+
+// 렌더링 결과(mp4/zip)를 다 쓰고 나서 서버 디스크에서 지우는 정리용 - 우리가 만든 이름
+// (UUID.mp4 / UUID.zip)만 허용해서 다른 경로를 못 건드리게 함.
+router.delete('/video-studio/generated/:fileName', (req, res) => {
+  const fileName = req.params.fileName
+  if (!/^[a-f0-9-]{36}\.(mp4|zip)$/i.test(fileName)) {
+    return res.status(400).json({ error: '삭제할 수 없는 파일 이름이에요.' })
+  }
+  const filePath = path.join(GENERATED_DIR, path.basename(fileName))
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: '이미 삭제된 파일이에요.' })
+  }
+  fs.unlinkSync(filePath)
+  res.json({ ok: true })
 })
 
 // 2026-07-27 요청: "쇼츠나 롱폼은 후킹 들어간 썸네일도 추천해주면 안될까", "상품사진을
@@ -156,8 +225,10 @@ router.post('/video-studio/thumbnail-suggest', upload.any(), async (req, res) =>
 그 중 썸네일 배경으로 쓰기 가장 좋은 사진 번호를 하나 골라주세요.
 - 각 문구는 15자 내외로 짧고 강렬하게
 - 과장이나 거짓 정보 없이, 실제 내용에 기반한 궁금증 유발형으로
+- 각 문구마다 sentiment도 같이 정해주세요: 손실·위기·경고성 내용이면 "warning", 기회·성장·꿀팁성
+  내용이면 "opportunity" (색상이 여기에 맞춰 자동으로 빨강/노랑으로 바뀝니다)
 반드시 아래 JSON 형식으로만 답하세요 (다른 설명 없이):
-{"hooks":["문구1","문구2","문구3"],"bestPhotoNumber":1}`
+{"hooks":[{"text":"문구1","sentiment":"warning 또는 opportunity"},{"text":"문구2","sentiment":"..."},{"text":"문구3","sentiment":"..."}],"bestPhotoNumber":1}`
 
     const raw = await callClaude({
       system,
@@ -171,17 +242,78 @@ router.post('/video-studio/thumbnail-suggest', upload.any(), async (req, res) =>
     } catch {
       throw new Error('추천 결과를 해석하지 못했습니다.')
     }
-    const hooks = Array.isArray(parsed.hooks) ? parsed.hooks.slice(0, 3) : []
-    if (hooks.length === 0) throw new Error('후킹 문구를 만들지 못했습니다.')
+    // hooks가 {text,sentiment} 객체 배열이 기본이지만, 혹시 예전처럼 문자열만 왔을 때도
+    // 깨지지 않게 방어(sentiment 없으면 렌더러가 알아서 opportunity로 기본 처리함).
+    const rawHooks = Array.isArray(parsed.hooks) ? parsed.hooks.slice(0, 3) : []
+    if (rawHooks.length === 0) throw new Error('후킹 문구를 만들지 못했습니다.')
+    const hooks = rawHooks.map((h) => (typeof h === 'string' ? h : h.text))
+    const sentiments = rawHooks.map((h) => (typeof h === 'object' && h.sentiment === 'warning' ? 'warning' : 'opportunity'))
     const bestIndex = Number.isInteger(parsed.bestPhotoNumber) ? parsed.bestPhotoNumber - 1 : 0
 
-    const thumbnails = await renderThumbnails(hooks, candidates, bestIndex, aspect)
+    const thumbnails = await renderThumbnails(hooks, candidates, bestIndex, aspect, sentiments)
     res.json({ hooks, thumbnails })
   } catch (err) {
     res.status(400).json({ error: `썸네일 추천 실패: ${err.message}` })
   } finally {
     ;(req.files || []).forEach((f) => fs.unlink(f.path, () => {}))
     for (const p of framePaths) fs.unlink(p, () => {})
+  }
+})
+
+// 2026-08-02 요청: "대사나 나레이션 흐름을 읽고 장면에 맞는 줌/팬/하트 같은 걸 자동으로
+// 넣어줄 수 있을까" - 씬마다 이미 입력해둔 자막/나레이션 텍스트만 보내면, 전체 흐름을 고려해서
+// 장면별 모션+효과를 한 번에 추천해준다. 파일 업로드는 필요 없어서(텍스트만 판단 재료) JSON으로 받음.
+const MOTION_VALUES = ['zoom-in', 'zoom-out', 'pan-left', 'pan-right', 'pan-up', 'pan-down', 'boomerang', 'pan-boomerang', 'rotate', 'none']
+
+router.post('/video-studio/auto-direct', async (req, res) => {
+  try {
+    const scenes = Array.isArray(req.body.scenes) ? req.body.scenes : []
+    if (!scenes.length) throw new Error('연출을 정할 장면이 없어요.')
+
+    const sceneList = scenes
+      .map((s, i) => `${i + 1}. (${s.isVideo ? '영상 씬' : '사진 씬'}) ${s.text?.trim() || '(자막/나레이션 없음)'}`)
+      .join('\n')
+
+    const system = `당신은 유튜브 쇼츠/롱폼 영상 편집 감독입니다. 아래는 영상의 장면별 자막/나레이션
+순서입니다. 전체 흐름(도입-전개-강조-마무리 같은 리듬)을 읽고, 각 장면에 어울리는 카메라 연출을
+정해주세요.
+
+사용 가능한 motion: ${MOTION_VALUES.join(', ')} (zoom-in/out은 강조·긴장감, pan은 시선 이동,
+boomerang 계열은 반전/임팩트, rotate는 눈에 띄는 전환, none은 차분한 장면에)
+효과 effect는 "heart" 또는 "none" - 로맨틱하거나 훈훈하거나 감동적인 내용의 장면에만 "heart"를
+쓰고, 그 외엔 전부 "none"으로 (하트를 남발하면 안 됨 - 전체 장면 중 정말 어울리는 곳에만).
+"영상 씬"이라고 표시된 장면은 이미 자체적으로 움직이는 영상이라 motion은 반드시 "none"으로
+고정하고, effect만 판단하세요.
+
+반드시 아래 JSON 형식으로만 답하세요 (다른 설명 없이, 장면 개수와 순서를 정확히 맞춰서):
+{"directions":[{"motion":"...","effect":"heart 또는 none"}]}`
+
+    const raw = await callClaude({
+      system,
+      messages: [{ role: 'user', content: `장면 목록:\n${sceneList}` }],
+      maxTokens: 800,
+    })
+
+    let parsed
+    try {
+      parsed = JSON.parse(raw.match(/\{[\s\S]*\}/)?.[0] || raw)
+    } catch {
+      throw new Error('연출 추천 결과를 해석하지 못했습니다.')
+    }
+    const rawDirections = Array.isArray(parsed.directions) ? parsed.directions : []
+    if (rawDirections.length === 0) throw new Error('연출을 추천하지 못했습니다.')
+
+    // Claude가 씬 개수를 못 맞추거나 잘못된 값을 주는 경우를 대비 - 장면 수만큼 안전하게 보정.
+    const directions = scenes.map((s, i) => {
+      const d = rawDirections[i] || {}
+      const motion = s.isVideo ? 'none' : (MOTION_VALUES.includes(d.motion) ? d.motion : 'zoom-in')
+      const effect = d.effect === 'heart' ? 'heart' : 'none'
+      return { motion, effect }
+    })
+
+    res.json({ directions })
+  } catch (err) {
+    res.status(400).json({ error: `자동 연출 실패: ${err.message}` })
   }
 })
 

@@ -9,9 +9,11 @@
 // 인스타/틱톡은 번역/현지화 담당(한국어·영어·일본어, 계획서 2장 조직도) 3명이 각자 맡을 수 있게
 // 언어별로 채널을 분리해뒀음 - 일본/영어 채널 확장(해외 벤치마킹 → 현지화) 대비.
 export const PREVIEW_PLATFORMS = [
+  '카드뉴스',
   '블로그(네이버)-인테리어/생활',
   '블로그(네이버)-푸드',
   '블로그(네이버)-여행',
+  '블로그(네이버)-이슈',
   '블로그(구글 Blogger)',
   '스레드',
   '인스타/틱톡',
@@ -19,13 +21,19 @@ export const PREVIEW_PLATFORMS = [
   '인스타/틱톡(일본어)',
   '유튜브(일본어)',
   '유튜브(한국어)',
+  '유튜브(한국어)-모구모구식당',
+  '유튜브(한국어)-경제',
 ]
 
 // 플랫폼별 미리보기 스타일 힌트 (본문 길이 제한, 비율 등 - 실제 각 서비스 사양의 대략적인 참고값)
 export const PLATFORM_PREVIEW_SPECS = {
+  카드뉴스: { bodyMaxLen: 600, aspect: 'square', showHashtagsInline: true },
   '블로그(네이버)-인테리어/생활': { bodyMaxLen: 400, aspect: 'article', showHashtagsInline: false },
   '블로그(네이버)-푸드': { bodyMaxLen: 400, aspect: 'article', showHashtagsInline: false },
   '블로그(네이버)-여행': { bodyMaxLen: 400, aspect: 'article', showHashtagsInline: false },
+  // 2026-07-31: 방송연예/패션뷰티/스포츠/경제 이슈형 블로그 - 실제 뉴스 요약을 참고하는 정보성
+  // 글이라 여행/구글 블로그와 같은 article 형태로 둠
+  '블로그(네이버)-이슈': { bodyMaxLen: 400, aspect: 'article', showHashtagsInline: false },
   '블로그(구글 Blogger)': { bodyMaxLen: 400, aspect: 'article', showHashtagsInline: false },
   스레드: { bodyMaxLen: 120, aspect: 'square', showHashtagsInline: true },
   '인스타/틱톡': { bodyMaxLen: 100, aspect: 'vertical', showHashtagsInline: true },
@@ -35,14 +43,20 @@ export const PLATFORM_PREVIEW_SPECS = {
   // 2026-07-23: 진희님 본인 채널(트롯충전소·감성채널·코코로의 모구모구식당)용 대본 채널 추가
   // 2026-07-24: 쇼츠+롱폼 두 버전을 한 body에 같이 담게 되면서 미리보기 길이 상한을 늘림
   '유튜브(한국어)': { bodyMaxLen: 1500, aspect: 'vertical', showHashtagsInline: false },
+  // 2026-07-30: 모구모구식당은 반전/에피소드 구조 지침이 따로 붙어서 채널을 분리함(promptBuilder.js CHANNEL_TONE 참고)
+  '유튜브(한국어)-모구모구식당': { bodyMaxLen: 1500, aspect: 'vertical', showHashtagsInline: false },
+  // 2026-07-30: 경제 채널(간단경제한스푼·경제해적단 벤치마킹) - 5~10분 롱폼 나레이션이라 길이 상한을 더 넉넉하게 둠
+  '유튜브(한국어)-경제': { bodyMaxLen: 2500, aspect: 'horizontal', showHashtagsInline: false },
 }
 
 // 채널별로 어떤 카테고리(기존 CS링크/벤치마킹 등에서 쓰는 인테리어·생활 / 푸드쇼핑 구분)에 해당하는지
 export function getCategoryForChannel(channel) {
   if (channel === '블로그(네이버)-푸드') return '푸드쇼핑'
   if (channel === '블로그(네이버)-여행') return '여행지'
+  if (channel === '블로그(네이버)-이슈') return '이슈'
   if (channel === '유튜브(일본어)') return '심리학'
-  if (channel === '유튜브(한국어)') return '유튜브 쇼츠'
+  if (channel === '유튜브(한국어)' || channel === '유튜브(한국어)-모구모구식당') return '유튜브 쇼츠'
+  if (channel === '유튜브(한국어)-경제') return '경제'
   return '인테리어/생활용품'
 }
 
@@ -52,7 +66,8 @@ export function isAiDraftChannel(channel) {
   return (
     channel === '스레드' ||
     channel === '블로그(네이버)-여행' ||
-    channel === '유튜브(한국어)' ||
+    channel === '블로그(네이버)-이슈' ||
+    channel.startsWith('유튜브(한국어)') ||
     channel.startsWith('인스타/틱톡')
   )
 }

@@ -9,9 +9,16 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { spawnSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 // 메모리가 작은 환경(예: 무료 호스팅 512MB)에서도 안 죽도록 인코더 부담을 최소화한다.
 const LOW_MEM_ENCODE_ARGS = ['-preset', 'ultrafast', '-threads', '1']
+
+// 2026-08-02: "하트 이펙트도 넣을 수 있을까" 요청 - 씬에 scene.effect === 'heart'가 있으면
+// 투명 배경 하트 PNG(server/assets/effects/heart.png)를 우상단에 살짝 떠오르며 페이드
+// 인/아웃되게 오버레이한다.
+const __dirname = path.dirname(fileURLToPath(import.meta.url))
+const HEART_ASSET = path.join(__dirname, '..', 'assets', 'effects', 'heart.png')
 
 // 로컬 PC에 방금 설치한 ffmpeg는 winget이 PATH에 등록해줘도 이미 켜져 있던 터미널/서버
 // 프로세스는 그 변경을 못 보는 경우가 많아서, 절대 경로를 직접 지정할 수 있게 해둠
@@ -46,7 +53,7 @@ export function ffprobeDuration(file) {
   return parseFloat(res.stdout.toString().trim())
 }
 
-function kenBurnsFilter(motion, frames, fps, w, h, bw) {
+function kenBurnsFilter(motion, frames, fps, w, h, bw, bh) {
   const step = 0.0018
   // pan 씬은 프레임마다 고정 2px씩 이동했는데, 씬 길이(프레임 수)가 길어질수록 실제
   // 이동 가능 범위(iw - iw/1.2)를 넘어서서 화면 끝에서 미세하게 떨리는 현상이 있었다.
@@ -54,6 +61,10 @@ function kenBurnsFilter(motion, frames, fps, w, h, bw) {
   // 혹시 모를 반올림 오차는 clamp(max/min)로 막는다.
   const panRange = bw - bw / 1.2
   const panStep = panRange / Math.max(frames - 1, 1)
+  // 2026-08-01 요청: "위에서 아래로, 반대로도 넣어줘" - pan-left/right와 완전히 같은 원리를
+  // x 대신 y축에 적용함(세로 이동 가능 범위는 가로와 다를 수 있어 bh 기준으로 별도 계산).
+  const panRangeH = bh - bh / 1.2
+  const panStepH = panRangeH / Math.max(frames - 1, 1)
   switch (motion) {
     case 'zoom-out':
       return `zoompan=z='if(eq(on,0),1.3,max(zoom-${step},1.0))':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
@@ -61,6 +72,10 @@ function kenBurnsFilter(motion, frames, fps, w, h, bw) {
       return `zoompan=z=1.2:x='if(eq(on,0),iw-iw/1.2,max(x-${panStep},0))':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
     case 'pan-right':
       return `zoompan=z=1.2:x='if(eq(on,0),0,min(x+${panStep},iw-iw/1.2))':y='ih/2-(ih/1.2/2)':d=${frames}:s=${w}x${h}:fps=${fps}`
+    case 'pan-up':
+      return `zoompan=z=1.2:x='iw/2-(iw/1.2/2)':y='if(eq(on,0),ih-ih/1.2,max(y-${panStepH},0))':d=${frames}:s=${w}x${h}:fps=${fps}`
+    case 'pan-down':
+      return `zoompan=z=1.2:x='iw/2-(iw/1.2/2)':y='if(eq(on,0),0,min(y+${panStepH},ih-ih/1.2))':d=${frames}:s=${w}x${h}:fps=${fps}`
     // "효과 없음"도 줌/팬 없는 zoompan(z=1 고정)으로 만든다 - zoompan 없이 낮은 입력
     // 프레임레이트(1/씬길이) 이미지를 바로 fps 필터로 늘리면 화면이 까맣게 나오는 버그가
     // 있었다(2026-07-19 발견, 심리학 영상에서 "동영상 플레이가 안 되는데" 리포트로 확인).
@@ -217,7 +232,7 @@ function buildImageClip(scene, idx, cfg, tmpDir) {
   // 무료 인스턴스(512MB) 메모리 절약을 위해 오버샘플링 배율을 최소한으로만 둠
   const bw = Math.round(w * 1.2)
   const bh = Math.round(h * 1.2)
-  const zoompan = kenBurnsFilter(scene.motion, frames, fps, w, h, bw)
+  const zoompan = kenBurnsFilter(scene.motion, frames, fps, w, h, bw, bh)
   const postFilter = (zoompan ? `,${zoompan}` : `,scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},fps=${fps}`) + ',format=yuv420p' + textFilter
 
   // 배경(scene.background) + 투명 배경 캐릭터(scene.src, PNG alpha)를 합성한 뒤 같은 방식으로
@@ -410,9 +425,37 @@ function concatWithRotateTransition(clips, transitionDuration, cfg, tmpDir) {
   return { file: out, sceneStarts, totalDuration: cumulative }
 }
 
+// 씬 클립 위에 하트 이미지를 우상단에 살짝 떠오르며 겹쳐 보이게 오버레이한다(scene.effect
+// === 'heart'일 때만 호출). buildImageClip/buildVideoClip은 분기가 많아 내부를 건드리지 않고,
+// 이미 완성된 씬 클립 파일 위에 한 번 더 ffmpeg 패스를 얹는 방식으로 모든 씬 종류(사진/영상)에
+// 동일하게 적용되게 함.
+function applyHeartEffect(clip, cfg, tmpDir, idx) {
+  const { height: h, fps } = cfg
+  const heartH = Math.max(Math.round(h * 0.16), 40)
+  const fadeD = Math.min(0.4, clip.duration / 2)
+  const fadeOutStart = Math.max(clip.duration - fadeD, 0)
+  const marginX = Math.round(h * 0.05)
+  const marginY = Math.round(h * 0.08)
+  const filterComplex =
+    `[1:v]scale=-2:${heartH}:force_original_aspect_ratio=decrease,format=rgba,` +
+    `fade=t=in:st=0:d=${fadeD}:alpha=1,fade=t=out:st=${fadeOutStart}:d=${fadeD}:alpha=1[heart];` +
+    `[0:v][heart]overlay=x='W-w-${marginX}':y='${marginY}+10*sin(t*3)':eval=frame,format=yuv420p[vout]`
+  const out = path.join(tmpDir, `heart_${idx}.mp4`)
+  run([
+    '-i', clip.file,
+    '-loop', '1', '-i', HEART_ASSET,
+    '-t', String(clip.duration),
+    '-filter_complex', filterComplex,
+    '-map', '[vout]',
+    '-r', String(fps), '-an', ...LOW_MEM_ENCODE_ARGS, out,
+  ])
+  return { file: out, duration: clip.duration }
+}
+
 // cfg: { width, height, fps, transitionDuration, transitionType, defaultSceneDuration, audio,
-// audioVolume, scenes: [{ src, duration, motion, text }] }
+// audioVolume, scenes: [{ src, duration, motion, text, effect }] }
 // scenes[].src / cfg.audio 는 전부 로컬 파일 경로여야 함 (원격 URL은 미리 다운로드해서 넘길 것)
+// scenes[].effect === 'heart'면 하트 오버레이를 얹는다(2026-08-02 요청, 모션과 별개 옵션).
 export function renderVideo(cfg, outputPath) {
   cfg.width = cfg.width || 1080
   cfg.height = cfg.height || 1920
@@ -421,7 +464,10 @@ export function renderVideo(cfg, outputPath) {
 
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anyone-shorts-'))
   try {
-    const clips = cfg.scenes.map((scene, idx) => buildImageClip(scene, idx, cfg, tmpDir))
+    const clips = cfg.scenes.map((scene, idx) => {
+      const clip = buildImageClip(scene, idx, cfg, tmpDir)
+      return scene.effect === 'heart' ? applyHeartEffect(clip, cfg, tmpDir, idx) : clip
+    })
     const { file: concatenated, sceneStarts, totalDuration } =
       cfg.transitionType === 'rotate'
         ? concatWithRotateTransition(clips, cfg.transitionDuration, cfg, tmpDir)

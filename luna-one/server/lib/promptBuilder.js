@@ -32,8 +32,8 @@ export const PLATFORM_NAMES = {
 const PLATFORM_RULES = {
   instagram: '인스타그램 캐러셀/피드용. 첫 문장은 강한 후킹, 짧은 문단, 자연스러운 이모지, 마지막에 질문과 해시태그 5~8개.',
   tiktok: '틱톡 게시문과 30~45초 세로영상 대본. 첫 2초 후킹, 짧은 장면 지시, 내레이션, 마지막 행동 유도.',
-  threads: '스레드용 대화체. 5~10줄, 과장하지 말고 의견을 묻는 문장으로 마무리. 모델명·규격·수치를 나열하는 스펙시트 느낌은 절대 쓰지 말고(예: "C425: 2K 실외용" 같은 목록형 금지), 실제로 써봤거나 옆에서 들은 것처럼 "이래서 편하더라" 하는 일상 언어로 1~2가지 장점만 골라서 쉽게 풀어써. 제품 종류가 여러 개여도 전부 나열하지 말고 대표로 한둘만 자연스럽게 언급해.',
-  cards: '카드뉴스. 표지 포함 지정 장수. 각 장은 headline과 body로 구성하며 body는 최대 두 문장.',
+  threads: '스레드용 대화체. 짧고 간단한 문장 위주로, 20대가 부담 없이 훑어볼 수 있게 써. 줄바꿈 기준 5~10줄 사이로만 쓰고(한 문단으로 길게 이어 쓰지 마, 짧은 줄 단위로 끊어서), 본문은 공백 포함 200자를 넘기지 마 - 실제 스레드 앱이 너무 긴 글은 등록 자체가 막힐 수 있음. 과장하지 말고 의견을 묻는 문장으로 마무리. 모델명·규격·수치를 나열하는 스펙시트 느낌은 절대 쓰지 말고(예: "C425: 2K 실외용" 같은 목록형 금지), 실제로 써봤거나 옆에서 들은 것처럼 "이래서 편하더라" 하는 일상 언어로 1~2가지 장점만 골라서 쉽게 풀어써. 제품 종류가 여러 개여도 전부 나열하지 말고 대표로 한둘만 자연스럽게 언급해.',
+  cards: '카드뉴스. 표지 포함 지정 장수. 각 장은 headline(카드 이미지 위에 크게 얹을 짧은 문구)과 body(이미지 위에 함께 얹을 부제, 최대 두 문장)로 구성. 추가로 blogText(네이버 블로그 등에 카드 이미지 사이사이 붙여넣을 설명 문단)도 각 카드마다 따로 써 - headline/body보다 조금 더 자세하게 그 카드 내용을 풀어쓰되, 짧고 간단한 문장 2~3개(공백 포함 150자 이내)로만 써. 장황하게 늘어놓지 말고 핵심만.',
   googleBlog: '구글 블로그용 SEO 글. 제목, 도입, 소제목 3~5개, 본문, 요약.',
   naverBlog: '네이버 블로그용 친근한 정보 글. 검색형 제목, 공감 도입, 소제목, 핵심 요약, 태그 8~12개.',
   youtubeShorts: '유튜브 쇼츠 30~60초 대본(텍스트만, 실제 영상/음성 제작은 아님). 첫 2초 후킹, 5~8개 짧은 장면(화면 지시+내레이션+자막), 마지막 CTA.',
@@ -65,6 +65,12 @@ export const CARD_TREATMENTS = ['normal', 'zoom', 'blur', 'dark', 'zoom-blur']
 const CORE_PRINCIPLES = `당신은 원본 소재를 바탕으로 콘텐츠를 재구성하는 편집자입니다.
 - 원문을 그대로 길게 베끼지 말고 핵심을 요약·재구성하세요.
 - 원문에 없는 사실, 숫자, 인용을 지어내지 마세요.
+- [특히 중요] 원문에 이미 나온 고유명사·구체적 사실(지역명, 상호명, 음식/제품의 정확한 종류,
+  가격, 시간 등)은 절대 다른 것으로 바꾸지 마세요 - 예를 들어 원문이 "제주 흑돼지"면 "근교
+  삼겹살"처럼 다른 지역·다른 음식으로 슬쩍 바꿔 쓰면 안 됩니다. 표현을 자연스럽게 재구성하는
+  것과 사실 자체를 바꾸는 것은 다릅니다. (자연스러움을 위해 원문에 없는 사소한 디테일 - 동행인,
+  날씨, 감상 표현 등 - 을 자연스럽게 곁들이는 건 괜찮지만, 이미 명시된 사실을 다른 사실로
+  대체하면 안 됩니다.)
 - 가격/운영시간/교통편처럼 변할 수 있는 정보는 단정하지 말고 "확인 필요"로 표시하세요.
 - 여러 사람의 후기·경험을 참고할 때는 그대로 복사하지 말고 공통된 패턴과 감정만 추출해 새롭게 쓰세요.
 - 실제 사용자의 개인 경험인 것처럼 거짓 1인칭으로 단정하지 마세요.
@@ -78,7 +84,7 @@ const CORE_PRINCIPLES = `당신은 원본 소재를 바탕으로 콘텐츠를 �
 
 function buildOutputSchema(platform) {
   if (platform === 'cards') {
-    return '{"title":"","cards":[{"page":1,"headline":"","body":"","visual":{"type":"photo 또는 icon","photoIndex":0,"treatment":"normal/zoom/blur/dark/zoom-blur 중 하나 (photo일 때만)","icon":"아이콘 이름 (icon일 때만)"}}]}'
+    return '{"title":"","cards":[{"page":1,"headline":"","body":"","blogText":"블로그 본문용 설명 2~3문장, 150자 이내","visual":{"type":"photo 또는 icon","photoIndex":0,"treatment":"normal/zoom/blur/dark/zoom-blur 중 하나 (photo일 때만)","icon":"아이콘 이름 (icon일 때만)"}}]}'
   }
   return '{"title":"","content":""}'
 }
@@ -103,6 +109,111 @@ function buildSmartEnhanceNote(smartEnhance) {
   return `\n여행 관련 소재라면 다음 실용 정보를 별도 섹션으로 보강하세요 (확인이 필요한 값은 "확인 필요"로 표시): ${items.join(', ')}.`
 }
 
+// 소스 제목에서 뽑은 후보 키워드를 네이버 데이터랩으로 비교해서 더 검색되는 쪽을 알려주는 한 줄
+// (server.js에서 compareSearchTrend 호출 결과로 만들어서 넘겨줌, 없으면 생략 - best-effort)
+function buildTrendNote(trendNote) {
+  if (!trendNote || !trendNote.trim()) return ''
+  return `\n요즘 검색이 더 많이 되는 표현(참고만, 억지로 끼워 맞추지 말고 자연스러울 때만 반영): ${trendNote.trim()}`
+}
+
+// 2026-07-31: "돈벌쥐" 채널 AI 블로그 글쓰기 인터뷰 2건 벤치마킹(진희님 요청) - 게스트들이 공통으로
+// 강조한 방법론을 블로그 계열(naverBlog/googleBlog)에만 반영함.
+// (1) 정보만 나열한 글은 네이버가 덜 밀어주고, 도입부뿐 아니라 문단마다 필자의 경험/의견이
+//     섞여야 노출이 잘 된다는 주장.
+// (2) 제목은 감으로 짓지 말고 핵심 키워드+연관 검색어 조합으로, 그리고 이득형/위협형/궁금형/
+//     비교형/반전형/실행형 6가지 후킹 유형 중 소재에 맞는 걸 의식적으로 골라서 짓는다는 방법론.
+// (3) 원본 자료에 실제 질문(네이버 지식인 등)이 섞여 있으면, 막연한 주제 대신 그 구체적 질문을
+//     소제목으로 삼는 게 검색 노출에 유리하다는 주장.
+const BLOG_SECTION_HOOK_RULE = `[소제목마다 경험/의견 섞기] 도입부에서만 개인 경험을 쓰고 나머지는
+정보 나열로 끝내지 마세요. 소제목으로 나뉘는 각 문단마다 최소 한 문장은 "직접 겪어보니/찾아보니"
+같은 경험담이나 "~것 같다/~라고 생각한다" 같은 주관적 의견을 섞으세요. 순수 정보만 쭉 나열된
+문단이 있으면 안 됩니다 - 이게 딱딱한 정보성 글과 검색 노출이 잘 되는 글의 차이입니다.`
+
+const BLOG_TITLE_RULE = `[제목 작성법]
+1. 먼저 이 글의 핵심 키워드(사람들이 실제로 검색할 단어)를 정하고, 거기에 자연스럽게 붙는 연관
+   검색어 2~3개를 더해서 제목에 최대한 녹이세요 (예: "ESTP 특징 장점 단점 팩폭 여자 남자"처럼
+   키워드를 나열하듯 이어붙이는 스타일도 검색 노출엔 실제로 효과적입니다). 감으로 멋있게 짓지 말고
+   "이 제목으로 검색했을 때 뜨고 싶다"는 키워드 조합을 먼저 생각하세요.
+2. 아래 6가지 후킹 유형 중 이 글 소재에 가장 자연스럽게 맞는 유형 하나를 의식적으로 골라서
+   제목을 지으세요: 이득형(얻는 게 명확: "~하면 좋은 이유"), 위협형(안 하면 손해: "~안 하면
+   이렇게 됩니다"), 궁금형(궁금증 유발: "~인 진짜 이유"), 비교형(둘을 비교: "A vs B, 뭐가
+   나을까"), 반전형(통념 뒤집기: "~인 줄 알았는데 사실은"), 실행형(행동 유도: "지금 바로 ~하는
+   법"). 억지로 안 맞는 유형에 끼워 맞추지 말고, 소재에 가장 클릭하고 싶어지는 유형으로.`
+
+const BLOG_QUESTION_SEED_RULE = `[실제 질문을 소제목으로] 원문 안에 물음표로 끝나는 문장이나 "~는지",
+"~일까요" 같은 질문형 문장(네이버 지식인 등에서 실제로 사람들이 물어본 질문)이 있으면, 그 큰
+주제를 막연하게 다루지 말고 그 구체적인 질문 자체를 소제목으로 삼아서 직접 답하세요 - 막연한
+주제보다 실제 사람들이 물어본 세부 질문에 답하는 글이 검색 노출과 클릭에 훨씬 유리합니다.`
+
+// 2026-07-31: "네이버가 몰래 바꾼 블로그 규칙" 영상 벤치마킹(진희님 요청) - 네이버 검색 결과
+// 위에 "AI 브리핑"(AI 요약)이 뜨는 게 늘면서, 이제 검색 순위보다 "AI가 얼마나 잘 추출해가는가"가
+// 더 중요해졌다는 주장(272건 데이터 분석 + 네이버 공식 가이드 인용). anyone-dashboard의
+// promptBuilder.js와 동일한 5가지 규칙을 그대로 가져옴.
+const BLOG_OPENING_RULE = `[도입부 - AI 요약에서 안 잘리려면] "안녕하세요"나 날씨·안부 얘기로 시작하지
+마세요. 첫 2~3문장 안에 바로 이 글의 핵심 주제와 숫자·근거를 밝히세요(예: "2년차가 알려주는
+월매출 1천만원 만든 방법 세 가지"). 인사말이나 잡담으로 시작하면 AI 요약이 3줄 안에 이 글을
+건너뛰어서 노출 기회 자체를 잃습니다.`
+
+const BLOG_STRUCTURE_DENSITY_RULE = `[소제목 밀도] 본문이 1500자를 넘으면 소제목을 최소 3~4개는
+넣어서 구조를 명확히 나눠주세요 - 소제목 하나 없이 쭉 이어지는 긴 글은 안 됩니다.`
+
+const BLOG_NUMBER_RULE = `[막연한 표현 금지] "맛있었어요", "좋았어요" 같은 막연한 형용사만 쓰지 말고,
+가능한 모든 문장에 실제 숫자(가격·시간·수량·퍼센트 등)를 붙이세요(예: "맛있었어요" 대신 "2인
+기준 32,000원, 웨이팅 평일 10분/주말 40분"). 숫자가 구체적일수록 AI와 독자 모두에게 신뢰를 줍니다.`
+
+const BLOG_PHOTO_TEXT_RULE = `[사진-텍스트 비율] AI는 사진을 못 읽습니다. 사진을 여러 장 언급하거나
+전제로 하는 글이면, 사진 개수만큼 그에 대응하는 설명 문장도 충분히 써서 사진 없이 텍스트만
+읽어도 내용이 다 이해되게 만드세요 - 사진에 설명을 떠넘기지 마세요.`
+
+const BLOG_AI_TONE_BAN_RULE = `[AI 티 나는 문구 금지] "다양한 측면에서 살펴보겠습니다", "~라고 할 수
+있습니다", "종합적으로 고려했을 때" 같은 전형적인 AI 리스트형 문구는 네이버가 감지해서 감점하니
+절대 쓰지 마세요. 그 대신 실제 사람이 쓴 것처럼 구체적이고 개성 있는 표현을 쓰세요.`
+
+function buildBlogMethodNote(platform) {
+  if (platform !== 'naverBlog' && platform !== 'googleBlog') return ''
+  return `\n${BLOG_SECTION_HOOK_RULE}\n\n${BLOG_TITLE_RULE}\n\n${BLOG_QUESTION_SEED_RULE}\n\n${BLOG_OPENING_RULE}\n\n${BLOG_STRUCTURE_DENSITY_RULE}\n\n${BLOG_NUMBER_RULE}\n\n${BLOG_PHOTO_TEXT_RULE}\n\n${BLOG_AI_TONE_BAN_RULE}`
+}
+
+// 2026-07-31 요청: "루나원 대본에도 기사를 넣었을 때 경제로 인식되면 이렇게 대본 짤 수 있게
+// 해줄 수 있어?" - anyone-dashboard의 "유튜브(한국어)-경제" 채널 전용 구조
+// (promptBuilder.js ECONOMY_STRUCTURE_RULE, 진희님이 직접 조사한 "경제학 똑똑" 등 벤치마킹
+// 반영)를 그대로 가져오되, 루나원엔 전용 채널이 따로 없어서(원본 소재 하나로 여러 플랫폼을
+// 한 번에 만드는 구조) 유튜브 대본(youtubeShorts/youtubeLong) 플랫폼에만, 그리고 AI가 원문을
+// 보고 경제/재테크 관련 내용이라고 판단할 때만 조건부로 적용되게 함 - 여행/후기 등 다른 소재로
+// 대본을 만들 때는 이 지침이 끼어들면 안 되므로.
+// 2026-08-01 요청: "경제 역사 등은 이 구조로 만들고 드라마 스타일은 제외" - 적용 범위를
+// 경제/재테크 단독에서 역사(역사적 사건·경제사) 같은 정보성 소재까지 넓히고, 드라마·소설 같은
+// 이야기(픽션) 스타일 콘텐츠는 명시적으로 제외함.
+const ECONOMY_SCRIPT_RULE = `[경제·역사 정보성 소재일 때만 - 구조] 위 원문이 경제·재테크·주식·
+부동산·금리 또는 역사(역사적 사건·경제사) 같은 정보성 내용이라고 판단되면, 아래 구조를 반드시
+따라 대본을 쓰세요. 반대로 드라마·소설처럼 이야기(픽션)를 들려주는 스타일의 콘텐츠면 이 구조를
+적용하지 말고 평소 구조로 쓰세요.
+1. 훅: "오늘은 ~에 대해 알아보겠습니다" 금지. 소재에 가장 잘 맞는 유형 하나를 골라 시작하세요:
+   - 기회비용 후회형: 과거의 평범한 선택과 다른 선택의 결과를 정확한 금액으로 대비시켜("매달
+     50만 원씩 20년간 은행에 넣었으면 1억 7천, 다른 곳에 넣었으면 3억 8천 - 2억 차이") 후회를 자극
+   - 상식파괴형(역설): 당연해 보이는 결과를 뒤집는 실제 상황으로 시작("역대급 실적을 발표한
+     바로 그날 서킷브레이커가 발동됐다 - 왜?")
+   - 일상공감→반전폭로형: 평범한 상황 묘사로 공감시킨 뒤 그게 함정이었음을 폭로
+   - 확신형 명령: "오늘 하루 딱 이 영상 하나만 보세요" 같은 단호한 약속과 명령형으로 시작
+2. 위기를 고조시키세요: 안전하다고 믿는 것(예금, 대기업 취업 등)이 사실 위험하다는 걸 폭로하고,
+   손실을 정확한 수학으로 보여주세요(예: "50% 떨어지면 회복엔 100%가 올라야 한다") - 막연한
+   "많이"가 아니라 정확한 숫자를 쓰세요.
+3. 어려운 개념은 반드시(생략 불가) 일상 비유로 설명하세요 - 비유 없이 전문용어만 나열하면 안
+   됩니다 (예: 여러 종목 묶음 상품 → "과일 바구니 세트", 금리-채권 관계 → "놀이터 시소 게임",
+   포트폴리오 구성 → "폭풍우에도 안 무너지는 금융 요새 짓기").
+4. 실제 사례·데이터로 증명하고, 중간에 통념을 뒤집는 반전을 넣으세요.
+5. 해결책은 "알아서 판단하세요" 같은 추상적 조언 금지 - 의지력에 기대지 않는 구체적 시스템/도구를
+   콕 집어 제시하세요(절세 계좌, 자동 적립식 투자, 자산배분 비율, 부채 상환 순서 등). 가능하면
+   연령별·상황별로 정확한 비율까지 정해주세요.
+6. 숫자로 된 목록으로 정리해 실천 항목으로 마무리하고, 끝은 "인내와 철학" 프레이밍 + "가장 큰
+   리스크는 아무것도 하지 않는 것입니다" 같은 확신형 문장으로 행동을 촉구하세요.
+7. 투자 관련 소재면 "투자 권유가 아니다"는 문구를 자연스럽게 포함하세요.`
+
+function buildEconomyScriptNote(platform) {
+  if (platform !== 'youtubeShorts' && platform !== 'youtubeLong') return ''
+  return `\n${ECONOMY_SCRIPT_RULE}`
+}
+
 function buildExperienceNote(experienceMode, experienceText) {
   if (experienceMode === 'source' && !experienceText) return ''
   if (experienceText) {
@@ -124,6 +235,7 @@ export async function generatePiece({
   experienceText = '',
   smartEnhance = {},
   photos = [],
+  trendNote = '',
 }) {
   const langName = LANGUAGE_NAMES[language] || language
   const rule = PLATFORM_RULES[platform]
@@ -137,7 +249,7 @@ export async function generatePiece({
 말투: ${tone}
 ${platform === 'cards' ? `카드뉴스 장수: ${cardCount}` : ''}
 ${platform === 'cards' ? buildPhotoNote(photos) : ''}
-${buildSmartEnhanceNote(smartEnhance)}${buildExperienceNote(experienceMode, experienceText)}
+${buildSmartEnhanceNote(smartEnhance)}${buildExperienceNote(experienceMode, experienceText)}${buildTrendNote(trendNote)}${buildBlogMethodNote(platform)}${buildEconomyScriptNote(platform)}
 
 반드시 아래 JSON 형식만 출력하세요. 다른 설명은 붙이지 마세요.
 ${buildOutputSchema(platform)}`
@@ -149,7 +261,9 @@ ${buildOutputSchema(platform)}`
   return callClaudeJson({
     system,
     messages: [{ role: 'user', content: userText }],
-    maxTokens: platform === 'cards' ? Math.min(4000, 300 + Number(cardCount) * 220) : (MAX_TOKENS_BY_PLATFORM[platform] || 1200),
+    // 2026-08-02: blogText(카드마다 3~4문장 블로그용 설명) 필드 추가로 카드당 출력량이 늘어서
+    // 장수당 예산을 220→380으로, 상한도 4000→6000으로 올림 (안 그러면 카드 많을 때 JSON이 잘림).
+    maxTokens: platform === 'cards' ? Math.min(6000, 300 + Number(cardCount) * 380) : (MAX_TOKENS_BY_PLATFORM[platform] || 1200),
     maxRetries: 2,
     parse: (text) => {
       const parsed = tryParseJsonLoose(text)

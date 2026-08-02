@@ -22,17 +22,22 @@ import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview
 import { sendTelegramMessage } from '../lib/telegramClient.js'
 import { pickTrendingTopic } from '../lib/threadsSearchClient.js'
 import { pickAvoidingRecent, getRecentDraftTitles, getRecentSourceTags } from '../lib/topicRotation.js'
+import { pickHotIssueCategory, fetchRecentNewsHeadline } from '../lib/naverIssueTrend.js'
 
 const router = Router()
 const WRITER_ROLE = '작성자 (스레드·블로그 AI 초안 생성)'
 const REVIEWER_ROLE = '검수자 (스레드·블로그 팩트체크·과장표현·AI스러움)'
 const TRANSLATOR_ROLE = '번역/현지화 담당 (영어 - 구글 블로그)'
 const GOOGLE_BLOG_CHANNEL = '블로그(구글 Blogger)'
+// 2026-07-31 요청: "방송연예/패션뷰티/스포츠/경제 중 이슈 되는 걸 위주로" - 기존 "일본 숨은
+// 여행지" 전용 채널은 그대로 두고, 별도 채널로 추가함(사용자 결정).
+const ISSUE_BLOG_CHANNEL = '블로그(네이버)-이슈'
 
 // 채널마다 카테고리(다른 화면의 CS링크·벤치마킹 등에서 쓰는 구분값)가 다름
 function getCategoryForChannel(channel) {
   if (channel === '블로그(네이버)-여행') return '여행지'
   if (channel === GOOGLE_BLOG_CHANNEL) return '여행지'
+  if (channel === ISSUE_BLOG_CHANNEL) return '이슈'
   return '인테리어/생활용품'
 }
 
@@ -64,6 +69,15 @@ const TOPIC_POOL = {
     '한국 산간 지역 숨은 명소',
     '한국 섬 여행 숨은 명소',
   ],
+  // naverIssueTrend.js로 실제 최신 뉴스를 못 찾았을 때(NAVER 키 없음/API 실패)의 대체 주제 풀.
+  [ISSUE_BLOG_CHANNEL]: [
+    '요즘 화제인 예능/드라마 이슈 총정리',
+    '요즘 SNS에서 화제인 패션·뷰티 트렌드',
+    '최근 화제가 된 스포츠 뉴스',
+    '요즘 알아두면 좋은 경제 이슈',
+    '요즘 연예계에서 화제가 된 소식',
+    '요즘 뜨는 뷰티템·패션 아이템 트렌드',
+  ],
 }
 
 // 스레드는 실제 좋아요/댓글 반응으로 오늘의 주제를 고름 (2026-07-19 요청). 스레드 검색은
@@ -77,6 +91,28 @@ const THREAD_TOPIC_CANDIDATES = [
   { topic: '어릴 때는 몰랐는데 나중에 이해하게 된 부모님 마음', searchQuery: 'story about understanding parents later in life' },
   { topic: '작은 친절 하나가 오래 기억에 남았던 사연', searchQuery: 'small act of kindness memorable story' },
 ]
+
+// 방송연예/패션뷰티/스포츠/경제 중 요즘 검색량이 제일 높은 카테고리를 찾고, 그 카테고리로
+// 실제 최신 뉴스 헤드라인을 가져와 그대로 주제(topic)+원본 자료(sourceArticle)로 씀 - 실제
+// 이슈를 찾았을 때만 sourceArticle을 채워서 BLOG_QUESTION_SEED_RULE 등 원본 자료 기반 규칙이
+// 같이 적용되게 함. NAVER_CLIENT_ID/SECRET이 없거나 API가 실패하면 고정 주제 풀로 대체.
+async function pickIssueTopic(recentlyUsed) {
+  try {
+    const category = await pickHotIssueCategory()
+    if (!category) throw new Error('카테고리 트렌드를 가져오지 못했어요 (NAVER_CLIENT_ID/SECRET 확인 필요).')
+    const news = await fetchRecentNewsHeadline(category)
+    if (!news) throw new Error(`"${category}" 카테고리 최신 뉴스를 가져오지 못했어요.`)
+    return {
+      topic: news.title,
+      trendNote: `네이버 데이터랩 기준 최근 3일간 검색량이 가장 높은 카테고리: ${category}`,
+      sourceArticle: `[카테고리: ${category}]\n${news.title}\n${news.description}${news.link ? `\n원문 링크: ${news.link}` : ''}`,
+    }
+  } catch (err) {
+    console.error('[thread-blog/auto-run] 이슈 트렌드 확인 실패, 고정 주제 풀로 대체:', err.message)
+    const pool = TOPIC_POOL[ISSUE_BLOG_CHANNEL]
+    return { topic: pickAvoidingRecent(pool, recentlyUsed), trendNote: null, sourceArticle: null }
+  }
+}
 
 async function pickThreadTopic(recentlyUsed) {
   try {
@@ -112,10 +148,16 @@ router.post('/thread-blog/auto-run', async (req, res) => {
 
   let trendNote = null
   let topic
+  let issueSourceArticle = null
   if (channel === '스레드') {
     const picked = await pickThreadTopic(recentlyUsedTopics)
     topic = picked.topic
     trendNote = picked.trendNote
+  } else if (channel === ISSUE_BLOG_CHANNEL) {
+    const picked = await pickIssueTopic(recentlyUsedTopics)
+    topic = picked.topic
+    trendNote = picked.trendNote
+    issueSourceArticle = picked.sourceArticle
   } else {
     const pool = TOPIC_POOL[channel] || TOPIC_POOL['블로그(네이버)-여행']
     topic = pickAvoidingRecent(pool, recentlyUsedTopics)
@@ -135,7 +177,10 @@ router.post('/thread-blog/auto-run', async (req, res) => {
       recentTitles.length > 0
         ? `\n\n[최근에 이미 만든 제목들 - 아래와 겹치지 않는 다른 소재/각도로 새롭게 써줘]\n${recentTitles.map((t) => `- ${t}`).join('\n')}`
         : ''
-    const { system, messages } = buildDraftMessages({ channel, topic: topic + avoidNote })
+    // trendNote는 buildDraftMessages에 안 넘김 - 그 필드의 안내 문구가 "요즘 유튜브에서 반응이
+    // 좋은 패턴"으로 고정돼 있어(promptBuilder.js) 여기서 쓰는 네이버 데이터랩/스레드 반응
+    // 트렌드와 문구가 안 맞음. 아래 저장 시 source 필드에만 기록해 참고용으로 남김(기존 방식 유지).
+    const { system, messages } = buildDraftMessages({ channel, topic: topic + avoidNote, sourceArticle: issueSourceArticle })
     // 작성자 단계가 유일한 관문이라 JSON 파싱이 한 번 깨지면 그 슬롯이 통째로 날아가는 문제가
     // 있었음(2026-07-19 사용자 보고, benchmark.js와 동일) - 최대 2번까지 자동 재시도.
     const draft = await callClaudeJson({

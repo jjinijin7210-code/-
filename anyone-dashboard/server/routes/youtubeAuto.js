@@ -1,14 +1,21 @@
 // ============================================================
-// 유튜브팀 자동 리서치 - 지금은 콘텐츠(영상) 자동 제작까지는 아니고, 여러 나라를 동시에
-// 확인하는 인기 영상 트렌드 리서치만 자동으로 돌려서 benchmark_reports에 쌓아둠
-// (2026-07-19, 3팀 체제 개편 - 유튜브 실제 영상/스크립트 자동 제작은 별도 확장 필요).
+// 유튜브팀 자동 리서치 + 역사경제 영상 자동 제작.
 //
-// 2026-07-19: 일본 유튜브 채널 컨텐츠 방향을 "심리학"으로 확정 (사용자 결정) - 검색어 풀을
-// 심리학 콘텐츠 위주로 바꾸고, 담당 리서처도 심리학 특화로 이름 변경.
+// 2026-07-19: 원래 "유튜브(일본어)" 채널을 "심리학" 콘텐츠로 운영했었음(사용자 결정) - 검색어
+// 풀/대본 톤이 전부 심리학 위주였음.
 //
-// 2026-07-19 (같은 날 추가 변경, 사용자 결정): 심리학 안에서도 시니어 세대가 공감할 만한
-// "가족 간 심리"(자식과의 관계, 부부/배우자와의 관계 등)로 더 좁힘 - 범용 심리학 팩트보다
-// 반응이 좋을 거라 판단.
+// 2026-07-30: "심리학 올릴 채널이 없다"는 이유로 심리학 콘텐츠를 완전히 접고(사용자 결정),
+// 대신 진희님 본인 채널 중 하나인 "유튜브(한국어)-경제"를 위한 **역사경제 콘텐츠**로 이 파이프라인
+// 전체를 새로 짬 - "역사는 반복된다" 컨셉으로, 과거 경제 위기/사건을 오늘날과 연결짓는 다큐 톤.
+// 대본 구조는 두 벤치마킹을 결합함:
+// 1. 진희님이 직접 고른 경제 채널 10개(간단경제한스푼·경제해적단) → promptBuilder.js의
+//    ECONOMY_STRUCTURE_RULE(수동 "AI 초안 생성" 버튼용 텍스트 대본에 이미 반영돼 있음)
+// 2. 진희님이 "이거다!"라고 확정한 "더타임" 채널(역사 미스터리 다큐) 3편 실제 분석 →
+//    server/lib/historyEconomyScript.js의 감각후킹→반전→숫자충격→가설붕괴→오늘날연결 구조
+// 영상 제작(TTS+AI 일러스트+영상 합성)은 코코로 마스코트/일본어 번역 없이 역사경제 다큐용으로
+// 새로 만든 server/lib/historyEconomyVideoGenerator.js를 씀 - 마스코트 대신 포인트마다 AI가
+// 그린 다큐풍 일러스트(실존 인물 얼굴 그대로 재현 금지), 줌인/줌아웃 랜덤 효과(뉴머니 채널
+// 벤치마킹 - "매번 랜덤이라 천편일률적으로 안 보인다"는 이유).
 // ============================================================
 
 import { Router } from 'express'
@@ -16,10 +23,9 @@ import crypto from 'node:crypto'
 import { getSupabaseAdmin } from '../lib/supabaseAdmin.js'
 import { setEmployeeStatus } from '../lib/employeeStatusSync.js'
 import { startAutomationRun, finishAutomationRun } from '../lib/automationLog.js'
-import { searchPopularVideosMultiRegion, getTopComments, extractYoutubeVideoId } from '../lib/youtubeClient.js'
+import { searchPopularVideosMultiRegion } from '../lib/youtubeClient.js'
 import { sendTelegramMessage } from '../lib/telegramClient.js'
-import { generatePsychologyVideo } from '../lib/psychologyVideoGenerator.js'
-import { searchRedditStories, formatRedditStoriesForPrompt } from '../lib/redditClient.js'
+import { generateHistoryEconomyVideo } from '../lib/historyEconomyVideoGenerator.js'
 import { runReviewStages, reviseUntilPassOrGiveUp } from '../lib/reviseAndReview.js'
 import { callClaude } from '../lib/anthropicClient.js'
 import { buildMarketAnalysisMessages } from '../lib/marketAnalysis.js'
@@ -27,71 +33,57 @@ import { saveMarketInsight, getLatestMarketInsight } from '../lib/marketInsights
 import { pickAvoidingRecent, getRecentDraftTitles, getRecentSourceTags } from '../lib/topicRotation.js'
 
 const router = Router()
-const RESEARCHER_ROLE = '심리학 콘텐츠 리서처 (일본 채널 · 다지역 인기 영상 검색)'
-const VIDEO_ROLE = '영상 제작 담당 (심리학 유튜브)'
-// 2026-07-19: 크로스마켓 비교는 우선 미국·일본으로 한정 - 상용화 단계에서 한국/영국/프랑스 등
-// 더 많은 나라로 넓히기로 함(사용자 결정, 지금은 스코프 최소화).
-// 2026-07-26: 콘텐츠 반복 문제 해결하면서 사용자 요청으로 예정대로 확장 - 처음엔 한국/영국/
-// 프랑스만 추가했다가, "세계로 넓히자"는 추가 요청으로 대륙별로 고르게 더 넓힘(북미·유럽·아시아·
-// 남미). 나라가 늘어나면 리서치 결과(benchmark_reports) 자체의 다양성도 늘어서 심리학 영상
-// 참고자료가 덜 겹치는 효과도 같이 있음. YouTube Data API 쿼터는 나라 하나당 검색 1회(약 100
-// 유닛)라 8개면 실행 1번에 약 800유닛 - 하루 10,000 기본 쿼터 안에서 여유 있음.
+const RESEARCHER_ROLE = '역사경제 콘텐츠 리서처 (다지역 인기 영상 검색)'
+const VIDEO_ROLE = '영상 제작 담당 (역사경제 유튜브)'
+// 나라별 검색은 "요즘 어떤 역사/경제 다큐 형식이 뜨는지" 참고용 - 실제 대본 언어(한국어)와는
+// 무관하게, 다양한 시장의 트렌드를 넓게 보려고 유지함(심리학 때부터 있던 구조 그대로 재사용).
 const REGIONS = ['US', 'JP', 'KR', 'GB', 'FR', 'DE', 'BR', 'IN']
-const YOUTUBE_CHANNEL = '유튜브(일본어)'
+const YOUTUBE_CHANNEL = '유튜브(한국어)-경제'
+const CATEGORY = '경제'
 
-// 소재가 마르지 않도록 돌아가면서 검색할 주제 후보 (매번 랜덤으로 하나 고름)
-// 2026-07-19: 범용 심리학 팩트 대신 "가족 간 심리"(자식·배우자와의 관계)로 좁힘(사용자 결정)
-// 2026-07-26: 후보가 6개뿐이라 반복된다는 피드백(사용자 보고) - 같은 방향성 안에서 후보를 늘림.
+// 소재가 마르지 않도록 돌아가면서 검색할 주제 후보 (매번 랜덤으로 하나 고름, 다지역 검색이라 영어)
 const QUERY_POOL = [
-  'family relationship psychology',
-  'parents and adult children psychology',
-  'marriage relationship psychology advice',
-  'why adult children distance from parents psychology',
-  'psychology of aging parents relationship',
-  'wife husband relationship psychology',
-  'sibling relationship psychology',
-  'empty nest syndrome psychology',
-  'in-law relationship psychology',
-  'grandparent grandchildren relationship psychology',
+  'stock market crash history documentary',
+  'economic bubble collapse history',
+  'hyperinflation history explained',
+  'financial crisis history documentary',
+  'great depression documentary',
+  'currency collapse history',
+  'bank run history explained',
+  'economic collapse civilization history',
+  'gold standard history economics',
+  'trade war history economics',
 ]
 
-// 일본은 한국이랑 생활상이 비슷한 부분이 많다는 판단(사용자 결정, 2026-07-19)으로, 일본 자료가
-// 부족해도 한국에서 사람들이 실제로 많이 겪는 고민/걱정 콘텐츠를 벤치마킹 삼아 심리학 채널
-// 주제를 잡는다. 이 결과도 category='심리학'으로 저장되어 psychology-video-run의 참고자료에
-// 자동으로 같이 실린다.
-// 2026-07-19: 가족/부부 관계 고민으로 좁힘(사용자 결정)
-// 2026-07-26: 후보가 6개뿐이라 반복된다는 피드백(사용자 보고) - 같은 방향성 안에서 후보를 늘림.
-const KR_WORRY_QUERY_POOL = [
-  '자식과 소통 안되는 부모 심리',
-  '노후 부부관계 심리',
-  '자녀와의 갈등 심리학',
-  '황혼이혼 부부 심리',
-  '부모 자식 갈등 심리학',
-  '아내 남편 서운한 마음 심리',
-  '형제자매 갈등 심리',
-  '고부갈등 심리',
-  '손주 육아 갈등 심리',
-  '빈둥지증후군 부모 심리',
+// 한국 자료도 같이 벤치마킹 - 실제 한국어 대본을 쓰는 채널이라 한국 시청자 반응이 더 직접적인
+// 참고가 됨. 이 결과도 category='경제'로 저장되어 history-economy-video-run의 참고자료에 자동
+// 반영됨.
+const KR_HISTORY_QUERY_POOL = [
+  '역사적 경제 위기 다큐',
+  '금융 버블 붕괴 역사',
+  '화폐 개혁 역사 이야기',
+  '대공황 다큐멘터리',
+  '경제 위기 미스터리',
+  '은행 파산 역사',
+  '초인플레이션 역사',
+  '경제 붕괴 문명 역사',
 ]
 
-// 실제 영상 제작용 주제 후보 (스크립트 작성 지시문이라 한글로 구체적으로)
-// 2026-07-19: 시니어 대상 "자식과의 심리", "가족 간 심리", "아내와의 심리" 등 공감형 주제로
-// 전면 교체(사용자 결정) - psychologyScript.js의 대본 톤도 이 방향에 맞춰 함께 조정함.
-// 2026-07-26: 후보가 7개뿐이라 자동 제작이 반복될 때마다 금방 겹친다는 피드백(사용자 보고) -
-// 같은 방향성 안에서 후보를 늘리고, pickAvoidingRecent()로 최근에 실제로 만든 주제는 피해서 뽑음.
+// 실제 영상 제작용 주제 후보 - "역사는 반복된다"(과거 사건 + 오늘날과의 연결)를 제목 자체에
+// 드러내는 구체적 소재로 씀 (더타임 채널의 "~한 진짜 이유" 형식 + 경제 채널들의 구체적 사건명).
 const VIDEO_TOPIC_POOL = [
-  '자식이 연락을 잘 안 하는 이유 - 부모 자녀 심리',
-  '나이 들수록 부부 사이가 멀어지는 심리적 이유',
-  '자녀에게 서운함을 느끼는 부모의 심리',
-  '오래된 부부일수록 대화가 줄어드는 이유',
-  '자식 독립 후 찾아오는 빈둥지 증후군 심리',
-  '배우자에게 인정받고 싶은 마음의 심리학',
-  '가족인데도 자꾸 서운한 이유 - 기대와 애착의 심리',
-  '형제자매인데도 자꾸 비교하게 되는 심리',
-  '며느리·사위를 대하는 마음이 어려운 이유 - 고부간 심리',
-  '손주를 대신 키우며 느끼는 부모 세대의 심리',
-  '나이 들수록 친구가 줄어드는 게 서운한 이유',
-  '자식한테 표현 못하는 부모 마음의 심리학',
+  '1929년 대공황, 사실 이런 식으로 시작됐다 - 오늘날과 닮은 신호들',
+  '로마 제국을 무너뜨린 건 전쟁이 아니라 화폐였다',
+  '튤립 버블, 인류 최초의 투기 광풍이 남긴 교훈',
+  '초인플레이션이 나라를 무너뜨리는 진짜 과정 (바이마르 공화국)',
+  '금본위제는 왜 사라졌을까 - 화폐의 역사가 바뀐 순간',
+  '1997년 IMF, 그날 대한민국에 무슨 일이 있었나',
+  '대항해시대를 만든 건 모험심이 아니라 돈이었다',
+  '역사상 가장 큰 뱅크런, 사람들은 왜 한꺼번에 돈을 빼갔을까',
+  '봉건제가 무너진 진짜 이유, 사실은 경제 구조 때문이었다',
+  '2008년 금융위기, 사실 100년 전에도 똑같은 일이 있었다',
+  '화폐 개혁이 있을 때마다 사라진 사람들의 돈, 어디로 갔을까',
+  '무역전쟁이 문명을 무너뜨린 역사 속 진짜 사례',
 ]
 
 router.post('/youtube/auto-research', async (req, res) => {
@@ -105,9 +97,8 @@ router.post('/youtube/auto-research', async (req, res) => {
   }
 
   const supabase = getSupabaseAdmin()
-  // 2026-07-26: QUERY_POOL이 작아서(원래 6개) 순수 랜덤이면 며칠 안에 같은 검색어가 반복됨 -
-  // 실행 이력(automation_runs.run_type에 검색어가 그대로 심어져 있음)에서 최근 검색어를 뽑아
-  // 최대한 피해서 고름.
+  // QUERY_POOL이 작아서 순수 랜덤이면 며칠 안에 같은 검색어가 반복됨 - 실행 이력
+  // (automation_runs.run_type에 검색어가 그대로 심어져 있음)에서 최근 검색어를 뽑아 피해서 고름.
   const { data: recentRuns } = await supabase
     .from('automation_runs')
     .select('run_type')
@@ -133,29 +124,28 @@ router.post('/youtube/auto-research', async (req, res) => {
         keyword: v.title,
         platform: '유튜브',
         source_type: '공식 API',
-        category: '심리학',
+        category: CATEGORY,
         popularity_score: v.viewCount,
         note: `[자동 리서치] ${v.channelTitle} · 조회수 ${v.viewCount} · 좋아요 ${v.likeCount} · ${v.region} · ${v.url}`,
       })
     }
 
-    // 한국 "고민/걱정" 콘텐츠도 같이 벤치마킹 - 일본 자료가 부족해도 생활상이 비슷한 한국
-    // 콘텐츠를 참고해서 심리학 채널 주제를 잡을 수 있게 (사용자 결정, 2026-07-19)
-    let krWorrySavedCount = 0
+    // 한국 역사경제 콘텐츠도 같이 벤치마킹 - 실제 한국어 대본을 쓰는 채널이라 직접적인 참고가 됨
+    let krSavedCount = 0
     try {
-      const { data: recentWorryReports } = await supabase
+      const { data: recentKrReports } = await supabase
         .from('benchmark_reports')
         .select('note')
         .eq('user_id', targetUserId)
-        .eq('category', '심리학')
-        .ilike('note', '%한국 고민 콘텐츠%')
+        .eq('category', CATEGORY)
+        .ilike('note', '%한국 역사경제 콘텐츠%')
         .order('collected_at', { ascending: false })
         .limit(10)
-      const recentWorryQueries = (recentWorryReports || [])
+      const recentKrQueries = (recentKrReports || [])
         .map((r) => r.note?.match(/검색어:\s*([^)]+)/)?.[1])
         .filter(Boolean)
-      const worryQuery = pickAvoidingRecent(KR_WORRY_QUERY_POOL, recentWorryQueries)
-      const krVideos = await searchPopularVideosMultiRegion({ query: worryQuery, minLikes: 3000, maxResults: 10, regionCodes: ['KR'] })
+      const krQuery = pickAvoidingRecent(KR_HISTORY_QUERY_POOL, recentKrQueries)
+      const krVideos = await searchPopularVideosMultiRegion({ query: krQuery, minLikes: 3000, maxResults: 10, regionCodes: ['KR'] })
       const krTop = krVideos.slice(0, 5)
       for (const v of krTop) {
         await supabase.from('benchmark_reports').insert({
@@ -163,20 +153,19 @@ router.post('/youtube/auto-research', async (req, res) => {
           keyword: v.title,
           platform: '유튜브',
           source_type: '공식 API',
-          category: '심리학',
+          category: CATEGORY,
           popularity_score: v.viewCount,
           // "검색어: xxx" 표식은 위쪽 최근 검색어 중복 방지 로직이 다시 읽어가는 값이라
           // 형식을 바꾸면 안 됨.
-          note: `[한국 고민 콘텐츠 벤치마킹 - 일본어 채널 주제 참고용] (검색어: ${worryQuery}) ${v.channelTitle} · 조회수 ${v.viewCount} · 좋아요 ${v.likeCount} · ${v.url}`,
+          note: `[한국 역사경제 콘텐츠 벤치마킹] (검색어: ${krQuery}) ${v.channelTitle} · 조회수 ${v.viewCount} · 좋아요 ${v.likeCount} · ${v.url}`,
         })
       }
-      krWorrySavedCount = krTop.length
+      krSavedCount = krTop.length
     } catch (krErr) {
-      console.error('[youtube/auto-research] 한국 고민 콘텐츠 검색 실패:', krErr.message)
+      console.error('[youtube/auto-research] 한국 역사경제 콘텐츠 검색 실패:', krErr.message)
     }
 
-    // 나라별 비교 분석 - "미국은 지금 어떤 형식이 인기인가", "일본 썸네일 스타일" 같은 인사이트를
-    // 뽑아서 전 채널(인스타틱톡/스레드블로그/유튜브) 콘텐츠 생성에 참고자료로 쓸 수 있게 저장.
+    // 나라별 비교 분석 - 전 채널(인스타틱톡/스레드블로그/유튜브) 콘텐츠 생성에 참고자료로 쓸 수 있게 저장.
     let insightNote = null
     try {
       const videosByRegion = {}
@@ -199,7 +188,7 @@ router.post('/youtube/auto-research', async (req, res) => {
       `🤖 유튜브팀 트렌드 리서치 (${query})\n\n✅ ${top.length}건 저장됨\n${top.map((v) => `- ${v.title} (${v.region})`).join('\n')}${insightNote ? `\n\n📊 국가 비교 분석\n${insightNote}` : ''}`
     )
 
-    res.json({ ok: true, query, savedCount: top.length, insightNote })
+    res.json({ ok: true, query, savedCount: top.length, krSavedCount, insightNote })
   } catch (err) {
     await setEmployeeStatus(supabase, targetUserId, RESEARCHER_ROLE, '이슈발생', err.message)
     await finishAutomationRun(supabase, run?.id, { status: '이슈발생', errorMessage: err.message })
@@ -208,53 +197,43 @@ router.post('/youtube/auto-research', async (req, res) => {
   }
 })
 
-// 심리학 유튜브 영상 실제 제작 - 대본→포인트별 내레이션(TTS)→이미지(돌려씀)→잔잔한 배경음악까지
-// 합성한 mp4를 만들어 content_drafts에 저장한다. 유튜브 업로드 API 연동은 아직 없어서
+// 역사경제 유튜브 영상 실제 제작 - 대본→포인트별 내레이션(TTS)→AI 일러스트→줌인/줌아웃 랜덤
+// 효과까지 합성한 mp4를 만들어 content_drafts에 저장한다. 유튜브 업로드 API 연동은 아직 없어서
 // (다른 채널들처럼) 발행은 여기 저장된 영상을 진희님이 직접 유튜브에 올리는 방식.
-// 2026-07-19: 우선 workflow_dispatch(수동 트리거)로만 열어두고, 자동 스케줄에는 아직 안 넣음 -
-// 결과 품질/빈도를 사용자가 먼저 확인한 뒤 자동 스케줄 여부를 정하기로 함.
-//
-// 2026-07-23: GitHub Actions에서만 트리거 가능해서 대표님이 매번 github.com 들어가야 했던 게
-// 불편하다는 피드백 - 대시보드에서 바로 누를 수 있는 "심리학 영상 만들기" 버튼도 추가하기로 하고,
-// 실제 생성 로직은 runPsychologyVideoRun()으로 분리해서 두 경로(자동화 토큰 / 대시보드 버튼)가
-// 같이 쓰게 함.
-// customTopic이 있으면(진희님이 소재를 직접 넣은 경우) 그걸 쓰고, 없으면 기존처럼 주제 풀에서 랜덤으로 고름
-async function runPsychologyVideoRun({ videoFormat, customTopic }) {
+// customTopic이 있으면(진희님이 소재를 직접 넣은 경우) 그걸 쓰고, 없으면 주제 풀에서 랜덤으로 고름
+async function runHistoryEconomyVideoRun({ videoFormat, customTopic }) {
   const targetUserId = process.env.AUTO_TARGET_USER_ID
   if (!targetUserId) {
     throw new Error('AUTO_TARGET_USER_ID가 서버 .env에 설정되어 있지 않아요.')
   }
   const supabase = getSupabaseAdmin()
-  // 2026-07-26: VIDEO_TOPIC_POOL이 작아서(원래 7개) 자동 제작을 반복 실행하면 며칠 안에 같은
-  // 주제가 나온다는 피드백(사용자 보고) - source에 심어둔 "주제: xxx" 표식으로 최근에 실제로
-  // 만든 주제를 찾아 최대한 피해서 고름.
+  // source에 심어둔 "주제: xxx" 표식으로 최근에 실제로 만든 주제를 찾아 최대한 피해서 고름.
   const recentlyUsedTopics = customTopic
     ? []
     : await getRecentSourceTags(supabase, targetUserId, { platform: YOUTUBE_CHANNEL, marker: '주제' })
   const topic =
     customTopic && customTopic.trim() ? customTopic.trim() : pickAvoidingRecent(VIDEO_TOPIC_POOL, recentlyUsedTopics)
-  const run = await startAutomationRun(supabase, targetUserId, `심리학 유튜브 영상 제작 (${videoFormat})`, {
-    endpoint: '/api/youtube/psychology-video-run',
+  const run = await startAutomationRun(supabase, targetUserId, `역사경제 유튜브 영상 제작 (${videoFormat})`, {
+    endpoint: '/api/youtube/history-economy-video-run',
     payload: { format: videoFormat },
   })
   await setEmployeeStatus(supabase, targetUserId, VIDEO_ROLE, '작업중', `"${topic}" 주제로 ${videoFormat === 'long' ? '롱폼' : '쇼츠'} 제작 중`)
 
   try {
-    // 진희님이 벤치마킹 리포트에 직접 추가한 심리학 참고 링크(category='심리학')가 있으면
+    // 진희님이 벤치마킹 리포트에 직접 추가한 역사경제 참고 링크(category='경제')가 있으면
     // 스타일/각도 참고 자료로 대본 생성에 반영 (원문 번역/복사 금지 - promptBuilder와 같은 원칙)
     const { data: references } = await supabase
       .from('benchmark_reports')
       .select('keyword, note')
       .eq('user_id', targetUserId)
-      .eq('category', '심리학')
+      .eq('category', CATEGORY)
       .order('collected_at', { ascending: false })
       .limit(5)
     const linkNote = references?.length ? references.map((r) => `- ${r.keyword}: ${r.note}`).join('\n') : ''
     // 국가별 비교 분석(있으면)도 같이 참고자료로 넣어서 포맷/스타일 결정에 반영
     const marketNote = await getLatestMarketInsight(supabase, targetUserId)
-    // 2026-07-26: 주제가 겹치지 않아도 대본 각도가 비슷할 수 있어서, 최근에 실제로 만든 영상
-    // 제목을 넣어 다른 각도로 쓰도록 명시 지시(참고자료가 겹쳐도 걸리는 마지막 방어선,
-    // benchmark.js/threadBlogAuto.js와 동일 원리).
+    // 주제가 겹치지 않아도 대본 각도가 비슷할 수 있어서, 최근에 실제로 만든 영상 제목을 넣어
+    // 다른 각도로 쓰도록 명시 지시 (다른 파이프라인과 동일 원리)
     const recentTitles = await getRecentDraftTitles(supabase, targetUserId, { platform: YOUTUBE_CHANNEL, limit: 8 })
     const avoidNote =
       recentTitles.length > 0
@@ -263,39 +242,10 @@ async function runPsychologyVideoRun({ videoFormat, customTopic }) {
     const referenceNote =
       [linkNote, marketNote ? `[국가별 트렌드 비교]\n${marketNote}` : '', avoidNote].filter(Boolean).join('\n\n') || undefined
 
-    // 레딧에서 실제 고민 사연 후보를 찾아서(2026-07-23, "평면적인 정보보다 각색한 사연 소개도
-    // 같이 넣어달라"는 요청) 대본에 각색 소재로 전달 - 못 찾아도(레딧 차단 등) 그냥 진행함(best-effort)
-    const redditStories = await searchRedditStories({ query: topic })
-
-    // 2026-07-23 (같은 요청, 추가): "레딧뿐 아니라 다른 심리학 채널도 이용하면 좋겠다" - 위에서
-    // 리서치팀이 이미 찾아둔 인기 심리학 유튜브 영상(references)의 댓글에서도 사연 소재를 찾는다.
-    // 시청자들이 자기 경험을 댓글로 남기는 경우가 많아서("저희 아들도 딱 이래요...") 사연감이 좋음.
-    let youtubeCommentStories = []
-    try {
-      const videoIds = (references || [])
-        .map((r) => extractYoutubeVideoId(r.note?.match(/https?:\/\/\S+/)?.[0] || ''))
-        .filter(Boolean)
-        .slice(0, 3)
-      for (const videoId of videoIds) {
-        const comments = await getTopComments(videoId, 5)
-        youtubeCommentStories.push(
-          ...comments
-            .filter((c) => c.text && c.text.length > 40) // 너무 짧은 댓글("ㅠㅠ" 등)은 사연으로 못 씀
-            .map((c) => ({ title: '(유튜브 댓글)', body: c.text.slice(0, 800) }))
-        )
-      }
-    } catch (ytErr) {
-      console.error('[psychology-video-run] 유튜브 댓글 수집 실패, 레딧만으로 진행:', ytErr.message)
-    }
-
-    const storyMaterial =
-      formatRedditStoriesForPrompt([...redditStories, ...youtubeCommentStories.slice(0, 5)]) || undefined
-
-    const { fileName, videoUrl: storageUrl, title, hook, hasMusic } = await generatePsychologyVideo({
+    const { fileName, videoUrl: storageUrl, title, hook, hasMusic } = await generateHistoryEconomyVideo({
       topic,
       format: videoFormat,
       referenceNote,
-      storyMaterial,
     })
     const baseUrl = process.env.RENDER_EXTERNAL_URL || 'https://anyone-dashboard-p3an.onrender.com'
     const videoUrl = storageUrl || `${baseUrl}/generated/${fileName}`
@@ -322,7 +272,7 @@ async function runPsychologyVideoRun({ videoFormat, customTopic }) {
         user_id: targetUserId,
         title: finalTitle,
         platform: YOUTUBE_CHANNEL,
-        category: '심리학',
+        category: CATEGORY,
         body: hook,
         images: [
           {
@@ -331,12 +281,12 @@ async function runPsychologyVideoRun({ videoFormat, customTopic }) {
             filename: fileName,
             mime_type: 'video/mp4',
             data_url: videoUrl,
-            note: `심리학 유튜브 ${videoFormat === 'long' ? '롱폼' : '쇼츠'} 자동 생성${hasMusic ? ' (배경음악 포함)' : ' (배경음악 없음)'}`,
+            note: `역사경제 유튜브 ${videoFormat === 'long' ? '롱폼' : '쇼츠'} 자동 생성${hasMusic ? ' (배경음악 포함)' : ' (배경음악 없음)'}`,
             created_at: new Date().toISOString(),
           },
         ],
         hashtags: [],
-        source: `심리학 유튜브 자동 제작 (주제: ${topic})`,
+        source: `역사경제 유튜브 자동 제작 (주제: ${topic})`,
         status: passed ? '통과' : '반려',
         review_opinion: review.reasons.join(' / '),
         reject_reason: passed ? null : review.reasons.join(' / '),
@@ -353,39 +303,39 @@ async function runPsychologyVideoRun({ videoFormat, customTopic }) {
       draftId: savedDraft.id,
     })
     await sendTelegramMessage(
-      `🤖 심리학 유튜브 영상 제작 (${videoFormat === 'long' ? '롱폼' : '쇼츠'})\n\n"${finalTitle}"\n${passed ? '✅ 통과 - 업로드 대기 중' : `⚠️ 반려 - ${review.reasons[0] || '사유 미기재'}`}`
+      `🤖 역사경제 유튜브 영상 제작 (${videoFormat === 'long' ? '롱폼' : '쇼츠'})\n\n"${finalTitle}"\n${passed ? '✅ 통과 - 업로드 대기 중' : `⚠️ 반려 - ${review.reasons[0] || '사유 미기재'}`}`
     )
 
     return { ok: true, draftId: savedDraft.id, status: savedDraft.status, videoUrl }
   } catch (err) {
     await setEmployeeStatus(supabase, targetUserId, VIDEO_ROLE, '이슈발생', err.message)
     await finishAutomationRun(supabase, run?.id, { status: '이슈발생', errorMessage: err.message })
-    await sendTelegramMessage(`🤖 심리학 유튜브 영상 제작 실패\n\n❌ ${err.message}`)
+    await sendTelegramMessage(`🤖 역사경제 유튜브 영상 제작 실패\n\n❌ ${err.message}`)
     throw err
   }
 }
 
-// GitHub Actions(자동화)에서 호출 - AUTO_RUN_SECRET 토큰으로만 인증
-router.post('/youtube/psychology-video-run', async (req, res) => {
+// GitHub Actions/Render Cron(자동화)에서 호출 - AUTO_RUN_SECRET 토큰으로만 인증
+router.post('/youtube/history-economy-video-run', async (req, res) => {
   const { token, format } = req.body || {}
   if (!process.env.AUTO_RUN_SECRET || token !== process.env.AUTO_RUN_SECRET) {
     return res.status(401).json({ error: '인증 토큰이 올바르지 않아요.' })
   }
   try {
-    const result = await runPsychologyVideoRun({ videoFormat: format === 'long' ? 'long' : 'shorts' })
+    const result = await runHistoryEconomyVideoRun({ videoFormat: format === 'shorts' ? 'shorts' : 'long' })
     res.json(result)
   } catch (err) {
     res.status(502).json({ error: err.message })
   }
 })
 
-// 대시보드 "🎬 심리학 영상 만들기" 버튼에서 호출 - 이 사이트 자체가 개인 전용 도구라 다른
-// API(예: /api/draft)처럼 별도 토큰 없이 호출 가능 (2026-07-23 추가).
+// 대시보드 "🎬 역사경제 영상 만들기" 버튼에서 호출 - 이 사이트 자체가 개인 전용 도구라 다른
+// API(예: /api/draft)처럼 별도 토큰 없이 호출 가능.
 // topic을 같이 보내면(진희님이 직접 소재를 넣은 경우) 랜덤 주제풀 대신 그 소재로 만든다.
-router.post('/youtube/psychology-video-run-manual', async (req, res) => {
+router.post('/youtube/history-economy-video-run-manual', async (req, res) => {
   const { format, topic } = req.body || {}
   try {
-    const result = await runPsychologyVideoRun({ videoFormat: format === 'long' ? 'long' : 'shorts', customTopic: topic })
+    const result = await runHistoryEconomyVideoRun({ videoFormat: format === 'shorts' ? 'shorts' : 'long', customTopic: topic })
     res.json(result)
   } catch (err) {
     res.status(502).json({ error: err.message })

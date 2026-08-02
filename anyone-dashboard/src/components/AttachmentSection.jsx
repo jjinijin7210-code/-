@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ATTACHMENT_KINDS as DEFAULT_KINDS, fileToAttachment } from '../lib/attachments'
+import { ATTACHMENT_KINDS as DEFAULT_KINDS, uploadFileToStorage } from '../lib/attachments'
 
 function formatSize(bytes) {
   if (typeof bytes !== 'number') return null
@@ -26,7 +26,7 @@ export default function AttachmentSection({
     if (!file) return
     setError(null)
     try {
-      const attachment = await fileToAttachment(file, kind)
+      const attachment = await uploadFileToStorage(file, kind)
       onChange([...attachments, attachment])
     } catch (err) {
       setError(err.message)

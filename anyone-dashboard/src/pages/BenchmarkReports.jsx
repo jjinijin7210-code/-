@@ -97,6 +97,15 @@ export default function BenchmarkReports() {
     setDnaResult(null)
     setDnaError('')
   }
+  // 2026-07-29: "잘 나가는 썸네일 긁어와서 색상/폰트 벤치마킹" 요청 - 링크 없는 스크린샷도
+  // 루나원 사진 첨부처럼 Ctrl+V로 바로 붙여넣을 수 있게 함 (파일 선택 버튼과 동일하게 동작)
+  const handleDnaPaste = (e) => {
+    const item = [...(e.clipboardData?.items || [])].find((it) => it.type.startsWith('image/'))
+    if (!item) return
+    const file = item.getAsFile()
+    if (!file) return
+    setDnaVideoFile(file)
+  }
   const runDnaAnalysis = async (e) => {
     e.preventDefault()
     if (!dnaChannelUrl.trim() && !dnaVideoFile) return
@@ -604,6 +613,7 @@ ${similarChannel.sampleThumbnails.map((t) => `- ${t.title}`).join('\n')}`
         <h2 className="mb-1 text-sm font-semibold text-ink">🧬 콘텐츠 DNA 분석</h2>
         <p className="mb-2 text-[11px] text-ink/40">
           채널 URL이나 아직 유튜브에 안 올린 영상 파일을 넣으면 AI가 콘텐츠 성격을 분석하고, 비슷한 채널을 찾아서 썸네일·영상 길이·업로드 주기를 벤치마킹해줘요.
+          잘 나가는 썸네일 스크린샷을 붙여넣으면(Ctrl+V) 링크 없이 색상/폰트 스타일만 따로 벤치마킹할 수도 있어요.
         </p>
         <form onSubmit={runDnaAnalysis} className="flex flex-wrap gap-2">
           <input
@@ -621,12 +631,16 @@ ${similarChannel.sampleThumbnails.map((t) => `- ${t.title}`).join('\n')}`
             {dnaLoading ? '분석 중...' : '분석하기'}
           </button>
         </form>
-        <div className="mt-2 flex flex-wrap items-center gap-2">
-          <span className="text-[11px] text-ink/40">또는 영상 파일 바로 넣기:</span>
+        <div
+          className="mt-2 flex flex-wrap items-center gap-2 rounded-md border border-dashed border-ink/15 p-2"
+          onPaste={handleDnaPaste}
+          tabIndex={0}
+        >
+          <span className="text-[11px] text-ink/40">또는 영상 파일·썸네일 스크린샷 바로 넣기 (여기 눌러 Ctrl+V도 가능):</span>
           <input
             key={dnaFileInputKey}
             type="file"
-            accept="video/*"
+            accept="video/*,image/*"
             onChange={(e) => setDnaVideoFile(e.target.files?.[0] || null)}
             className="text-xs"
           />
@@ -677,6 +691,24 @@ ${similarChannel.sampleThumbnails.map((t) => `- ${t.title}`).join('\n')}`
               <p><span className="font-semibold text-ink">타겟:</span> {dnaResult.dna.targetAudience}</p>
               <p><span className="font-semibold text-ink">포맷:</span> {dnaResult.dna.format}</p>
             </div>
+
+            {dnaResult.dna.colorPalette?.length > 0 && (
+              <div className="rounded-lg bg-ink/[0.03] p-3 text-xs text-ink/70">
+                <p className="mb-2 font-semibold text-ink">색상 팔레트</p>
+                <div className="flex flex-wrap gap-2">
+                  {dnaResult.dna.colorPalette.map((c, i) => (
+                    <div key={i} className="flex items-center gap-1.5 rounded-full border border-ink/10 py-1 pl-1 pr-2.5">
+                      <span className="h-4 w-4 rounded-full border border-ink/10" style={{ backgroundColor: c.hex }} />
+                      <span className="font-mono">{c.hex}</span>
+                      <span className="text-ink/40">{c.role}</span>
+                    </div>
+                  ))}
+                </div>
+                {dnaResult.dna.fontStyle && (
+                  <p className="mt-2"><span className="font-semibold text-ink">폰트 스타일:</span> {dnaResult.dna.fontStyle}</p>
+                )}
+              </div>
+            )}
 
             <div>
               <div className="mb-2 flex flex-wrap items-center justify-between gap-2">

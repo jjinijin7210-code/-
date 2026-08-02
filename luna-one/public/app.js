@@ -1,8 +1,60 @@
+// 2026-08-03: 제부 친구에게 보여줄 Render 데모 배포용 접근 코드 게이트. 로컬 실행(서버에
+// DEMO_ACCESS_CODE 없음)에서는 /api/health의 demoMode가 false라 아무 영향 없음.
+// 모든 /api 요청에 코드를 자동으로 붙이려고 fetch를 감싸서 오버라이드함 - 곳곳에 흩어진
+// 개별 fetch("/api/...") 호출을 하나하나 안 고쳐도 되게 하는 방식.
+const ACCESS_CODE_KEY = "luna_access_code";
+const _origFetch = window.fetch.bind(window);
+window.fetch = (input, init = {}) => {
+  const url = typeof input === "string" ? input : input?.url || "";
+  if (url.startsWith("/api/")) {
+    const code = localStorage.getItem(ACCESS_CODE_KEY);
+    if (code) {
+      init = { ...init, headers: { ...(init.headers || {}), "X-Access-Code": code } };
+    }
+  }
+  return _origFetch(input, init);
+};
+
+(async function ensureAccessCode() {
+  try {
+    const health = await (await _origFetch("/api/health")).json();
+    if (health.demoMode && !localStorage.getItem(ACCESS_CODE_KEY)) {
+      const code = prompt("데모 접근 코드를 입력해 주세요:");
+      if (code) localStorage.setItem(ACCESS_CODE_KEY, code.trim());
+    }
+    window.__lunaDemoMode = Boolean(health.demoMode);
+    // whisper.cpp 기반 "영상에서 글 뽑기"는 로컬 전용이라 데모에선 숨김(같은 탭의
+    // "영상 보고 대본 쓰기"는 whisper 없이 되니까 그대로 둠).
+    if (health.demoMode) {
+      const extractVideoBtn = document.getElementById("extractVideo");
+      const inlineGroup = extractVideoBtn?.closest(".inline");
+      if (inlineGroup) {
+        inlineGroup.style.display = "none";
+        const note = document.createElement("p");
+        note.className = "muted";
+        note.textContent = "이 기능(영상 나레이션 텍스트 추출)은 정식 버전에서 제공될 예정이에요.";
+        inlineGroup.after(note);
+      }
+    }
+  } catch { /* 서버 연결 실패 시 그냥 진행 - 기존 health 체크 로직이 별도로 에러 표시함 */ }
+})();
+
 let source = null;
 let generated = null;
 let activeLanguage = "ko";
 let photos = []; // {dataUrl, caption} - 카드뉴스에서 재사용할 실사진, 서버에는 생성 요청 때만 보냄
 let lastVideoFile = null; // 썸네일 추천이 실제 영상 장면을 다시 쓸 수 있게 마지막 업로드한 영상 파일 기억
+let pastedScreenshotFile = null; // 스크린샷 탭에서 Ctrl+V로 붙여넣은 파일 (파일선택 대신 씀)
+let sourceParts = []; // {id, label, title, text}[] - 링크/스크린샷 여러 개를 이어붙여 하나의 원본으로 합칠 때 씀
+
+const SOURCE_TYPE_LABEL = { text: "직접 입력", url: "링크", youtube: "유튜브 자막", screenshot: "스크린샷", ebook: "전자책(PDF)", video: "영상 나레이션", "video-script": "영상 장면 대본" };
+
+function sourcePartLabel(data) {
+  if (data.sourceType === "url" && data.sourceUrl) {
+    try { return `링크: ${new URL(data.sourceUrl).hostname}`; } catch { /* fall through */ }
+  }
+  return SOURCE_TYPE_LABEL[data.sourceType] || "소스";
+}
 
 const $ = s => document.querySelector(s);
 const $$ = s => [...document.querySelectorAll(s)];
@@ -27,7 +79,10 @@ function fileToDataUrl(file) {
 }
 
 async function addPhotoFiles(fileList) {
-  const files = [...fileList].filter(f => f.type.startsWith("image/")).slice(0, Math.max(0, 4 - photos.length));
+  // 2026-07-31 요청: "제한 없애도 문제 없으면" - 4장 제한은 AI 프롬프트/렌더링 로직 어디에도
+  // 안 걸려있는 순수 UI 제약이었어서(promptBuilder.js가 photos.length를 그대로 읽어서 처리)
+  // 그냥 뺌.
+  const files = [...fileList].filter(f => f.type.startsWith("image/"));
   for (const file of files) {
     try { photos.push({ dataUrl: await fileToDataUrl(file), caption: "" }); }
     catch (err) { showError(err.message); }
@@ -58,8 +113,31 @@ window.addEventListener("paste", async (e) => {
   if (!items.length) return; // 이미지가 아니면 원래 붙여넣기(텍스트 등) 그대로 두기
   e.preventDefault();
   const files = items.map(it => it.getAsFile()).filter(Boolean);
+  if (!files.length) return;
+
+  // 스크린샷(글자 읽기) 탭이 열려있을 때 붙여넣으면 대표 사진이 아니라 그 탭으로 보냄
+  const activeTab = $(".tab.active")?.dataset.tab;
+  if (activeTab === "screenshot") {
+    pastedScreenshotFile = files[0];
+    renderPastedScreenshotPreview();
+    return;
+  }
   await addPhotoFiles(files);
 });
+
+function renderPastedScreenshotPreview() {
+  const box = $("#screenshotPastePreview");
+  if (!box) return;
+  if (!pastedScreenshotFile) {
+    box.classList.add("hidden");
+    box.innerHTML = "";
+    return;
+  }
+  const url = URL.createObjectURL(pastedScreenshotFile);
+  box.classList.remove("hidden");
+  box.innerHTML = `<img src="${url}" alt="붙여넣은 스크린샷"><span>붙여넣은 스크린샷 사용 중</span><button type="button" id="clearPastedScreenshot">✕</button>`;
+  $("#clearPastedScreenshot").onclick = () => { pastedScreenshotFile = null; renderPastedScreenshotPreview(); };
+}
 
 function renderPhotoList() {
   const box = $("#photoList");
@@ -82,6 +160,11 @@ function renderPhotoList() {
     const url = photos[Number(btn.dataset.photoCopy)].sourceUrl;
     try { await navigator.clipboard.writeText(url); flash(btn); } catch { showError("주소 복사에 실패했어요."); }
   });
+  // 2026-07-31 요청: "나중에 넣은 사진도 카드마다 추가할 수 있게" - 사진을 올리고 나서
+  // 카드뉴스를 만들었을 수도, 카드뉴스를 만든 뒤에 사진을 더 올렸을 수도 있어서, 사진이
+  // 바뀔 때마다(추가/삭제/설명수정 아님, 목록 자체가 바뀔 때) 이미 떠 있는 카드뉴스의
+  // 사진 선택 줄도 최신 사진 목록으로 다시 그려줌.
+  if (generated) renderLanguage();
 }
 
 function openPhotoZoom(photo, index) {
@@ -119,7 +202,6 @@ async function runPhotoSearch() {
     if (!data.photos.length) { box.innerHTML = `<p class="muted">검색 결과가 없어요.</p>`; return; }
     box.innerHTML = data.photos.map(p => `<button type="button" data-pexels-pick="${encodeURIComponent(p.full)}" title="사진: ${escapeHtml(p.photographer)}"><img src="${p.thumb}" loading="lazy"></button>`).join("");
     $$("[data-pexels-pick]").forEach(btn => btn.onclick = async () => {
-      if (photos.length >= 4) return showError("사진은 최대 4장까지예요.");
       btn.disabled = true;
       try {
         const url = decodeURIComponent(btn.dataset.pexelsPick);
@@ -146,7 +228,7 @@ $("#photoSearchInput")?.addEventListener("keydown", (e) => { if (e.key === "Ente
 $("#clearText").onclick = () => { $("#textTitle").value = ""; $("#textInput").value = ""; };
 $("#clearUrl").onclick = () => { $("#urlInput").value = ""; };
 $("#clearYoutube").onclick = () => { $("#youtubeInput").value = ""; };
-$("#clearScreenshot").onclick = () => { $("#imageInput").value = ""; };
+$("#clearScreenshot").onclick = () => { $("#imageInput").value = ""; pastedScreenshotFile = null; renderPastedScreenshotPreview(); };
 $("#clearVideo").onclick = () => { $("#videoInput").value = ""; };
 $("#clearPdf").onclick = () => { $("#pdfInput").value = ""; };
 
@@ -162,10 +244,15 @@ $("#resetSource").onclick = () => {
   $("#urlInput").value = "";
   $("#youtubeInput").value = "";
   $("#imageInput").value = "";
+  pastedScreenshotFile = null;
+  renderPastedScreenshotPreview();
   $("#videoInput").value = "";
   $("#pdfInput").value = "";
   $("#sourcePreview").classList.add("hidden");
   $("#sourceText").value = "";
+  $("#addSourcePart").classList.add("hidden");
+  sourceParts = [];
+  renderSourceParts();
   $("#photoList").innerHTML = "";
   $("#results").classList.add("hidden");
   $("#resultContent").innerHTML = "";
@@ -184,7 +271,8 @@ fetch("/api/health").then(r=>r.json()).then(data=>{
   localAutomationOn = !!data.localAutomation;
   $("#naverAutomationBox").classList.toggle("hidden", !localAutomationOn);
   const img = data.imageProvider ? " · 카드이미지 ON" : " · 카드이미지 OFF(OPENAI_API_KEY 없음)";
-  $("#health").textContent = `● ${data.provider.toUpperCase()} 모드${img}`;
+  const demo = data.demoMode ? ` · 🧪 데모 버전 (하루 ${data.demoDailyLimit}회 제한)` : "";
+  $("#health").textContent = `● ${data.provider.toUpperCase()} 모드${img}${demo}`;
 }).catch(()=>$("#health").textContent="● 서버 연결 실패");
 
 $("#naverOpenLogin").onclick = async () => {
@@ -197,6 +285,49 @@ $("#naverOpenLogin").onclick = async () => {
     alert(data.message);
   } catch(e) { showError(e.message); }
   finally { btn.disabled = false; }
+};
+
+// 2026-08-01 요청: "노트북LM 워터마크 지우기 나도 할 수 있게 해줘" - 콘텐츠 생성 흐름과는
+// 별개로, 갖고 있는 영상 파일 하나를 그냥 올려서 우측 하단 고정 워터마크만 지우는 독립 도구.
+$("#removeWatermarkBtn").onclick = async () => {
+  const btn = $("#removeWatermarkBtn");
+  const fileInput = $("#watermarkVideoInput");
+  const file = fileInput.files?.[0];
+  if (!file) return showError("영상 파일을 먼저 선택해주세요.");
+  const old = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = "지우는 중… (영상 길이에 따라 시간이 걸려요)";
+  const result = $("#watermarkResult");
+  result.classList.add("hidden");
+  result.innerHTML = "";
+  try {
+    const fd = new FormData();
+    fd.append("video", file);
+    const res = await fetch("/api/watermark/remove", { method: "POST", body: fd });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    result.classList.remove("hidden");
+    result.innerHTML = `
+      <p style="margin:10px 0 6px;font-size:13px;font-weight:700">완성됐어요!</p>
+      <video src="${data.videoUrl}" controls style="max-height:50vh;border-radius:10px;background:#000;width:100%"></video>
+      <div class="inline" style="margin-top:8px">
+        <a class="copy" href="${data.videoUrl}" download>⬇ 다운로드</a>
+        <button type="button" class="copy" id="watermarkDeleteBtn">삭제</button>
+      </div>
+    `;
+    $("#watermarkDeleteBtn").onclick = async () => {
+      const fileName = data.videoUrl.split("/").pop();
+      await fetch(`/api/watermark/${fileName}`, { method: "DELETE" }).catch(() => {});
+      result.classList.add("hidden");
+      result.innerHTML = "";
+    };
+    showError("");
+  } catch (e) {
+    showError(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = old;
+  }
 };
 
 $("#extractUrl").onclick = () => extractJson("/api/extract/url", { url: $("#urlInput").value });
@@ -213,11 +344,11 @@ $("#useText").onclick = () => {
 };
 
 $("#extractOcr").onclick = async () => {
-  const file = $("#imageInput").files[0];
-  if (!file) return showError("스크린샷을 선택해 주세요.");
+  const file = pastedScreenshotFile || $("#imageInput").files[0];
+  if (!file) return showError("스크린샷을 선택하거나 Ctrl+V로 붙여넣어 주세요.");
   setBusy(true, "스크린샷의 글자를 읽고 있어요…");
   try {
-    const fd = new FormData(); fd.append("image", file);
+    const fd = new FormData(); fd.append("image", file); fd.append("lang", $("#ocrLangSelect").value);
     const res = await fetch("/api/extract/ocr", { method:"POST", body:fd });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error);
@@ -294,16 +425,65 @@ function setSource(data) {
   updateCount();
   $("#sourceText").oninput = updateCount;
   showError("");
+  $("#addSourcePart").classList.remove("hidden");
   $("#sourcePreview").scrollIntoView({behavior:"smooth", block:"center"});
 }
 
 function updateCount(){ $("#charCount").textContent = $("#sourceText").value.length.toLocaleString(); }
 
+// 지금 준비된 소스(텍스트 탭이면 textInput, 그 외엔 미리보기)를 목록에 추가하고, 다음 소스를
+// 바로 이어서 넣을 수 있게 입력을 비움. 여러 쇼핑몰 링크·스크린샷을 하나로 합치기 위함.
+$("#addSourcePart").onclick = () => {
+  if (!source) return;
+  const isText = source.sourceType === "text";
+  const title = (isText ? $("#textTitle").value : $("#sourceTitle").textContent).trim();
+  const text = (isText ? $("#textInput").value : $("#sourceText").value).trim();
+  if (text.length < 10) return showError("추가할 내용이 너무 짧아요.");
+
+  sourceParts.push({ id: crypto.randomUUID(), label: sourcePartLabel(source), title, text });
+  renderSourceParts();
+
+  // 다음 소스를 이어서 넣을 수 있게 지금 입력은 비움
+  source = null;
+  $("#textTitle").value = ""; $("#textInput").value = "";
+  $("#sourcePreview").classList.add("hidden");
+  $("#sourceText").value = ""; updateCount();
+  $("#addSourcePart").classList.add("hidden");
+  showError(`"${sourceParts[sourceParts.length-1].label}" 추가했어요. 이어서 다른 링크나 스크린샷을 넣어주세요.`);
+};
+
+function renderSourceParts() {
+  const box = $("#sourceParts");
+  box.innerHTML = sourceParts.map(p => `
+    <div class="source-part-chip">
+      <span><strong>${escapeHtml(p.label)}</strong> · ${escapeHtml(p.title || p.text).slice(0,20)}…</span>
+      <button type="button" data-part-remove="${p.id}">✕</button>
+    </div>`).join("");
+  $$("[data-part-remove]").forEach(btn => btn.onclick = () => {
+    sourceParts = sourceParts.filter(p => p.id !== btn.dataset.partRemove);
+    renderSourceParts();
+  });
+}
+
+// 여러 소스를 합쳐서 하나의 source.text로 - sourceParts가 비어있으면(=추가 안 쓰고 하나만
+// 쓰는 기존 방식) 지금 미리보기 내용을 그대로 씀, 있으면 전부 이어붙임
+function buildCombinedSource() {
+  const current = source ? { ...source, text: $("#sourceText").value.trim() || source.text } : null;
+  if (!sourceParts.length) return current;
+  const parts = current && current.text ? [...sourceParts, { label: sourcePartLabel(current), title: current.title, text: current.text }] : sourceParts;
+  return {
+    title: parts[0].title || parts[0].label,
+    text: parts.map(p => `[출처: ${p.label}]\n${p.text}`).join("\n\n"),
+    sourceType: "combined",
+  };
+}
+
 let generateController = null;
 
 $("#generate").onclick = async () => {
-  if (!source) return showError("먼저 원본 내용을 넣어 주세요.");
-  source.text = $("#sourceText").value.trim();
+  const combined = buildCombinedSource();
+  if (!combined || !combined.text) return showError("먼저 원본 내용을 넣어 주세요.");
+  source = combined;
   const platforms = $$(".platforms input:checked").map(x=>x.value);
   const languages = $$(".languages input:checked").map(x=>x.value);
   if (!platforms.length || !languages.length) return showError("플랫폼과 언어를 하나 이상 선택해 주세요.");
@@ -395,17 +575,36 @@ const PLATFORM_SITE_URL = {
 
 // 카드마다 새 AI 이미지를 만들지 않고, 업로드한 사진(zoom/blur/dark 등으로 재사용) 또는
 // 아이콘으로 배경을 채운다. "AI로 다시 만들기" 버튼은 그래도 안 맞을 때 쓰는 수동 예외.
+// 2026-08-02 요청: "카드뉴스 중간중간 설명을 넣어줄 수 있어?" - 네이버 블로그에 카드 이미지를
+// 붙여넣을 때 이미지 사이사이에 넣을 설명 문단(blogText, 3~4문장)을 카드 이미지 위 headline/body
+// (짧게, 이미지에 그대로 얹힘)와 별도로 만들어서, 이미지 넣을 위치를 명확히 표시해 이어붙임.
+function buildCardsCopyText(cards) {
+  return (cards || []).map((c) => `[카드 ${c.page} 이미지를 여기에 넣으세요]\n\n${c.blogText || c.body || ""}`).join("\n\n");
+}
+
 function renderCardHtml(card, i, total) {
   const v = card.visual || {};
   const photo = v.type === "photo" ? photos[v.photoIndex] : null;
   const bgHtml = photo ? `<div class="news-card-bg treat-${v.treatment||"normal"}" style="background-image:url(${photo.dataUrl})"></div>` : "";
   const iconHtml = !photo ? `<span class="card-icon">${ICON_EMOJI[v.icon]||"⭐"}</span>` : "";
-  return `<div class="news-card" data-card-index="${i}">
-    ${bgHtml}
-    <span class="page">${card.page} / ${total}</span>
-    ${iconHtml}
-    <div><h4>${escapeHtml(card.headline)}</h4><p>${escapeHtml(card.body)}</p></div>
-    <button class="card-image-btn" data-gen-image="${i}" data-hint="${escapeHtml(card.headline||card.body||"")}">🖼 AI로 다시 만들기</button>
+  // 2026-07-31 요청: "카드마다 사진 지정하고, 어디 넣는지 직관적으로 보이게" - AI가 자동으로
+  // 고른 사진/아이콘을 카드 아래 썸네일 줄에서 클릭 한 번으로 바꿔 지정할 수 있게 함.
+  // 업로드한 사진이 없으면(photos.length===0) 고를 게 없으니 아예 안 보여줌.
+  const pickerHtml = photos.length > 0 ? `
+    <div class="card-photo-picker">
+      <button type="button" class="card-photo-thumb icon-thumb${!photo?" selected":""}" data-card-photo="${i}" data-photo-idx="-1" title="아이콘 사용">${ICON_EMOJI[v.icon]||"⭐"}</button>
+      ${photos.map((p,pi)=>`<button type="button" class="card-photo-thumb${photo&&v.photoIndex===pi?" selected":""}" data-card-photo="${i}" data-photo-idx="${pi}" title="사진 ${pi+1} 쓰기"><img src="${p.dataUrl}" alt="사진 ${pi+1}"></button>`).join("")}
+    </div>` : "";
+  return `<div class="card-item">
+    <div class="news-card" data-card-index="${i}">
+      ${bgHtml}
+      <span class="page">${card.page} / ${total}</span>
+      ${iconHtml}
+      <div><h4>${escapeHtml(card.headline)}</h4><p>${escapeHtml(card.body)}</p></div>
+      <button class="card-image-btn" data-gen-image="${i}" data-hint="${escapeHtml(card.headline||card.body||"")}">🖼 AI로 다시 만들기</button>
+    </div>
+    ${pickerHtml}
+    ${card.blogText ? `<p class="card-blogtext">📝 블로그용 설명: ${escapeHtml(card.blogText)}</p>` : ""}
   </div>`;
 }
 
@@ -418,9 +617,18 @@ function renderLanguage() {
     }
     const aiNote = `<p class="ai-note">⚠ AI가 포함된 콘텐츠일 수 있어요. 게시 전 내용을 확인해주세요.</p>`;
     if (key === "cards") {
+      // 2026-07-31 요청: "카드마다 사진 지정하는 거 어디 있는지 안 보인다" - 사진을 아예
+      // 안 올렸으면 카드마다 고를 사진 자체가 없어서 썸네일 줄이 안 뜸(의도된 동작). 그걸
+      // 모르고 헷갈릴 수 있어서, 사진 0장일 땐 위쪽 사진 업로드 칸으로 바로 이동하는 안내
+      // 배너를 대신 보여줌.
+      const photoHint = photos.length === 0
+        ? `<p class="card-photo-hint">📷 사진을 올리면 카드마다 원하는 사진을 직접 골라 넣을 수 있어요. <button type="button" class="card-photo-hint-btn" data-scroll-to-photos>사진 올리러 가기 ↑</button></p>`
+        : ""
       return `<article class="output-card">
-        <div class="output-head"><h3>${PLATFORM_NAMES[key]}</h3><div class="output-actions"><button class="copy" data-copy-cards="${key}">문구 복사</button><button class="copy" data-save-cards="${key}">💾 텍스트로 저장</button><button class="copy" data-save-cards-image="${key}">🖼 이미지로 저장</button></div></div>
+        <div class="output-head"><h3>${PLATFORM_NAMES[key]}</h3><div class="output-actions"><button class="copy" data-copy-cards="${key}">문구 복사</button><button class="copy" data-save-cards="${key}">💾 텍스트로 저장</button><button class="copy" data-save-cards-image="${key}">🖼 이미지 미리보기</button><button class="copy hidden" id="cardsImageDownloadAllTop">⬇ 전체 다운로드</button></div></div>
+        ${photoHint}
         <div class="cards-grid">${(value.cards||[]).map((card,i)=>renderCardHtml(card,i,(value.cards||[]).length)).join("")}</div>
+        <div class="cards-image-preview hidden" id="cardsImagePreview"></div>
         ${aiNote}
       </article>`;
     }
@@ -465,8 +673,7 @@ function renderLanguage() {
   });
   $$("[data-save-cards]").forEach(btn=>btn.onclick=()=>{
     const v = content.cards;
-    const text = (v.cards||[]).map(c=>`${c.page}장\n${c.headline}\n${c.body}`).join("\n\n");
-    downloadText(text, `cards.txt`);
+    downloadText(buildCardsCopyText(v.cards), `cards.txt`);
     flash(btn);
   });
   $$("[data-save-cards-image]").forEach(btn=>btn.onclick=async()=>{
@@ -474,17 +681,52 @@ function renderLanguage() {
     const old = btn.textContent;
     btn.disabled = true; btn.textContent = "이미지 만드는 중…";
     try {
+      const template = $("#cardTemplate")?.value || "neon";
+      const decoration = $("#cardDecoration")?.value || "none";
       const res = await fetch("/api/cards/render-images", {
         method: "POST", headers: {"Content-Type":"application/json"},
-        body: JSON.stringify({ cards: v.cards || [], photos })
+        body: JSON.stringify({ cards: v.cards || [], photos, template, decoration })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
-      data.images.forEach((dataUrl, i) => {
-        const a = document.createElement("a");
-        a.href = dataUrl; a.download = `카드_${i+1}.png`; a.click();
-      });
-      flash(btn);
+      // 2026-07-30 요청: "적용을 한번 해보고 저장을 누르는건 어떨까" - 예전엔 누르자마자 바로
+      // 다운로드까지 됐는데, 스타일이 마음에 드는지 미리 볼 수 있게 미리보기만 먼저 보여주고
+      // 다운로드는 각 이미지의 "다운로드" 버튼을 따로 눌러야 되게 바꿈.
+      const preview = document.getElementById("cardsImagePreview");
+      if (preview) {
+        preview.classList.remove("hidden");
+        preview.innerHTML = `
+          <div class="cards-image-preview-grid">
+            ${data.images.map((dataUrl, i) => `
+              <div class="cards-image-preview-item">
+                <img src="${dataUrl}" alt="카드 ${i+1} 미리보기" />
+                <a class="copy" href="${dataUrl}" download="카드_${i+1}.png">⬇ 다운로드</a>
+              </div>
+            `).join("")}
+          </div>
+        `;
+        // 2026-07-31 요청: "이미지 미리보기 옆에 한번에 다운로드 만들어줘" - 예전엔 미리보기
+        // 패널 안에 전체 다운로드 버튼이 있었는데, 위에 있는(전체 텍스트 저장용) "전체 저장"
+        // 버튼을 대신 눌러서 텍스트만 받는 걸로 헷갈려했음 - "🖼 이미지 미리보기" 버튼 바로
+        // 옆에 있던 자리(처음엔 숨김)에 같은 기능을 노출시켜서 헷갈리지 않게 함.
+        const topBtn = document.getElementById("cardsImageDownloadAllTop");
+        if (topBtn) {
+          topBtn.classList.remove("hidden");
+          topBtn.textContent = `⬇ 전체 다운로드 (${data.images.length}장)`;
+          topBtn.onclick = () => {
+            data.images.forEach((dataUrl, i) => {
+              const a = document.createElement("a");
+              a.href = dataUrl; a.download = `카드_${i+1}.png`; a.click();
+            });
+          };
+        }
+        preview.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      }
+      // 2026-07-31 버그 수정: flash(btn)이 "복사됨"으로 바꿨다가 자기가 기억해둔 old로
+      // 되돌리는데, 그 시점(flash 호출 시점)엔 아직 finally가 실행되기 전이라 btn.textContent가
+      // "이미지 만드는 중…"이었음 - 그래서 1초 뒤 flash의 setTimeout이 버튼 글씨를 다시
+      // "이미지 만드는 중…"으로 덮어써버려 계속 그 상태로 보였음(진희님이 겪은 "계속 만드는
+      // 중" 문제). 이 버튼은 로딩 텍스트를 finally가 이미 관리하므로 flash() 호출 자체를 뺌.
     } catch(e) { showError(e.message); }
     finally { btn.disabled = false; btn.textContent = old; }
   });
@@ -508,8 +750,20 @@ function renderLanguage() {
     finally { btn.disabled = false; btn.textContent = old; }
   });
   $$("[data-copy-cards]").forEach(btn=>btn.onclick=async()=>{
-    const v=content.cards; const text=(v.cards||[]).map(c=>`${c.page}장\n${c.headline}\n${c.body}`).join("\n\n");
-    await copyText(text); flash(btn);
+    const v=content.cards;
+    await copyText(buildCardsCopyText(v.cards)); flash(btn);
+  });
+  $$("[data-scroll-to-photos]").forEach(btn=>btn.onclick=()=>{
+    document.getElementById("cardPhotosBox")?.scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+  $$("[data-card-photo]").forEach(btn=>btn.onclick=()=>{
+    const idx = Number(btn.dataset.cardPhoto);
+    const photoIdx = Number(btn.dataset.photoIdx);
+    const card = content.cards.cards[idx];
+    card.visual = photoIdx >= 0
+      ? { ...card.visual, type: "photo", photoIndex: photoIdx }
+      : { ...card.visual, type: "icon" };
+    renderLanguage();
   });
   $$("[data-gen-image]").forEach(btn=>btn.onclick=async()=>{
     const idx = Number(btn.dataset.genImage);
@@ -558,8 +812,8 @@ function formatGeneratedAsText(generated) {
       } else if (Array.isArray(piece.cards)) {
         if (piece.title) lines.push(piece.title, "");
         piece.cards.forEach((c) => {
-          lines.push(`${c.page}. ${c.headline}`);
-          lines.push(c.body || "");
+          lines.push(`[카드 ${c.page} 이미지를 여기에 넣으세요] ${c.headline}`);
+          lines.push(c.blogText || c.body || "");
           lines.push("");
         });
       } else {

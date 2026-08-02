@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: luna-one-demo
+    runtime: docker
+    dockerfilePath: ./luna-one/Dockerfile
+    dockerContext: ./luna-one
+    plan: free
+    envVars:
+      - key: PORT
+        value: 4174
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: PEXELS_API_KEY
+        sync: false
+      - key: ENABLE_LOCAL_BROWSER_AUTOMATION
+        value: false
+      - key: DEMO_ACCESS_CODE
+        sync: false
+      - key: DEMO_DAILY_LIMIT
+        value: 30

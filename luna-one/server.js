@@ -10,6 +10,7 @@ import os from 'node:os'
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import crypto from 'node:crypto'
 import { installWhisperCpp, downloadWhisperModel, transcribe } from '@remotion/install-whisper-cpp'
 
 // preview_start 등 외부에서 다른 작업 디렉터리로 실행될 수 있어서, cwd에 의존하는 상대경로
@@ -23,7 +24,10 @@ import { generateImage } from './server/lib/imageClient.js'
 import { getPage } from './server/lib/localBrowser.js'
 import { searchPhotos, fetchPhotoAsDataUrl } from './server/lib/pexelsClient.js'
 import { callClaude } from './server/lib/anthropicClient.js'
-import { renderCardsToImages } from './server/lib/cardImageRenderer.js'
+import { renderCardsToImages, CARD_TEMPLATES } from './server/lib/cardImageRenderer.js'
+import { compareSearchTrend } from './server/lib/naverDatalabClient.js'
+import { renderPageHtml } from './server/lib/renderPage.js'
+import { removeWatermark } from './server/lib/watermarkRemover.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 4174)
@@ -65,32 +69,126 @@ app.use(express.json({ limit: '20mb' }))
 app.use(express.static(path.join(__dirname, 'public')))
 
 // ------------------------------------------------------------
+// 2026-08-03 요청: "제부 친구한테 데모로 보여주자" - Render에 배포해서 링크로 공유할 데모
+// 버전용 보호 장치. DEMO_ACCESS_CODE가 설정된 배포(Render)에서만 작동하고, 로컬에서
+// 진희가 직접 쓸 때(env 변수 없음)는 전혀 영향 없음.
+// ------------------------------------------------------------
+const DEMO_ACCESS_CODE = process.env.DEMO_ACCESS_CODE || null
+const DEMO_DAILY_LIMIT = Number(process.env.DEMO_DAILY_LIMIT) || 30
+let demoUsageDate = null
+let demoUsageCount = 0
+
+function requireAccessCode(req, res, next) {
+  if (!DEMO_ACCESS_CODE) return next() // 로컬 실행이면 코드 없이 통과
+  if (req.headers['x-access-code'] === DEMO_ACCESS_CODE) return next()
+  res.status(401).json({ error: '접근 코드가 필요합니다.' })
+}
+
+function demoDailyLimiter(req, res, next) {
+  if (!DEMO_ACCESS_CODE) return next() // 데모 배포가 아니면(로컬) 제한 없음
+  const today = new Date().toISOString().slice(0, 10)
+  if (demoUsageDate !== today) {
+    demoUsageDate = today
+    demoUsageCount = 0
+  }
+  if (demoUsageCount >= DEMO_DAILY_LIMIT) {
+    return res.status(429).json({ error: `데모 버전은 하루 ${DEMO_DAILY_LIMIT}회까지만 사용할 수 있어요. 내일 다시 시도해주세요.` })
+  }
+  demoUsageCount += 1
+  next()
+}
+
+app.use('/api', (req, res, next) => {
+  if (req.path === '/health') return next() // 헬스체크는 접근 코드 없이도 확인 가능해야 함
+  return requireAccessCode(req, res, next)
+})
+
+// 2026-08-01 요청: "노트북LM 워터마크 지우기" - 이 도구가 만든 영상 결과물을 다운로드용으로
+// 잠깐 담아두는 폴더 (anyone-dashboard의 GENERATED_DIR과 동일한 패턴, .gitignore에 등록됨).
+const GENERATED_DIR = path.join(__dirname, 'generated')
+fs.mkdirSync(GENERATED_DIR, { recursive: true })
+app.use('/generated', express.static(GENERATED_DIR))
+
+// ------------------------------------------------------------
 // 원본 소재 추출 - Luna One 시제품의 검증된 로직 그대로 재사용 (AI 비용 없음)
 // ------------------------------------------------------------
+
+// 쇼핑몰 상품 페이지는 검색엔진용으로 <script type="application/ld+json"> 안에 Product
+// schema.org 구조화 데이터(이름/설명/평점/실제 후기)를 거의 항상 심어둔다 - JS 실행 없이도
+// 원본 HTML에 그대로 들어있고, Readability(기사용 휴리스틱이라 상품 페이지에서는 약관/푸터
+// 같은 엉뚱한 블록을 "본문"으로 잘못 고르는 문제가 있음, 2026-07-29 토스쇼핑 실측 확인)보다
+// 훨씬 정확하고 실제 후기까지 얻을 수 있어 최우선으로 시도한다.
+function extractProductJsonLd(html) {
+  const blocks = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)]
+  for (const [, raw] of blocks) {
+    let data
+    try {
+      data = JSON.parse(raw)
+    } catch {
+      continue
+    }
+    const candidates = Array.isArray(data) ? data : data['@graph'] ? data['@graph'] : [data]
+    const product = candidates.find((d) => d && (d['@type'] === 'Product' || (Array.isArray(d['@type']) && d['@type'].includes('Product'))))
+    if (!product?.name) continue
+
+    const lines = [product.name]
+    if (product.description) lines.push(product.description)
+    if (product.aggregateRating) {
+      lines.push(`평점 ${product.aggregateRating.ratingValue} (리뷰 ${product.aggregateRating.reviewCount}개)`)
+    }
+    const reviews = (Array.isArray(product.review) ? product.review : [product.review]).filter((r) => r?.reviewBody)
+    if (reviews.length) {
+      lines.push('[실제 구매 후기 일부]')
+      reviews.slice(0, 5).forEach((r) => lines.push(`- ${r.reviewBody}`))
+    }
+    const text = cleanText(lines.join('\n'))
+    if (text.length < 20) continue
+    return { title: product.name, text: text.slice(0, 30000) }
+  }
+  return null
+}
+
+// html 문자열을 Readability로 파싱해서 {title, text}를 돌려줌. 본문이 80자 미만이면 null
+// (SPA라 빈 껍데기만 온 경우 - 호출하는 쪽에서 headless 렌더링 폴백을 시도하게 함)
+function parseArticleHtml(html, url) {
+  const dom = new JSDOM(html, { url })
+  const article = new Readability(dom.window.document).parse()
+  const text = cleanText(article?.textContent || dom.window.document.body?.textContent || '')
+  if (text.length < 80) return null
+  return { title: article?.title || dom.window.document.title || '제목 없음', text: text.slice(0, 30000) }
+}
+
+// 상품 JSON-LD 우선, 없으면 Readability로 기사 본문 추출을 시도
+function parseHtml(html, url) {
+  return extractProductJsonLd(html) || parseArticleHtml(html, url)
+}
 
 app.post('/api/extract/url', async (req, res) => {
   try {
     const url = validateHttpUrl(req.body.url)
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 LunaOne/1.0',
-        'Accept-Language': 'ko,en;q=0.8',
-      },
-      redirect: 'follow',
-      signal: AbortSignal.timeout(15000),
-    })
-    if (!response.ok) throw new Error(`페이지를 불러오지 못했습니다. (${response.status})`)
-    const html = await response.text()
-    const dom = new JSDOM(html, { url })
-    const article = new Readability(dom.window.document).parse()
-    const text = cleanText(article?.textContent || dom.window.document.body?.textContent || '')
-    if (text.length < 80) throw new Error('본문을 충분히 읽지 못했습니다. 복사해서 넣기를 이용해 주세요.')
-    res.json({
-      title: article?.title || dom.window.document.title || '제목 없음',
-      text: text.slice(0, 30000),
-      sourceUrl: url,
-      sourceType: 'url',
-    })
+    let parsed = null
+
+    // 1차: 빠른 순수 fetch (대부분의 블로그/기사·쇼핑몰 상품 JSON-LD는 이걸로 충분)
+    try {
+      const response = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 LunaOne/1.0', 'Accept-Language': 'ko,en;q=0.8' },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(15000),
+      })
+      if (response.ok) parsed = parseHtml(await response.text(), url)
+    } catch {
+      // 아래 headless 렌더링 폴백으로 넘어감
+    }
+
+    // 2차 폴백: JS로 본문/상품 정보를 그려주는 SPA는 fetch만으론 빈 껍데기라
+    // headless Chromium으로 실제 렌더링한 HTML을 다시 읽어봄 (몇 초 더 걸림)
+    if (!parsed) {
+      const renderedHtml = await renderPageHtml(url)
+      parsed = parseHtml(renderedHtml, url)
+    }
+
+    if (!parsed) throw new Error('본문을 충분히 읽지 못했습니다. 복사해서 넣기를 이용해 주세요.')
+    res.json({ ...parsed, sourceUrl: url, sourceType: 'url' })
   } catch (error) {
     res.status(400).json({ error: error.message })
   }
@@ -116,11 +214,21 @@ app.post('/api/extract/youtube', async (req, res) => {
   }
 })
 
+// 언어를 한꺼번에 여러 개 넣으면 서로 헷갈려서 오히려 인식률이 떨어짐(2026-07-29 실측 -
+// 한글 스크린샷에 일본어 오인식이 섞여나옴) - 화면 언어에 맞는 조합만 골라 쓰게 함
+const OCR_LANG_PRESETS = {
+  ko: ['kor', 'eng'],
+  ja: ['jpn', 'eng'],
+  zh: ['chi_sim', 'eng'],
+  all: ['kor', 'eng', 'jpn', 'chi_sim'],
+}
+
 app.post('/api/extract/ocr', upload.single('image'), async (req, res) => {
   let worker
   try {
     if (!req.file) throw new Error('이미지 파일을 선택해 주세요.')
-    worker = await createWorker(['kor', 'eng', 'jpn', 'chi_sim', 'spa'])
+    const langs = OCR_LANG_PRESETS[req.body.lang] || OCR_LANG_PRESETS.ko
+    worker = await createWorker(langs)
     const result = await worker.recognize(req.file.path)
     const text = cleanText(result.data.text)
     if (text.length < 10) throw new Error('글자를 충분히 읽지 못했습니다. 더 선명한 이미지를 사용해 주세요.')
@@ -162,6 +270,11 @@ app.post('/api/extract/pdf', uploadPdf.single('pdf'), async (req, res) => {
 // (자막 타이밍은 필요 없고 원문 텍스트만 있으면 됨, anyone-dashboard의 자동자막 기능과
 // 같은 whisper.cpp 활용이지만 여기선 순수 텍스트 추출용도). 무료·로컬 - API 비용 없음.
 app.post('/api/extract/video', uploadVideo.single('video'), async (req, res) => {
+  // 2026-08-03: whisper.cpp는 로컬 전용이라 Render 데모 배포엔 못 올림 - 데모에서는
+  // 이 기능만 막고 "정식 버전에서 제공"이라고 안내함(나머지 기능은 그대로 다 됨).
+  if (DEMO_ACCESS_CODE) {
+    return res.status(403).json({ error: '이 기능(영상에서 음성 추출)은 정식 버전에서 제공될 예정이에요.' })
+  }
   let wavPath
   try {
     if (!req.file) throw new Error('영상 파일을 선택해 주세요.')
@@ -344,11 +457,63 @@ ${req.file ? '- 추가로, 보여드린 장면 중 썸네일로 쓰기 가장 �
   }
 })
 
+// 2026-08-01 요청: "노트북LM 워터마크 지우기 나도 할 수 있게 해줘" - 영상 하나 업로드하면
+// 우측 하단 고정 워터마크(기본은 노트북LM 위치)를 지워서 돌려줌. 결과는 GENERATED_DIR에
+// UUID 이름으로 저장하고, 다 쓰면 DELETE로 지울 수 있게 함(anyone-dashboard와 동일 패턴).
+app.post('/api/watermark/remove', uploadVideo.single('video'), async (req, res) => {
+  try {
+    if (!req.file) throw new Error('영상 파일이 필요해요.')
+    const fileName = `${crypto.randomUUID()}.mp4`
+    const outPath = path.join(GENERATED_DIR, fileName)
+    removeWatermark(req.file.path, outPath)
+    res.json({ videoUrl: `/generated/${fileName}` })
+  } catch (error) {
+    res.status(400).json({ error: error.message })
+  } finally {
+    if (req.file?.path) fs.unlink(req.file.path, () => {})
+  }
+})
+
+app.delete('/api/watermark/:fileName', (req, res) => {
+  const fileName = req.params.fileName
+  if (!/^[a-f0-9-]{36}\.mp4$/i.test(fileName)) {
+    return res.status(400).json({ error: '삭제할 수 없는 파일 이름이에요.' })
+  }
+  const filePath = path.join(GENERATED_DIR, path.basename(fileName))
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: '이미 삭제된 파일이에요.' })
+  }
+  fs.unlinkSync(filePath)
+  res.json({ ok: true })
+})
+
 // ------------------------------------------------------------
 // 콘텐츠 생성 - 플랫폼 x 언어 조합마다 따로 호출 (promptBuilder.js 참고)
 // ------------------------------------------------------------
 
-app.post('/api/generate', async (req, res) => {
+// 소스 제목에서 후보 키워드 몇 개를 뽑아 네이버 데이터랩으로 비교, 요즘 더 검색되는 표현을
+// 한 줄로 만든다. NAVER_CLIENT_ID/SECRET이 없거나 비교할 후보가 2개 미만이면 조용히 스킵
+// (콘텐츠 생성 자체를 막으면 안 됨 - anyone-dashboard의 weatherNote/trendNote와 동일 원칙).
+async function deriveTrendNote(title) {
+  if (!process.env.NAVER_CLIENT_ID || !process.env.NAVER_CLIENT_SECRET) return ''
+  if (!title || !title.trim()) return ''
+  const words = [...new Set(title.trim().split(/\s+/).filter((w) => w.length >= 2))].slice(0, 5)
+  if (words.length < 2) return ''
+  try {
+    const ranked = await compareSearchTrend(
+      words.map((w) => ({ label: w, keywords: [w] })),
+      { days: 7 }
+    )
+    const top = ranked[0]
+    if (!top || !top.avgRatio) return ''
+    return `"${top.label}"이(가) 최근 7일간 검색량이 가장 높았어요 (원제목: ${title.trim()})`
+  } catch (err) {
+    console.error('[deriveTrendNote] 네이버 데이터랩 조회 실패, 트렌드 반영 없이 진행:', err.message)
+    return ''
+  }
+}
+
+app.post('/api/generate', demoDailyLimiter, async (req, res) => {
   try {
     const {
       source,
@@ -375,12 +540,14 @@ app.post('/api/generate', async (req, res) => {
       recommendedPlatform: platforms[0],
     }
 
+    const trendNote = hasKey ? await deriveTrendNote(source.title) : ''
+
     const jobs = []
     for (const language of languages) {
       outputs[language] = {}
       for (const platform of platforms) {
         jobs.push(
-          (hasKey ? generatePiece({ source, platform, language, cardCount, tone, experienceMode, experienceText, smartEnhance, photos }) : demoPiece({ source, platform, language, cardCount, photos }))
+          (hasKey ? generatePiece({ source, platform, language, cardCount, tone, experienceMode, experienceText, smartEnhance, photos, trendNote }) : demoPiece({ source, platform, language, cardCount, photos }))
             .then((piece) => {
               outputs[language][platform] = piece
             })
@@ -392,7 +559,7 @@ app.post('/api/generate', async (req, res) => {
     }
     await Promise.all(jobs)
 
-    res.json({ provider: hasKey ? 'claude' : 'demo', result: { summary, outputs } })
+    res.json({ provider: hasKey ? 'claude' : 'demo', result: { summary, outputs, trendNote } })
   } catch (error) {
     res.status(400).json({ error: error.message })
   }
@@ -418,7 +585,7 @@ app.post('/api/photos/fetch', async (req, res) => {
   }
 })
 
-app.post('/api/generate/card-image', async (req, res) => {
+app.post('/api/generate/card-image', demoDailyLimiter, async (req, res) => {
   try {
     const { headline, body, visualHint } = req.body
     if (!process.env.OPENAI_API_KEY) throw new Error('OPENAI_API_KEY가 서버 .env에 설정되어 있지 않아요.')
@@ -436,13 +603,19 @@ app.post('/api/generate/card-image', async (req, res) => {
 // 매번 새 headless 브라우저를 띄우고 끝나면 닫음(routes/*.js의 계정 자동화와 무관).
 app.post('/api/cards/render-images', async (req, res) => {
   try {
-    const { cards, photos } = req.body || {}
+    const { cards, photos, template, decoration } = req.body || {}
     if (!Array.isArray(cards) || cards.length === 0) throw new Error('렌더링할 카드가 없어요.')
-    const images = await renderCardsToImages(cards, photos || [])
+    const images = await renderCardsToImages(cards, photos || [], template, decoration)
     res.json({ images })
   } catch (error) {
     res.status(400).json({ error: `카드 이미지 생성 실패: ${error.message}` })
   }
+})
+
+// 2026-07-30: 카드뉴스 스타일이 하나(네온 그라데이션)뿐이었던 걸 "템플릿을 고를 수 있게"
+// 요청받아 4종으로 늘림 - 프론트에서 선택지를 하드코딩하지 않고 여기서 받아가게 함.
+app.get('/api/cards/templates', (_req, res) => {
+  res.json({ templates: CARD_TEMPLATES })
 })
 
 // ------------------------------------------------------------
@@ -478,6 +651,8 @@ app.get('/api/health', (_req, res) => {
     localAutomation: process.env.ENABLE_LOCAL_BROWSER_AUTOMATION === 'true',
     photoSearch: Boolean(process.env.PEXELS_API_KEY),
     version: '1.0.0',
+    demoMode: Boolean(DEMO_ACCESS_CODE),
+    demoDailyLimit: DEMO_ACCESS_CODE ? DEMO_DAILY_LIMIT : null,
   })
 })
 

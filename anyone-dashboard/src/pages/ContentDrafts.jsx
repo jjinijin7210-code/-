@@ -25,6 +25,7 @@ import {
 import {
   generateDraft,
   generateDraftsFromSource,
+  generateHistoryEconomyVideoNow,
   translateDraft,
   reviewDraftWithAi,
   autoFixAndReview,
@@ -46,7 +47,7 @@ import {
   openThreadsLogin,
   prepareThreadsPost,
 } from '../lib/apiClient'
-import { compressImageFile, fileToDataUrl } from '../lib/attachments'
+import { compressImageFile, fileToDataUrl, uploadDataUrlToStorage } from '../lib/attachments'
 import { LoadingView, ErrorView, EmptyView } from '../components/StateViews'
 
 const STATUS_OPTIONS = ['초안', '검수중', '통과', '반려', '발행완료']
@@ -182,11 +183,12 @@ export default function ContentDrafts() {
   const [sourceModalOpen, setSourceModalOpen] = useState(false)
   const [sourceArticleText, setSourceArticleText] = useState('')
   const [sourceTopic, setSourceTopic] = useState('')
-  const [sourceChannels, setSourceChannels] = useState(['스레드', '블로그(네이버)-푸드'])
+  const [sourceChannels, setSourceChannels] = useState(['카드뉴스', '스레드', '블로그(네이버)-푸드'])
   const [sourceLoading, setSourceLoading] = useState(false)
   const [sourceError, setSourceError] = useState(null)
   const [sourceResults, setSourceResults] = useState([]) // [{channel, title, body, hashtags, error?}]
   const [sourceWeatherNote, setSourceWeatherNote] = useState(null)
+  const [sourceTrendNote, setSourceTrendNote] = useState(null)
   const [sourceSavingChannel, setSourceSavingChannel] = useState(null)
   const [sourceSavedChannels, setSourceSavedChannels] = useState([])
 
@@ -203,6 +205,7 @@ export default function ContentDrafts() {
     setSourceError(null)
     setSourceResults([])
     setSourceWeatherNote(null)
+    setSourceTrendNote(null)
     setSourceSavedChannels([])
   }
 
@@ -223,13 +226,14 @@ export default function ContentDrafts() {
     setSourceError(null)
     setSourceResults([])
     try {
-      const { results, weatherNote } = await generateDraftsFromSource({
+      const { results, weatherNote, trendNote } = await generateDraftsFromSource({
         sourceArticle: sourceArticleText,
         channels: sourceChannels,
         topic: sourceTopic,
       })
       setSourceResults(results)
       setSourceWeatherNote(weatherNote)
+      setSourceTrendNote(trendNote)
     } catch (err) {
       setSourceError(err.message)
     } finally {
@@ -240,13 +244,12 @@ export default function ContentDrafts() {
   const handleSaveSourceResult = async (result) => {
     setSourceSavingChannel(result.channel)
     try {
-      // 서버가 블로그류엔 무료 스톡사진(Pexels)을 이미 찾아서 같이 내려줌 - 첨부 형식(id/size/생성일)만 여기서 맞춰줌
+      // 서버가 블로그류엔 무료 스톡사진(Pexels)을 이미 Storage에 올려서 URL로 내려줌 - 첨부 형식(id/생성일)만 여기서 맞춰줌
       const images = (result.images || []).map((img) => ({
         id: crypto.randomUUID(),
         kind: img.kind,
         filename: img.filename,
         mime_type: img.mime_type,
-        size: img.data_url?.length || 0,
         data_url: img.data_url,
         note: img.note,
         created_at: new Date().toISOString(),
@@ -271,6 +274,33 @@ export default function ContentDrafts() {
       setSourceError(`"${result.channel}" 저장 실패: ${err.message}`)
     } finally {
       setSourceSavingChannel(null)
+    }
+  }
+
+  // "역사경제 영상 만들기" - 2026-07-30, 원래 심리학 채널용이었던 이 자동 영상 제작 버튼을
+  // 심리학 올릴 채널이 없어서 접고(사용자 결정) 대신 "유튜브(한국어)-경제" 채널용 역사경제
+  // 콘텐츠로 새로 붙임 (server/routes/youtubeAuto.js 참고).
+  const [histEconLoading, setHistEconLoading] = useState(false)
+  const [histEconMessage, setHistEconMessage] = useState(null)
+  const [histEconFormat, setHistEconFormat] = useState('long')
+  const [histEconTopic, setHistEconTopic] = useState('')
+
+  const handleGenerateHistoryEconomyVideo = async () => {
+    setHistEconLoading(true)
+    setHistEconMessage(null)
+    try {
+      const result = await generateHistoryEconomyVideoNow({ format: histEconFormat, topic: histEconTopic })
+      setHistEconMessage({
+        type: result.status === '통과' ? 'success' : 'error',
+        text:
+          result.status === '통과'
+            ? `"${result.draftId ? '영상' : ''}" 제작 완료! 콘텐츠 목록에서 확인하고 업로드해주세요. (상태: 통과)`
+            : `제작은 됐는데 AI 검수에서 반려됐어요. 콘텐츠 목록에서 확인해보세요.`,
+      })
+    } catch (err) {
+      setHistEconMessage({ type: 'error', text: err.message })
+    } finally {
+      setHistEconLoading(false)
     }
   }
 
@@ -306,16 +336,11 @@ export default function ContentDrafts() {
     setAiImageError(null)
     try {
       const { dataUrl } = await generateAiImage({ prompt: aiImagePrompt })
-      const attachment = {
-        id: crypto.randomUUID(),
+      const attachment = await uploadDataUrlToStorage(dataUrl, {
         kind: 'image',
         filename: `ai-${Date.now()}.png`,
-        mime_type: 'image/png',
-        size: dataUrl.length,
-        data_url: dataUrl,
         note: aiImagePrompt,
-        created_at: new Date().toISOString(),
-      }
+      })
       setForm((f) => ({ ...f, images: [...(f.images || []), attachment], body: appendAiImageDisclosure(f.body) }))
       setAiImagePrompt('')
     } catch (err) {
@@ -339,16 +364,11 @@ export default function ContentDrafts() {
       const compressed = await compressImageFile(similarRefFile)
       const refDataUrl = await fileToDataUrl(compressed)
       const { dataUrl } = await generateSimilarImage({ imageDataUrl: refDataUrl, prompt: similarPrompt })
-      const attachment = {
-        id: crypto.randomUUID(),
+      const attachment = await uploadDataUrlToStorage(dataUrl, {
         kind: 'image',
         filename: `similar-${Date.now()}.png`,
-        mime_type: 'image/png',
-        size: dataUrl.length,
-        data_url: dataUrl,
         note: `참고 사진 기반 생성: ${similarPrompt}`,
-        created_at: new Date().toISOString(),
-      }
+      })
       setForm((f) => ({ ...f, images: [...(f.images || []), attachment], body: appendAiImageDisclosure(f.body) }))
       setSimilarRefFile(null)
       setSimilarPrompt('')
@@ -385,17 +405,12 @@ export default function ContentDrafts() {
     setStockError(null)
     try {
       const dataUrl = await fetchPexelsImage(photo.full)
-      const attachment = {
-        id: crypto.randomUUID(),
+      const attachment = await uploadDataUrlToStorage(dataUrl, {
         kind: 'image',
         filename: `pexels-${photo.id}.jpg`,
-        mime_type: 'image/jpeg',
-        size: dataUrl.length,
-        data_url: dataUrl,
-        source_url: photo.full,
         note: `무료 스톡 사진 (Pexels · ${photo.photographer})`,
-        created_at: new Date().toISOString(),
-      }
+      })
+      attachment.source_url = photo.full
       setForm((f) => ({ ...f, images: [...(f.images || []), attachment] }))
     } catch (err) {
       setStockError(err.message)
@@ -965,6 +980,36 @@ export default function ContentDrafts() {
           📰 기사/링크로 한번에 만들기
         </button>
 
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border border-stamp-amber/40 bg-stamp-amber/5 px-3 py-1.5">
+          <span className="text-sm font-semibold text-stamp-amber">🎬 역사경제 영상 만들기</span>
+          <input
+            type="text"
+            value={histEconTopic}
+            onChange={(e) => setHistEconTopic(e.target.value)}
+            placeholder="소재/주제 (비워두면 AI가 알아서 고름)"
+            className="w-64 rounded-md border border-stamp-amber/30 bg-white px-2 py-1 text-xs"
+          />
+          <select
+            value={histEconFormat}
+            onChange={(e) => setHistEconFormat(e.target.value)}
+            className="rounded-md border border-stamp-amber/30 bg-white px-2 py-1 text-xs"
+          >
+            <option value="long">롱폼 (5~10분)</option>
+            <option value="shorts">쇼츠</option>
+          </select>
+          <button
+            onClick={handleGenerateHistoryEconomyVideo}
+            disabled={histEconLoading}
+            className="rounded-md bg-stamp-amber px-3 py-1.5 text-xs font-semibold text-white hover:bg-stamp-amber/90 disabled:opacity-50"
+          >
+            {histEconLoading ? '제작 중... (몇 분 걸려요)' : '만들기'}
+          </button>
+        </div>
+        {histEconMessage && (
+          <p className={`text-xs ${histEconMessage.type === 'success' ? 'text-stamp-pass' : 'text-stamp-reject'}`}>
+            {histEconMessage.text}
+          </p>
+        )}
       </div>
 
       {loading && <LoadingView />}
@@ -1867,6 +1912,7 @@ export default function ContentDrafts() {
         {sourceResults.length > 0 && (
           <div className="mt-4 space-y-3">
             {sourceWeatherNote && <p className="text-[11px] text-ink/40">오늘 날씨 참고: {sourceWeatherNote}</p>}
+            {sourceTrendNote && <p className="text-[11px] text-ink/40">이번 초안에 반영된 트렌드: {sourceTrendNote}</p>}
             {sourceResults.map((r) => (
               <div key={r.channel} className="rounded-lg border border-ink/10 p-3">
                 <div className="mb-1.5 flex items-center justify-between gap-2">

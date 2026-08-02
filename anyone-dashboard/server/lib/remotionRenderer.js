@@ -41,7 +41,7 @@ const WHISPER_MODEL = process.env.WHISPER_MODEL || 'small'
 // whisper.cpp의 토큰 단위(tokenLevelTimestamps) 출력은 한글이 멀티바이트 경계에서 깨지는
 // 문제가 실측으로 확인돼서(예: "주도"가 "주�"+"�"로 쪼개짐), 대신 splitOnWord로 단어 단위
 // 세그먼트를 받아 최상위 text 필드만 사용함 - 이쪽은 완전한 단어라 안 깨짐.
-async function transcribeVoice(voicePath, jobDir) {
+export async function transcribeVoice(voicePath, jobDir) {
   try {
     const wavPath = path.join(jobDir, `${path.basename(voicePath)}-16k.wav`)
     const conv = spawnSync(ffmpegBin(), ['-y', '-hide_banner', '-loglevel', 'error', '-i', voicePath, '-ar', '16000', '-ac', '1', wavPath])
@@ -82,7 +82,7 @@ async function transcribeVoice(voicePath, jobDir) {
 
 // multer가 임시 업로드 파일을 확장자 없이 저장해서, Remotion의 public/ 폴더에 복사할 때
 // 파일 내용(매직 바이트)으로 실제 형식을 알아내야 함 (mimetype을 cfg까지 끌고 오지 않기 위함).
-function sniffExtension(filePath, fallback) {
+export function sniffExtension(filePath, fallback) {
   const buf = Buffer.alloc(12)
   const fd = fs.openSync(filePath, 'r')
   fs.readSync(fd, buf, 0, 12, 0)
@@ -152,6 +152,7 @@ export async function renderVideoRemotion(cfg, outputPath) {
       transitionFrames: Math.max(0, Math.round((cfg.transitionDuration ?? 0.6) * fps)),
       // diagonal은 아직 미구현 - fade로 대체. rotate(포토카드 회전)는 지원.
       transitionType: cfg.transitionType === 'rotate' ? 'rotate' : 'fade',
+      decoration: ['hearts', 'stars', 'ribbon', 'gold'].includes(cfg.decoration) ? cfg.decoration : 'none',
       bgm,
       scenes,
     }

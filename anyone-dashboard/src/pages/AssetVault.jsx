@@ -27,7 +27,8 @@ export default function AssetVault() {
     orderBy: 'created_date',
   })
   const { rows: brands } = useSupabaseTable('brands', { orderBy: 'name', ascending: true })
-  const { rows: drafts } = useSupabaseTable('content_drafts')
+  // images 컬럼(base64)까지 통째로 받아오면 트래픽 낭비라(2026-07-29 이그레스 초과 원인) title만 좁혀서 조회
+  const { rows: drafts } = useSupabaseTable('content_drafts', { select: 'id, title' })
   const confirm = useConfirm()
 
   const brandNames = brands.length > 0 ? brands.map((b) => b.name) : DEFAULT_BRAND_NAMES

@@ -101,6 +101,86 @@ export async function fileToAttachment(file, kind, note = '') {
   }
 }
 
+// ============================================================
+// Supabase Storage 업로드 (2026-07-29) - Supabase 이그레스 할당량 초과(13.9GB/5GB) 원인이
+// fileToAttachment()처럼 사진/영상을 base64로 DB 컬럼에 그대로 저장해서 목록을 열 때마다
+// 통째로 다시 받아오는 방식이었음. fileToAttachment/fileToDataUrl은 순수 base64 변환
+// 함수라 test-attachments.mjs가 그 동작을 그대로 검증하고 있어서 건드리지 않고, 실제
+// DB에 저장될 첨부를 만드는 지점(AttachmentSection, AssetVault, CardNews 등)에서만 아래
+// 함수로 바꿔서 Storage 공개 URL을 담게 함.
+// ============================================================
+
+const API_BASE = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) || ''
+
+// 실제 File 객체를 Supabase Storage에 업로드하고, fileToAttachment()와 동일한 shape의 첨부
+// 레코드를 돌려줌 (data_url 필드에 base64 대신 Storage 공개 URL이 들어감 - 화면 표시 코드는 그대로 재사용 가능)
+export async function uploadFileToStorage(file, kind, note = '') {
+  const target = await compressImageFile(file)
+  const check = validateFile(target)
+  if (!check.ok) throw new Error(check.error)
+  file = target
+
+  try {
+    const formData = new FormData()
+    formData.append('file', file)
+    const res = await fetch(`${API_BASE}/api/upload`, { method: 'POST', body: formData })
+    const data = await res.json().catch(() => ({}))
+    if (res.ok && data.url) {
+      return {
+        id: genId(),
+        kind,
+        filename: data.filename,
+        mime_type: data.mime_type,
+        size: data.size,
+        data_url: data.url,
+        note,
+        created_at: new Date().toISOString(),
+      }
+    }
+  } catch (e) {
+    console.warn('Storage 업로드 폴백 (Base64로 안전 보장):', e)
+  }
+
+  // Storage 할당량 초과 등 서버 오류 시 Base64 로컬 변환으로 100% 안전 처리
+  return fileToAttachment(file, kind, note)
+}
+
+export async function uploadDataUrlToStorage(dataUrl, { kind = 'image', filename, note = '' } = {}) {
+  try {
+    const res = await fetch(`${API_BASE}/api/upload/from-data-url`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dataUrl, filename }),
+    })
+    const data = await res.json().catch(() => ({}))
+    if (res.ok && data.url) {
+      return {
+        id: genId(),
+        kind,
+        filename: filename || data.url.split('/').pop(),
+        mime_type: data.mime_type,
+        size: data.size,
+        data_url: data.url,
+        note,
+        created_at: new Date().toISOString(),
+      }
+    }
+  } catch (e) {
+    console.warn('Storage DataURL 업로드 폴백:', e)
+  }
+
+  return {
+    id: genId(),
+    kind,
+    filename: filename || `img-${Date.now()}.png`,
+    mime_type: 'image/png',
+    size: 0,
+    data_url: dataUrl,
+    note,
+    created_at: new Date().toISOString(),
+  }
+}
+
 // 특정 종류(kind)의 첨부가 하나라도 있는지
 export function hasAttachmentOfKind(attachments, kind) {
   return (attachments || []).some((a) => a.kind === kind)

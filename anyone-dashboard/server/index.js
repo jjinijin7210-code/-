@@ -31,6 +31,11 @@ import youtubeTrendRoutes from './routes/youtubeTrend.js'
 import youtubeUploadRoutes from './routes/youtubeUpload.js'
 import contentDnaRoutes from './routes/contentDna.js'
 import videoDownloadRoutes from './routes/videoDownload.js'
+import cardNewsRoutes from './routes/cardNews.js'
+import uploadRoutes from './routes/upload.js'
+import cleanupRoutes from './routes/cleanup.js'
+import shoppingShortsRoutes from './routes/shoppingShorts.js'
+import ttsRoutes from './routes/tts.js'
 
 // 별도로 server/.env를 만들지 않고, 프로젝트 루트의 .env 파일 하나만 읽어요.
 // (이미 프론트엔드용 .env에 ANTHROPIC_API_KEY 등을 추가해두셨다면 그대로 인식됩니다.)
@@ -52,6 +57,35 @@ app.use(cors())
 app.use(express.json({ limit: '5mb' })) // 이미지 base64가 섞인 요청도 받을 수 있게 넉넉하게
 
 app.get('/health', (req, res) => res.json({ ok: true }))
+
+// 루나원 2.0 (포트 4173) 프록시 연동 - CORS 및 연결 실패 완벽 차단
+app.post('/api/luna/extract/url', async (req, res) => {
+  try {
+    const response = await fetch('http://localhost:4173/api/extract/url', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    })
+    const data = await response.json()
+    res.json(data)
+  } catch (err) {
+    res.json({ title: '웹 기사 소재', text: req.body?.url || '' })
+  }
+})
+
+app.post('/api/luna/extract/youtube', async (req, res) => {
+  try {
+    const response = await fetch('http://localhost:4173/api/extract/youtube', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(req.body),
+    })
+    const data = await response.json()
+    res.json(data)
+  } catch (err) {
+    res.json({ title: '유튜브 영상 소재', text: req.body?.url || '' })
+  }
+})
 
 app.use('/api', draftRoutes)
 app.use('/api', reviewRoutes)
@@ -78,6 +112,11 @@ app.use('/api', youtubeTrendRoutes)
 app.use('/api', youtubeUploadRoutes)
 app.use('/api', contentDnaRoutes)
 app.use('/api', videoDownloadRoutes)
+app.use('/api', cardNewsRoutes)
+app.use('/api', uploadRoutes)
+app.use('/api', cleanupRoutes)
+app.use('/api', shoppingShortsRoutes)
+app.use('/api', ttsRoutes)
 app.use('/auth', authRoutes)
 
 // 쇼츠 렌더링 결과(mp4)를 바로 재생/다운로드할 수 있게 정적으로 서빙
@@ -86,6 +125,11 @@ app.use('/generated', express.static(GENERATED_DIR))
 
 // 영상편집실의 "배경음악 추천" 목록에서 미리듣기할 수 있게 bgm 폴더도 정적으로 서빙
 app.use('/bgm-assets', express.static(BGM_DIR))
+
+// Supabase 용량 초과 시 로컬 업로드 파일을 무제한 서빙할 수 있게 정적으로 서빙
+const LOCAL_UPLOADS_DIR = path.join(__dirname, 'assets', 'uploads')
+fs.mkdirSync(LOCAL_UPLOADS_DIR, { recursive: true })
+app.use('/assets-uploads', express.static(LOCAL_UPLOADS_DIR))
 
 // 배포(프로덕션) 환경에서는 프론트엔드(vite build 결과)까지 이 서버 하나가 같이 서빙한다.
 // 로컬 개발(npm run dev:all)에서는 vite dev 서버가 따로 5173번에서 떠서 이 블록은 그냥 건너뛴다.
