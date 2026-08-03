@@ -59,7 +59,22 @@ router.post('/benchmark/collect', async (req, res) => {
   await setEmployeeStatus(supabase, targetUserId, SOURCING_ROLE, '작업중', '일본 인스타/틱톡 트렌드 수집 중')
 
   let savedCount = 0
+  let skippedDuplicateCount = 0
   const errors = []
+
+  // 2026-08-03 요청: "겹치지 않게" - 예전엔 같은 날 안에서만 중복을 걸렀는데(당일 수집분끼리만
+  // 비교), 인기 해시태그의 "상위 게시물"은 며칠씩 거의 그대로라 날짜를 넘긴 중복이 계속
+  // 쌓이고 있었음. 이 계정이 지금까지 수집한 note 전체를 한 번에 가져와서(note 끝에 항상
+  // 게시물 URL이 붙어있음) 이미 나온 URL은 날짜와 무관하게 영구적으로 다시 저장하지 않게 함.
+  const { data: existingReports } = await supabase
+    .from('benchmark_reports')
+    .select('note')
+    .eq('user_id', targetUserId)
+  const seenUrls = new Set(
+    (existingReports || [])
+      .map((r) => r.note?.match(/https?:\/\/\S+$/)?.[0])
+      .filter(Boolean)
+  )
 
   try {
     for (const category of BENCHMARK_CATEGORIES) {
@@ -76,6 +91,11 @@ router.post('/benchmark/collect', async (req, res) => {
         ])
 
         for (const p of igPosts) {
+          if (p.url && seenUrls.has(p.url)) {
+            skippedDuplicateCount++
+            continue
+          }
+          if (p.url) seenUrls.add(p.url)
           const { error } = await supabase.from('benchmark_reports').insert({
             user_id: targetUserId,
             keyword: `#${hashtag}`,
@@ -89,6 +109,11 @@ router.post('/benchmark/collect', async (req, res) => {
           else savedCount++
         }
         for (const p of tiktokPosts) {
+          if (p.url && seenUrls.has(p.url)) {
+            skippedDuplicateCount++
+            continue
+          }
+          if (p.url) seenUrls.add(p.url)
           const { error } = await supabase.from('benchmark_reports').insert({
             user_id: targetUserId,
             keyword: `#${hashtag}`,
@@ -104,14 +129,14 @@ router.post('/benchmark/collect', async (req, res) => {
       }
     }
 
-    await setEmployeeStatus(supabase, targetUserId, SOURCING_ROLE, '완료', `벤치마킹 ${savedCount}건 수집 완료`)
+    await setEmployeeStatus(supabase, targetUserId, SOURCING_ROLE, '완료', `벤치마킹 ${savedCount}건 수집 완료 (중복 제외 ${skippedDuplicateCount}건)`)
     await finishAutomationRun(supabase, run?.id, {
       status: errors.length > 0 ? '이슈발생' : '완료',
-      summary: `${savedCount}건 저장${errors.length ? `, 오류 ${errors.length}건` : ''}`,
+      summary: `${savedCount}건 저장, 중복 제외 ${skippedDuplicateCount}건${errors.length ? `, 오류 ${errors.length}건` : ''}`,
       errorMessage: errors.join(' / '),
     })
 
-    res.json({ ok: true, savedCount, errors })
+    res.json({ ok: true, savedCount, skippedDuplicateCount, errors })
   } catch (err) {
     await setEmployeeStatus(supabase, targetUserId, SOURCING_ROLE, '이슈발생', err.message)
     await finishAutomationRun(supabase, run?.id, { status: '이슈발생', errorMessage: err.message })

@@ -15,9 +15,30 @@
 // 2026-07-19 결정(패션뷰티소품/상품소싱/여행지 제외, 이 2개로 집중)을 뒤집는 거라 안 하고,
 // 대신 각 카테고리 안의 해시태그를 늘려서 매일 수집되는 원본 소스 자체의 다양성을 넓힘 +
 // benchmark.js에서 참고자료 중복 사용 방지 로직을 별도로 추가함.
+// 2026-08-03: "너무 겹쳐서 버리는 게 많았다" 피드백 - 영어 해시태그 12개만 계속 반복 조회하니
+// 인기 게시물 풀 자체가 며칠씩 거의 그대로였음(같은 날 중복 방지는 있었지만 날짜를 넘긴 중복은
+// 못 걸렀음 - benchmark.js 쪽에 영구 URL 중복 방지 추가함). 여기서는 원본 소스 풀 자체를
+// 넓히기 위해 스페인어/포르투갈어/인도네시아어권 해시태그를 추가함 - 이 언어권들은 인스타/틱톡
+// 참여율이 매우 높은 시장이라 영어 태그와 겹치지 않는 완전히 다른 인기 게시물이 나옴.
 export const BENCHMARK_CATEGORIES = [
-  { label: '신기한동물', hashtags: ['wildanimals', 'weirdanimals', 'amazinganimals', 'animalfacts', 'cutestanimals', 'rareanimals'] },
-  { label: '해외재밌는영상', hashtags: ['funnyvideos', 'viralvideos', 'oddlysatisfying', 'wow', 'lifehacks', 'unexpected'] },
+  {
+    label: '신기한동물',
+    hashtags: [
+      'wildanimals', 'weirdanimals', 'amazinganimals', 'animalfacts', 'cutestanimals', 'rareanimals',
+      'animalesraros', 'animalesdivertidos', // 스페인어(중남미)
+      'animaisfofos', 'animaisengracados', // 포르투갈어(브라질)
+      'hewanlucu', 'hewanunik', // 인도네시아어
+    ],
+  },
+  {
+    label: '해외재밌는영상',
+    hashtags: [
+      'funnyvideos', 'viralvideos', 'oddlysatisfying', 'wow', 'lifehacks', 'unexpected',
+      'videosgraciosos', 'viral', // 스페인어(중남미)
+      'videosengracados', 'virou', // 포르투갈어(브라질)
+      'videolucu', 'viralindonesia', // 인도네시아어
+    ],
+  },
 ]
 
 export function getCategoryByLabel(label) {
