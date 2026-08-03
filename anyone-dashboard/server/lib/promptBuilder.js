@@ -181,8 +181,12 @@ const JAPANESE_NATURALNESS_RULES = `[일본어 자연스러움 지침 - 실제 �
 
 // 채널 이름에서 대상 언어를 뽑아낸다 (틱톡 -> 일본어, 인스타/네이버 -> 한국어, 구글 -> 영어)
 function getTargetLanguage(channel) {
+  // 2026-08-03 버그 수정: "틱톡"/"TikTok" 글자만으로 일본어 판정하면, 기본(한국어) 채널인
+  // "인스타/틱톡" 자체가 그 글자를 포함하고 있어서 항상 일본어로 잘못 만들어지는 문제가
+  // 있었음(1-Click 쇼핑 숏폼이 채널을 '인스타/틱톡'으로만 넘겨서 처음 발견됨). 언어는 반드시
+  // "(일본어)"처럼 명시적으로 붙은 채널명에서만 판정해야 함.
   if (channel.includes('영어') || channel.includes('구글') || channel.includes('Blogger')) return '영어'
-  if (channel.includes('일본어') || channel.includes('틱톡') || channel.includes('TikTok')) return '일본어'
+  if (channel.includes('일본어')) return '일본어'
   return '한국어'
 }
 

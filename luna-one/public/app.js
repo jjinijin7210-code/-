@@ -304,8 +304,10 @@ $("#removeWatermarkBtn").onclick = async () => {
     const fd = new FormData();
     fd.append("video", file);
     const res = await fetch("/api/watermark/remove", { method: "POST", body: fd });
-    const data = await res.json();
-    if (!res.ok) throw new Error(data.error);
+    const contentType = res.headers.get("content-type") || "";
+    const data = contentType.includes("application/json") ? await res.json() : null;
+    if (!res.ok) throw new Error(data?.error || `처리하지 못했어요 (HTTP ${res.status}).`);
+    if (!data?.videoUrl) throw new Error("완성된 영상 주소를 받지 못했어요.");
     result.classList.remove("hidden");
     result.innerHTML = `
       <p style="margin:10px 0 6px;font-size:13px;font-weight:700">완성됐어요!</p>
@@ -317,7 +319,11 @@ $("#removeWatermarkBtn").onclick = async () => {
     `;
     $("#watermarkDeleteBtn").onclick = async () => {
       const fileName = data.videoUrl.split("/").pop();
-      await fetch(`/api/watermark/${fileName}`, { method: "DELETE" }).catch(() => {});
+      const deleteRes = await fetch(`/api/watermark/${encodeURIComponent(fileName)}`, { method: "DELETE" });
+      if (!deleteRes.ok && deleteRes.status !== 404) {
+        const deleteData = await deleteRes.json().catch(() => null);
+        return showError(deleteData?.error || "파일을 삭제하지 못했어요.");
+      }
       result.classList.add("hidden");
       result.innerHTML = "";
     };

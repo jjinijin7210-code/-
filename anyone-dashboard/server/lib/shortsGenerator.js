@@ -22,7 +22,24 @@ const MOTIONS = ['zoom-in', 'pan-left', 'zoom-out', 'pan-right']
 const MIN_SCENE_DURATION = 2.5
 const MAX_IMAGES = 8
 
-export async function generateShortsVideo({ title, imageUrls, note }) {
+// 문단 텍스트를 문장 단위로 나눠 장면 개수만큼 고르게 묶는다 (미리 써둔 나레이션을 캡션으로
+// 재활용할 때 씀 - 문장이 부족하면 마지막 캡션에 몰아서 담기고, 없으면 빈 문자열).
+function splitIntoScenes(text, sceneCount) {
+  const sentences = text.split(/(?<=[.!?。！？\n])\s*/).map((s) => s.trim()).filter(Boolean)
+  if (sentences.length === 0) return Array(sceneCount).fill('')
+  const perScene = Math.max(1, Math.ceil(sentences.length / sceneCount))
+  const scenes = []
+  for (let i = 0; i < sceneCount; i += 1) {
+    const chunk = sentences.slice(i * perScene, (i + 1) * perScene).join(' ')
+    scenes.push(chunk || sentences[sentences.length - 1] || '')
+  }
+  return scenes
+}
+
+// narrationText를 직접 넘기면(예: 콘텐츠 초안 화면에서 이미 써둔 본문을 그대로 영상 내레이션에
+// 쓰고 싶을 때) 이 함수가 스크립트를 새로 써달라고 Claude를 다시 부르지 않고 그 텍스트를
+// 그대로 사용한다 - 2026-08-03 요청("나레이션도 링크 내용 반영해서 일관되게") 반영.
+export async function generateShortsVideo({ title, imageUrls, note, narrationText }) {
   if (!title || !title.trim()) {
     throw new Error('제목(title)은 필수예요.')
   }
@@ -34,10 +51,21 @@ export async function generateShortsVideo({ title, imageUrls, note }) {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anyone-shorts-src-'))
 
   try {
-    // 1. 후크/자막/내레이션 스크립트 생성
-    const { system, messages } = buildShortsScriptMessages({ title, note, sceneCount: images.length })
-    const scriptText = await callClaude({ system, messages, maxTokens: 1024 })
-    const script = parseShortsScriptResponse(scriptText)
+    // 1. 후크/자막/내레이션 스크립트 - 미리 써둔 본문(narrationText)이 있으면 그걸 그대로 쓰고,
+    // 없으면 기존처럼 Claude에게 새로 써달라고 요청함(하위 호환).
+    let script
+    if (narrationText && narrationText.trim()) {
+      const clean = narrationText.trim()
+      script = {
+        hook: clean.split(/[.!?。！？\n]/)[0]?.trim() || title,
+        captions: splitIntoScenes(clean, images.length),
+        narration: clean,
+      }
+    } else {
+      const { system, messages } = buildShortsScriptMessages({ title, note, sceneCount: images.length })
+      const scriptText = await callClaude({ system, messages, maxTokens: 1024 })
+      script = parseShortsScriptResponse(scriptText)
+    }
 
     // 2. 내레이션 TTS 생성
     const audioBuffer = await generateSpeech({ text: script.narration })

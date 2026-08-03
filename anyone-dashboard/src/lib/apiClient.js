@@ -33,6 +33,11 @@ export function generateDraftsFromSource({ sourceArticle, channels, topic }) {
   return postJson('/api/draft/from-source', { sourceArticle, channels, topic })
 }
 
+// 상품 링크(쿠팡 등) 실제 내용 가져오기 - 루나원 프록시 재사용 (returns { title, text })
+export function extractUrlContent(url) {
+  return postJson('/api/luna/extract/url', { url })
+}
+
 // 역사경제 유튜브(한국어) 영상을 실제로 제작해서 content_drafts에 바로 저장 (대본→내레이션→AI
 // 일러스트→줌인/줌아웃 랜덤 합성이라 몇 분 걸림). topic을 주면(소재 직접 입력) 랜덤 주제풀 대신
 // 그 소재로 만든다. format은 'long'(기본, 5~10분 롱폼) 또는 'shorts'.

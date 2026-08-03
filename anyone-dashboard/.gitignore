@@ -9,3 +9,4 @@ server/.data
 server/node_modules
 generated/
 server/whisper-cpp/
+server/assets/uploads/

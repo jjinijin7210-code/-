@@ -1,11 +1,12 @@
 import { useState } from 'react'
-import { generateAiImage, generateDraft } from '../lib/apiClient'
+import { generateAiImage, generateDraft, generateDraftsFromSource, extractUrlContent } from '../lib/apiClient'
 import { uploadDataUrlToStorage } from '../lib/attachments'
 import { useSupabaseTable } from '../hooks/useSupabaseTable'
 
 export default function OneClickShoppingShorts() {
   const drafts = useSupabaseTable('content_drafts', { select: 'id' })
   const [topic, setTopic] = useState('')
+  const [productUrl, setProductUrl] = useState('')
   const [loading, setLoading] = useState(false)
   const [step, setStep] = useState('') // 'analyzing' | 'script' | 'image' | 'video' | ''
   const [result, setResult] = useState(null) // { title, body, hashtags, videoUrl, imageUrl }
@@ -19,12 +20,47 @@ export default function OneClickShoppingShorts() {
 
     try {
       // Step 1: AI 대본 & 카피라이팅 생성
-      setStep('1/3 AI가 상품 특징 분석 및 시네마틱 숏폼 대본 작성 중...')
-      const draft = await generateDraft({
-        channel: '인스타/틱톡',
-        topic: `[쇼핑 숏폼] ${topic}`,
-        referenceNote: '시청 지속 시간이 긴 임팩트 있는 오프닝 후킹과 쇼핑 구매욕을 자극하는 구어체 카피라이팅',
-      })
+      // 2026-08-03 요청: "링크도 확인될 수 있게" - 상품 링크를 넣으면 실제 페이지 내용을 가져와서
+      // 그걸 근거로 쓰게 함(안 그러면 AI가 상품명만 보고 스펙/가격을 지어낼 위험이 있었음).
+      // 링크 내용을 못 가져왔거나(사이트 차단 등) 너무 짧으면 그 내용을 AI한테 그대로
+      // 넘기지 않고 키워드만으로 만드는 쪽으로 안전하게 폴백함(쿠팡 등 봇 차단이 걸린
+      // 사이트에서 "Access Denied" 같은 엉뚱한 텍스트가 대본에 섞이는 걸 막기 위함).
+      let sourceArticle = null
+      if (productUrl.trim()) {
+        setStep('1/3 상품 링크 내용 확인 중...')
+        try {
+          const extracted = await extractUrlContent(productUrl.trim())
+          const candidate = `${extracted.title || ''}\n\n${extracted.text || ''}`.trim()
+          const looksBlocked = /access denied|403 forbidden|접근이? 거부|권한이 없습니다/i.test(candidate)
+          if (candidate.length >= 50 && !looksBlocked) {
+            sourceArticle = candidate
+          } else {
+            console.warn('[쇼핑숏폼] 링크 내용을 제대로 못 가져와서 키워드만으로 진행:', candidate.slice(0, 100))
+          }
+        } catch (e) {
+          console.warn('[쇼핑숏폼] 링크 확인 실패, 키워드만으로 진행:', e.message)
+        }
+      }
+
+      let draft
+      if (sourceArticle) {
+        setStep('1/3 AI가 상품 특징 분석 및 시네마틱 숏폼 대본 작성 중...')
+        const { results } = await generateDraftsFromSource({
+          sourceArticle,
+          channels: ['인스타/틱톡'],
+          topic: `[쇼핑 숏폼] ${topic}`,
+        })
+        const found = results.find((r) => r.channel === '인스타/틱톡')
+        if (!found || found.error) throw new Error(found?.error || '대본 생성에 실패했어요.')
+        draft = found
+      } else {
+        setStep('1/3 AI가 상품 특징 분석 및 시네마틱 숏폼 대본 작성 중...')
+        draft = await generateDraft({
+          channel: '인스타/틱톡',
+          topic: `[쇼핑 숏폼] ${topic}`,
+          referenceNote: '시청 지속 시간이 긴 임팩트 있는 오프닝 후킹과 쇼핑 구매욕을 자극하는 구어체 카피라이팅',
+        })
+      }
 
       // Step 2: AI 연출 컷 이미지 생성
       setStep('2/3 AI 시네마틱 대표 이미지 렌더링 중...')
@@ -53,6 +89,9 @@ export default function OneClickShoppingShorts() {
             title: draft.title || topic,
             imageUrls: [imageUrl || 'https://images.unsplash.com/photo-1523275335684-37898b6baf30?w=800'],
             note: topic,
+            // 2026-08-03: 화면에 보여주는 대본(draft.body)이랑 실제 영상 나레이션이 서로 다른
+            // AI 호출로 따로 만들어져서 내용이 어긋날 수 있었음 - 같은 대본을 그대로 내레이션에도 써서 일치시킴.
+            narrationText: draft.body,
           }),
         }).then(r => r.json())
         videoUrl = shortsRes.videoUrl
@@ -106,15 +145,25 @@ export default function OneClickShoppingShorts() {
         </span>
       </div>
 
-      <div className="mt-4 flex flex-col gap-3 sm:flex-row">
+      <div className="mt-4 flex flex-col gap-3">
         <input
           type="text"
           placeholder="예: 쿠팡 무선 저소음 가습기, 감성 캠핑 램프, 스마트 텀블러"
           value={topic}
           onChange={(e) => setTopic(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
-          className="flex-1 rounded-lg border border-ink/15 bg-white px-4 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+          className="rounded-lg border border-ink/15 bg-white px-4 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
         />
+        <input
+          type="text"
+          placeholder="상품 링크(선택) - 넣으면 실제 상품 페이지 내용(가격/스펙/후기)을 확인해서 만들어요"
+          value={productUrl}
+          onChange={(e) => setProductUrl(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
+          className="rounded-lg border border-ink/15 bg-white px-4 py-2.5 text-sm text-ink placeholder:text-ink/30 focus:border-stamp-amber focus:outline-none focus:ring-1 focus:ring-stamp-amber"
+        />
+      </div>
+      <div className="mt-3 flex justify-end">
         <button
           onClick={handleGenerate}
           disabled={loading || !topic.trim()}

@@ -461,13 +461,15 @@ ${req.file ? '- 추가로, 보여드린 장면 중 썸네일로 쓰기 가장 �
 // 우측 하단 고정 워터마크(기본은 노트북LM 위치)를 지워서 돌려줌. 결과는 GENERATED_DIR에
 // UUID 이름으로 저장하고, 다 쓰면 DELETE로 지울 수 있게 함(anyone-dashboard와 동일 패턴).
 app.post('/api/watermark/remove', uploadVideo.single('video'), async (req, res) => {
+  let outPath
   try {
     if (!req.file) throw new Error('영상 파일이 필요해요.')
     const fileName = `${crypto.randomUUID()}.mp4`
-    const outPath = path.join(GENERATED_DIR, fileName)
-    removeWatermark(req.file.path, outPath)
+    outPath = path.join(GENERATED_DIR, fileName)
+    await removeWatermark(req.file.path, outPath)
     res.json({ videoUrl: `/generated/${fileName}` })
   } catch (error) {
+    if (outPath) fs.unlink(outPath, () => {})
     res.status(400).json({ error: error.message })
   } finally {
     if (req.file?.path) fs.unlink(req.file.path, () => {})

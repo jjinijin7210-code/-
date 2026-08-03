@@ -58,10 +58,13 @@ app.use(express.json({ limit: '5mb' })) // 이미지 base64가 섞인 요청도 
 
 app.get('/health', (req, res) => res.json({ ok: true }))
 
-// 루나원 2.0 (포트 4173) 프록시 연동 - CORS 및 연결 실패 완벽 차단
+// 루나원(포트 4174) 프록시 연동 - CORS 및 연결 실패 완벽 차단
+// 2026-08-03 버그 수정: 실제 루나원 서버 포트는 4174인데 4173으로 잘못 하드코딩돼 있어서
+// 항상 연결 실패 → catch로 빠져서 "text": url 그대로만 돌려주는 가짜 응답만 나가고 있었음
+// (에러가 안 나서 겉으로는 정상 작동하는 것처럼 보임 - 조용히 실패하는 버그).
 app.post('/api/luna/extract/url', async (req, res) => {
   try {
-    const response = await fetch('http://localhost:4173/api/extract/url', {
+    const response = await fetch('http://localhost:4174/api/extract/url', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req.body),
@@ -75,7 +78,7 @@ app.post('/api/luna/extract/url', async (req, res) => {
 
 app.post('/api/luna/extract/youtube', async (req, res) => {
   try {
-    const response = await fetch('http://localhost:4173/api/extract/youtube', {
+    const response = await fetch('http://localhost:4174/api/extract/youtube', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req.body),

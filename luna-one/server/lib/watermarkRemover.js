@@ -13,7 +13,7 @@
 // 확인 - 흰 배경은 완벽히 지워지고, 민트색 배경은 아주 옅은 흔적만 남음).
 // ============================================================
 
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 
 function ffmpegBin() {
   return process.env.FFMPEG_PATH || 'ffmpeg'
@@ -25,13 +25,32 @@ function ffprobeBin() {
 // 1280x720 기준 진희님 실제 노트북LM 영상에서 확인한 워터마크 위치를 비율로 저장
 const NOTEBOOKLM_WATERMARK_RATIO = { x: 1115 / 1280, y: 650 / 720, w: 140 / 1280, h: 35 / 720 }
 
-function probeSize(filePath) {
-  const res = spawnSync(ffprobeBin(), [
+function run(command, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(command, args, { windowsHide: true })
+    const stdout = []
+    let stderr = ''
+    child.stdout?.on('data', (chunk) => stdout.push(chunk))
+    child.stderr?.on('data', (chunk) => {
+      stderr = (stderr + chunk.toString()).slice(-4000)
+    })
+    child.once('error', reject)
+    child.once('close', (code) => resolve({ code, stdout: Buffer.concat(stdout), stderr }))
+  })
+}
+
+async function probeSize(filePath) {
+  let res
+  try {
+    res = await run(ffprobeBin(), [
     '-v', 'error', '-select_streams', 'v:0',
     '-show_entries', 'stream=width,height',
     '-of', 'csv=p=0', filePath,
-  ])
-  if (res.error || res.status !== 0) {
+    ])
+  } catch (error) {
+    throw new Error(`ffprobe를 실행하지 못했어요 (${error.message}).`)
+  }
+  if (res.code !== 0) {
     throw new Error('영상 크기를 확인하지 못했어요. 올바른 영상 파일인지 확인해주세요.')
   }
   const [width, height] = res.stdout.toString().trim().split(',').map(Number)
@@ -42,28 +61,45 @@ function probeSize(filePath) {
 }
 
 // region을 직접 주면 그 좌표(px)를 그대로 쓰고, 안 주면 노트북LM 기본 위치(비율 스케일링)를 씀.
-export function removeWatermark(inputPath, outputPath, region) {
-  const { width, height } = probeSize(inputPath)
-  const box = region || {
+export async function removeWatermark(inputPath, outputPath, region) {
+  const { width, height } = await probeSize(inputPath)
+  const requestedBox = region || {
     x: Math.round(NOTEBOOKLM_WATERMARK_RATIO.x * width),
     y: Math.round(NOTEBOOKLM_WATERMARK_RATIO.y * height),
     w: Math.round(NOTEBOOKLM_WATERMARK_RATIO.w * width),
     h: Math.round(NOTEBOOKLM_WATERMARK_RATIO.h * height),
   }
 
+  const box = {
+    x: Math.max(0, Math.min(width - 2, Math.round(Number(requestedBox.x)))),
+    y: Math.max(0, Math.min(height - 2, Math.round(Number(requestedBox.y)))),
+    w: Math.max(2, Math.round(Number(requestedBox.w))),
+    h: Math.max(2, Math.round(Number(requestedBox.h))),
+  }
+  if (!Object.values(box).every(Number.isFinite)) {
+    throw new Error('워터마크 영역 좌표가 올바르지 않아요.')
+  }
+  box.w = Math.min(box.w, width - box.x)
+  box.h = Math.min(box.h, height - box.y)
+
   const args = [
     '-y', '-hide_banner', '-loglevel', 'error',
     '-i', inputPath,
     '-vf', `delogo=x=${box.x}:y=${box.y}:w=${box.w}:h=${box.h}:show=0`,
-    '-c:a', 'copy',
+    '-map', '0:v:0', '-map', '0:a?',
+    '-c:a', 'aac', '-b:a', '192k',
     '-c:v', 'libx264', '-preset', 'medium', '-crf', '20',
+    '-movflags', '+faststart',
     outputPath,
   ]
-  const res = spawnSync(ffmpegBin(), args, { stdio: 'inherit' })
-  if (res.error) {
-    throw new Error(`ffmpeg을 실행하지 못했어요 (${res.error.message}).`)
+  let res
+  try {
+    res = await run(ffmpegBin(), args)
+  } catch (error) {
+    throw new Error(`ffmpeg을 실행하지 못했어요 (${error.message}).`)
   }
-  if (res.status !== 0) {
-    throw new Error(`워터마크 제거 실패 (ffmpeg exit ${res.status})`)
+  if (res.code !== 0) {
+    const detail = res.stderr.trim().split(/\r?\n/).pop()
+    throw new Error(`워터마크 제거에 실패했어요${detail ? `: ${detail}` : ''}`)
   }
 }
