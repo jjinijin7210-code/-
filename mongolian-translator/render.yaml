@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: mongolian-translator
+    runtime: docker
+    dockerfilePath: ./mongolian-translator/Dockerfile
+    dockerContext: ./mongolian-translator
+    plan: free
+    envVars:
+      - key: PORT
+        value: 4175
+      - key: ANTHROPIC_API_KEY
+        sync: false
