@@ -24,6 +24,7 @@ const textInput = $("#textInput");
 const sendKoToTargetBtn = $("#sendKoToTarget");
 const sendTargetToKoBtn = $("#sendTargetToKo");
 const targetNameSpans = document.querySelectorAll(".target-name");
+const clearLogBtn = $("#clearLog");
 
 const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 
@@ -58,6 +59,14 @@ targetSelect.addEventListener("change", updateVoiceWarning);
 updateVoiceWarning();
 setTimeout(updateVoiceWarning, 600);
 
+function showEmptyLogNotice() {
+  if (logEl.querySelector(".conversation-empty")) return;
+  const empty = document.createElement("p");
+  empty.className = "conversation-empty";
+  empty.textContent = "마이크 버튼을 누르고 말하면 여기에 대화가 쌓여요.";
+  logEl.appendChild(empty);
+}
+
 function addBubble({ side, original, translated }) {
   const empty = logEl.querySelector(".conversation-empty");
   if (empty) empty.remove();
@@ -69,15 +78,32 @@ function addBubble({ side, original, translated }) {
   const trans = document.createElement("div");
   trans.className = "translated";
   trans.textContent = translated;
+  const btnRow = document.createElement("div");
+  btnRow.className = "bubble-btn-row";
   const replayBtn = document.createElement("button");
   replayBtn.type = "button";
   replayBtn.className = "replay-btn";
   replayBtn.textContent = "🔊 다시 듣기";
   replayBtn.addEventListener("click", () => speak(translated, side === "ko" ? LANGS[targetSelect.value].locale : LANGS.ko.locale));
-  bubble.append(orig, trans, replayBtn);
+  const deleteBtn = document.createElement("button");
+  deleteBtn.type = "button";
+  deleteBtn.className = "delete-btn";
+  deleteBtn.textContent = "🗑";
+  deleteBtn.setAttribute("aria-label", "이 대화 삭제");
+  deleteBtn.addEventListener("click", () => {
+    bubble.remove();
+    if (!logEl.querySelector(".bubble")) showEmptyLogNotice();
+  });
+  btnRow.append(replayBtn, deleteBtn);
+  bubble.append(orig, trans, btnRow);
   logEl.appendChild(bubble);
   logEl.scrollTop = logEl.scrollHeight;
 }
+
+clearLogBtn.addEventListener("click", () => {
+  logEl.innerHTML = "";
+  showEmptyLogNotice();
+});
 
 function speak(text, locale) {
   if (!window.speechSynthesis || !text) return;

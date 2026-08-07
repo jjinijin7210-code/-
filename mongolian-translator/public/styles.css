@@ -12,6 +12,9 @@ select{width:100%;background:#0b1220;border:1px solid var(--line);color:#fff;bor
 select:focus{border-color:var(--accent)}
 .voice-warning{padding:10px 14px;border:1px solid #f59e0b55;background:#78350f33;color:#fde68a;border-radius:12px;font-size:12px;line-height:1.5}
 .hidden{display:none!important}
+.log-header{display:flex;align-items:center;justify-content:space-between}
+.log-header-label{font-size:12px;color:var(--muted)}
+.clear-log-btn{padding:6px 12px;font-size:11px}
 .conversation-log{min-height:280px;max-height:56vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:16px;border:1px solid var(--line);border-radius:20px;background:#0f1729}
 .conversation-empty{color:var(--muted);font-size:13px;text-align:center;margin:auto}
 .bubble{max-width:88%;padding:12px 14px;border-radius:16px;line-height:1.5}
@@ -19,7 +22,9 @@ select:focus{border-color:var(--accent)}
 .bubble-target{align-self:flex-end;background:linear-gradient(145deg,#0f3d3a,#0a2a28);border:1px solid #2dd4bf55}
 .bubble .original{font-size:15px;font-weight:600;color:#fff}
 .bubble .translated{margin-top:4px;font-size:14px;color:#5eead4}
-.bubble .replay-btn{margin-top:8px;width:auto;font-size:11px;border:1px solid #2dd4bf55;background:transparent;color:#5eead4;border-radius:8px;padding:4px 9px;cursor:pointer}
+.bubble-btn-row{display:flex;gap:6px;margin-top:8px}
+.bubble .replay-btn{width:auto;font-size:11px;border:1px solid #2dd4bf55;background:transparent;color:#5eead4;border-radius:8px;padding:4px 9px;cursor:pointer}
+.bubble .delete-btn{width:auto;font-size:11px;border:1px solid #f8717155;background:transparent;color:#fca5a5;border-radius:8px;padding:4px 9px;cursor:pointer}
 .mic-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .mic-btn{display:flex;flex-direction:column;align-items:center;gap:6px;padding:22px 10px;border-radius:20px;border:1px solid var(--line);background:linear-gradient(145deg,#152036,#0f1729);color:#fff;cursor:pointer;transition:.15s}
 .mic-btn .mic-icon{font-size:30px}
