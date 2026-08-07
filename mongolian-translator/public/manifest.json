@@ -1,6 +1,6 @@
 {
-  "name": "실시간 통역기",
-  "short_name": "통역기",
+  "name": "Genie Lab",
+  "short_name": "Genie Lab",
   "description": "한국어 ↔ 몽골어/영어/중국어/일본어 실시간 음성 통역",
   "start_url": "/",
   "scope": "/",

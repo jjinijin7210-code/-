@@ -91,5 +91,5 @@ app.get('/api/health', (_req, res) => {
 })
 
 app.listen(PORT, () => {
-  console.log(`실시간 통역기 실행: http://localhost:${PORT}`)
+  console.log(`Genie Lab 실행: http://localhost:${PORT}`)
 })
