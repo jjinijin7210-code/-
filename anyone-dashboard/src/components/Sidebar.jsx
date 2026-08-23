@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { to: '/cs-links', label: 'CS 링크 관리', emoji: '💬' },
   { to: '/asset-vault', label: '에셋 보관함', emoji: '🗂️' },
   { to: '/video-studio', label: '영상 제작실', emoji: '🎞️' },
+  { to: '/motion-graphics', label: '모션그래픽 만들기', emoji: '✨' },
   { to: '/video-vault', label: '영상 보관함', emoji: '🎬' },
   { to: '/settings', label: '설정 · 백업', emoji: '⚙️' },
 ]

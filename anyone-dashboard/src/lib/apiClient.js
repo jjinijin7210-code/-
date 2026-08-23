@@ -403,6 +403,36 @@ export function retryAutomationRun(runId) {
   return postJson('/api/automation/retry', { runId })
 }
 
+// 모션그래픽 만들기 - 템플릿 5종 목록(입력폼 구성 정보 포함)
+export async function getMotionGraphicTemplates() {
+  const res = await fetch(`${API_BASE}/api/motion-graphics/templates`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `템플릿 목록을 불러오지 못했어요 (${res.status})`)
+  return data
+}
+
+// 모션그래픽 렌더링 job 시작 - returns { jobId }
+export function startMotionGraphicRender({ template, props, aspect, durationSec, brandColor }) {
+  return postJson('/api/motion-graphics/render', { template, props, aspect, durationSec, brandColor })
+}
+
+// 모션그래픽 렌더링 job 상태 조회 - returns { status, videoUrl, error }
+export async function getMotionGraphicStatus(jobId) {
+  const res = await fetch(`${API_BASE}/api/motion-graphics/status/${jobId}`)
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `상태 확인이 실패했어요 (${res.status})`)
+  return data
+}
+
+// 모션그래픽 결과 mp4 삭제
+export async function deleteMotionGraphic(videoUrl) {
+  const fileName = videoUrl.split('/').pop()
+  const res = await fetch(`${API_BASE}/api/motion-graphics/generated/${fileName}`, { method: 'DELETE' })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error(data.error || `파일 삭제가 실패했어요 (${res.status})`)
+  return data
+}
+
 // 무료 스톡 사진(Pexels) 검색
 export async function searchPexelsPhotos({ query, page }) {
   const params = new URLSearchParams({ q: query })

@@ -28,6 +28,8 @@ import { renderCardsToImages, CARD_TEMPLATES } from './server/lib/cardImageRende
 import { compareSearchTrend } from './server/lib/naverDatalabClient.js'
 import { renderPageHtml } from './server/lib/renderPage.js'
 import { removeWatermark } from './server/lib/watermarkRemover.js'
+import { generateStoryChapter, STORY_GENRES, STORY_TONES, STORY_LENGTH_MINUTES } from './server/lib/storyBuilder.js'
+import { generateLyrics, SONG_LENGTHS } from './server/lib/lyricsBuilder.js'
 
 const app = express()
 const PORT = Number(process.env.PORT || 4174)
@@ -410,7 +412,9 @@ app.post('/api/thumbnail/suggest', uploadVideo.single('video'), async (req, res)
 
     const system = `당신은 유튜브 쇼츠/롱폼 썸네일 기획자입니다. 주제와(있다면) 영상 장면을 보고,
 클릭을 유도하는 강렬한 후킹 문구(썸네일에 큼직하게 들어갈 짧은 문구) 3개를 제안하세요.
-- 각 문구는 15자 내외로 짧고 강렬하게 (예: "이거 모르면 손해", "3일 만에 달라졌다")
+- 각 문구는 15자 내외(5~7단어 이내)로 짧고 강렬하게 (예: "이거 모르면 손해", "3일 만에 달라졌다")
+- 제목과 겹치지 않는 다른 정보로 쓰세요 - 제목이 구체적 설명이면 썸네일은 호기심 유발,
+  제목이 호기심형이면 썸네일은 구체적 설명으로 역할을 분리하세요.
 - 과장이나 거짓 정보 없이, 실제 내용에 기반한 궁금증 유발형으로 쓰세요.
 ${req.file ? '- 추가로, 보여드린 장면 중 썸네일로 쓰기 가장 좋은 장면 번호(가장 눈에 띄고 명확한 컷)를 하나 골라주세요.' : ''}
 반드시 아래 JSON 형식으로만 답하세요 (다른 설명 없이):
@@ -564,6 +568,88 @@ app.post('/api/generate', demoDailyLimiter, async (req, res) => {
     res.json({ provider: hasKey ? 'claude' : 'demo', result: { summary, outputs, trendNote } })
   } catch (error) {
     res.status(400).json({ error: error.message })
+  }
+})
+
+// ------------------------------------------------------------
+// 이야기 보따리 - 자유 창작 / 역사 이야기 2개 장르 (2026-08-23 설계 문서).
+// 분량(20/30/45/60분)은 한 번에 못 쓰는 길이라 챕터 단위로 이어쓰기 - 프론트가
+// previousChapters(요약+마지막 문단)를 되돌려 보내면서 챕터를 하나씩 받아간다.
+// 역사 모드의 안전장치 프롬프트는 storyBuilder.js에 고정으로 들어있음.
+// ------------------------------------------------------------
+app.post('/api/story/generate', demoDailyLimiter, async (req, res) => {
+  try {
+    const { genre, source, tone, lengthMinutes, chapterIndex, previousChapters } = req.body || {}
+    if (!STORY_GENRES.includes(genre)) throw new Error('장르를 선택해 주세요. (자유 창작 / 역사 이야기)')
+    const chapter = await generateStoryChapter({ genre, source, tone, lengthMinutes, chapterIndex, previousChapters })
+    res.json(chapter)
+  } catch (error) {
+    res.status(400).json({ error: error.message })
+  }
+})
+
+app.get('/api/story/options', (_req, res) => {
+  res.json({ genres: STORY_GENRES, tones: STORY_TONES, lengths: STORY_LENGTH_MINUTES })
+})
+
+// ------------------------------------------------------------
+// 가사 쓰기 - Suno용 [Verse]/[Chorus] 구조 가사 + 스타일 태그.
+// 곡 길이 기본값은 숏폼 추천(1:30~2:00) - 별도 설정 없이 써도 트렌드에 맞는 곡이 나오게.
+// ------------------------------------------------------------
+app.post('/api/lyrics/generate', demoDailyLimiter, async (req, res) => {
+  try {
+    const { theme, mood, songLength, customLength } = req.body || {}
+    const result = await generateLyrics({ theme, mood, songLength, customLength })
+    res.json(result)
+  } catch (error) {
+    res.status(400).json({ error: error.message })
+  }
+})
+
+app.get('/api/lyrics/options', (_req, res) => {
+  res.json({ songLengths: SONG_LENGTHS })
+})
+
+// ------------------------------------------------------------
+// 모션그래픽 만들기 - 렌더링은 애니원 서버(Remotion + ffmpeg)가 담당하고, 루나원은
+// 요청만 보내고 결과만 받는 얇은 연동 (2026-08-23 설계 문서의 루나원 연동 방식).
+// 애니원 서버 주소는 ANYONE_API_BASE로 바꿀 수 있음 (기본: 로컬 애니원 백엔드 3001).
+// ------------------------------------------------------------
+const ANYONE_API_BASE = process.env.ANYONE_API_BASE || 'http://localhost:3001'
+
+async function proxyToAnyone(res, path, init) {
+  try {
+    const response = await fetch(`${ANYONE_API_BASE}${path}`, { ...init, signal: AbortSignal.timeout(20000) })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) return res.status(response.status).json({ error: data.error || `애니원 서버 응답 오류 (${response.status})` })
+    res.json(data)
+  } catch {
+    res.status(502).json({ error: '애니원 서버에 연결하지 못했어요. 애니원 대시보드 백엔드가 켜져 있는지 확인해 주세요.' })
+  }
+}
+
+app.get('/api/motion/templates', (_req, res) => proxyToAnyone(res, '/api/motion-graphics/templates'))
+
+app.post('/api/motion/render', demoDailyLimiter, (req, res) =>
+  proxyToAnyone(res, '/api/motion-graphics/render', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(req.body || {}),
+  })
+)
+
+app.get('/api/motion/status/:jobId', async (req, res) => {
+  if (!/^[a-f0-9-]{36}$/i.test(req.params.jobId)) return res.status(400).json({ error: '잘못된 작업 ID예요.' })
+  try {
+    const response = await fetch(`${ANYONE_API_BASE}/api/motion-graphics/status/${req.params.jobId}`, { signal: AbortSignal.timeout(20000) })
+    const data = await response.json().catch(() => ({}))
+    if (!response.ok) return res.status(response.status).json({ error: data.error || `애니원 서버 응답 오류 (${response.status})` })
+    // 애니원이 주는 videoUrl(/generated/...)은 애니원 서버 기준 상대경로라, 루나원 화면에서
+    // 바로 재생/다운로드할 수 있게 절대 주소로 바꿔서 내려줌.
+    if (data.videoUrl && data.videoUrl.startsWith('/')) data.videoUrl = `${ANYONE_API_BASE}${data.videoUrl}`
+    res.json(data)
+  } catch {
+    res.status(502).json({ error: '애니원 서버에 연결하지 못했어요. 애니원 대시보드 백엔드가 켜져 있는지 확인해 주세요.' })
   }
 })
 
