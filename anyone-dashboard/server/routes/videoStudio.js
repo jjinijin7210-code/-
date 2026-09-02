@@ -6,6 +6,7 @@ import path from 'node:path'
 import crypto from 'node:crypto'
 import { spawnSync } from 'node:child_process'
 import { renderVideo, ffprobeDuration } from '../lib/videoRenderer.js'
+import { mixVoiceover } from '../lib/voiceoverMixer.js'
 import { renderVideoRemotion } from '../lib/remotionRenderer.js'
 import { renderThumbnails } from '../lib/thumbnailRenderer.js'
 import { buildCapcutExport } from '../lib/capcutExport.js'
@@ -112,6 +113,64 @@ router.post('/video-studio/render', upload.any(), async (req, res) => {
     } else {
       renderVideo(cfg, outPath)
     }
+
+    res.json({ videoUrl: `/generated/${fileName}` })
+  } catch (err) {
+    res.status(500).json({ error: err.message })
+  } finally {
+    ;(req.files || []).forEach((f) => fs.unlink(f.path, () => {}))
+  }
+})
+
+// 2026-09-02 요청: "나래이션 나오는 동안은 음악을 줄이고 싶어" - CapCut이 어려워서 매직스튜디오
+// 안에서 영상+나레이션+배경음악을 한 번에 자르고 섞는 믹서 엔드포인트. 나레이션이 들리는 동안
+// 배경음악을 자동으로 줄이는 더킹은 voiceoverMixer.js(sidechaincompress)가 처리한다.
+router.post('/video-studio/mix-voiceover', upload.any(), async (req, res) => {
+  try {
+    const fileMap = {}
+    ;(req.files || []).forEach((f) => {
+      fileMap[f.fieldname] = f
+    })
+    if (!fileMap.video) return res.status(400).json({ error: '영상 파일을 올려주세요.' })
+    if (!fileMap.narration) return res.status(400).json({ error: '나레이션 파일을 올려주세요.' })
+
+    // 음악은 직접 업로드(music) 또는 추천 목록(server/assets/bgm/)에서 고른 파일명 - 없어도 됨
+    let musicPath = null
+    if (fileMap.music) {
+      musicPath = fileMap.music.path
+    } else if (req.body.musicBgmFilename) {
+      const bgmPath = path.join(BGM_DIR, path.basename(req.body.musicBgmFilename))
+      if (fs.existsSync(bgmPath)) musicPath = bgmPath
+    }
+
+    const num = (v, fallback) => {
+      const n = Number(v)
+      return Number.isFinite(n) ? n : fallback
+    }
+    const cfg = {
+      video: fileMap.video.path,
+      videoStart: num(req.body.videoStart, 0),
+      videoEnd: req.body.videoEnd ? num(req.body.videoEnd, null) : null,
+      videoAudioVolume: num(req.body.videoAudioVolume, 1),
+      narration: fileMap.narration.path,
+      narrStart: num(req.body.narrStart, 0),
+      narrEnd: req.body.narrEnd ? num(req.body.narrEnd, null) : null,
+      narrOffset: num(req.body.narrOffset, 0),
+      narrVolume: num(req.body.narrVolume, 1),
+      music: musicPath,
+      musicStart: num(req.body.musicStart, 0),
+      musicVolume: num(req.body.musicVolume, 0.6),
+      musicFadeIn: num(req.body.musicFadeIn, 0),
+      musicFadeOut: num(req.body.musicFadeOut, 0),
+      duck: req.body.duck !== '0',
+      duckAmount: ['soft', 'medium', 'strong'].includes(req.body.duckAmount) ? req.body.duckAmount : 'medium',
+      lengthMode: req.body.lengthMode === 'video' ? 'video' : 'narration',
+    }
+
+    fs.mkdirSync(GENERATED_DIR, { recursive: true })
+    const fileName = `${crypto.randomUUID()}.mp4`
+    const outPath = path.join(GENERATED_DIR, fileName)
+    mixVoiceover(cfg, outPath)
 
     res.json({ videoUrl: `/generated/${fileName}` })
   } catch (err) {

@@ -319,6 +319,16 @@ export async function renderVideoStudio(formData) {
   return data
 }
 
+// 영상 제작실 - 영상+나레이션+배경음악을 한 번에 자르고 섞기 (나레이션 나오는 동안 음악 자동 줄이기)
+export async function mixVoiceoverStudio(formData) {
+  const res = await fetch(`${API_BASE}/api/video-studio/mix-voiceover`, { method: 'POST', body: formData })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.error || `믹스 렌더링이 실패했어요 (${res.status})`)
+  }
+  return data
+}
+
 // 영상 제작실 - CapCut에서 마무리 편집하도록 소재(이미지/영상+오디오+자막)만 zip으로 내보내기
 export async function exportVideoStudioCapcut(formData) {
   const res = await fetch(`${API_BASE}/api/video-studio/export-capcut`, { method: 'POST', body: formData })
