@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import PageHeader from '../components/PageHeader'
+import VoiceoverMixer from '../components/VoiceoverMixer'
 import { renderVideoStudio, exportVideoStudioCapcut, deleteVideoStudioGenerated, getBgmList, suggestVideoThumbnail, removeVideoWatermark, autoDirectVideoStudio } from '../lib/apiClient'
 
 // 2026-07-23: "사진 한 장으로 여러 장면 채우기" 요청 - 영상/사진을 매번 여러 개 구하지 않아도
@@ -426,6 +427,9 @@ export default function VideoStudio() {
         emoji="🎬"
         description="씬마다 이미지·효과·자막·보이스를 직접 골라서 mp4 영상을 만들어요 (video-maker 프로그램을 그대로 옮겨왔어요)"
       />
+
+      {/* 2026-09-02 요청: CapCut 대신 여기서 영상+나레이션+음악을 같이 자르고 더킹 믹스 */}
+      <VoiceoverMixer bgmTracks={bgmTracks} />
 
       <div className="mb-4 grid grid-cols-1 gap-3 rounded-xl bg-paper-card p-4 shadow-card sm:grid-cols-3">
         <div>
