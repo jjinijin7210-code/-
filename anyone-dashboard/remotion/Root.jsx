@@ -1,5 +1,6 @@
 import { Composition } from 'remotion'
 import { VideoStudioComposition } from './compositions/VideoStudioComposition.jsx'
+import { MotionGraphicComposition } from './compositions/motionGraphics/MotionGraphicComposition.jsx'
 import { computeTotalDuration } from './lib/timing.js'
 
 // Studio 미리보기용 기본값 - fileName을 비워두면 Scene.jsx가 실제 사진 대신 색 배경을 보여줌
@@ -27,17 +28,49 @@ function calculateMetadata({ props }) {
   }
 }
 
+// 모션그래픽 탭용 기본값 - Studio 미리보기 확인용. 실제 렌더링은
+// server/lib/motionGraphicsRenderer.js가 매번 진짜 값을 inputProps로 넘김.
+const motionDefaultProps = {
+  width: 1080,
+  height: 1920,
+  fps: 30,
+  durationInFrames: 150,
+  template: 'milestone',
+  props: { number: 250000, unit: '명', message: '구독자 달성!', brandColor: '#6d28d9' },
+}
+
+function calculateMotionMetadata({ props }) {
+  return {
+    fps: props.fps,
+    width: props.width,
+    height: props.height,
+    durationInFrames: props.durationInFrames,
+  }
+}
+
 export function RemotionRoot() {
   return (
-    <Composition
-      id="VideoStudioScene"
-      component={VideoStudioComposition}
-      durationInFrames={computeTotalDuration(defaultProps.scenes, defaultProps.transitionFrames)}
-      fps={defaultProps.fps}
-      width={defaultProps.width}
-      height={defaultProps.height}
-      defaultProps={defaultProps}
-      calculateMetadata={calculateMetadata}
-    />
+    <>
+      <Composition
+        id="VideoStudioScene"
+        component={VideoStudioComposition}
+        durationInFrames={computeTotalDuration(defaultProps.scenes, defaultProps.transitionFrames)}
+        fps={defaultProps.fps}
+        width={defaultProps.width}
+        height={defaultProps.height}
+        defaultProps={defaultProps}
+        calculateMetadata={calculateMetadata}
+      />
+      <Composition
+        id="MotionGraphic"
+        component={MotionGraphicComposition}
+        durationInFrames={motionDefaultProps.durationInFrames}
+        fps={motionDefaultProps.fps}
+        width={motionDefaultProps.width}
+        height={motionDefaultProps.height}
+        defaultProps={motionDefaultProps}
+        calculateMetadata={calculateMotionMetadata}
+      />
+    </>
   )
 }

@@ -856,3 +856,253 @@ function downloadText(text, filename){
   URL.revokeObjectURL(a.href);
 }
 function flash(btn){const old=btn.textContent;btn.textContent="복사됨";setTimeout(()=>btn.textContent=old,1000)}
+
+// ============================================================
+// 03. 이야기 보따리 - 자유 창작 / 역사 이야기 (2026-08-23 설계 문서)
+// 분량(20/30/45/60분)은 한 번에 못 쓰니까 챕터 단위로 이어쓰기 - 서버가 돌려준
+// summary/tail을 previousChapters로 되돌려 보내면서 다음 챕터를 이어받는다.
+// ============================================================
+let storyChapters = []; // 서버가 돌려준 챕터들 {chapterIndex, chapterCount, title, text, summary, tail, done}
+
+function isHistoryMode() { return $("#storyGenre").value === "history"; }
+
+function updateStoryModeUi() {
+  const history = isHistoryMode();
+  $("#storyHistoryBox").classList.toggle("hidden", !history);
+  $("#storyGrandmaHint").classList.toggle("hidden", history ? false : $("#storyTone").value !== "grandma");
+  // 역사 모드는 소재가 필수 - 자유 창작과 가장 다른 부분 (원본 없이 시작 못 하게 막는 게 핵심)
+  $("#storySource").placeholder = history
+    ? "소재 자료 *필수 - 사료 원문(기록·기사·연구 자료 등)을 그대로 붙여넣어주세요. 여기 넣은 자료 안의 사실만 사용해요."
+    : "배경/소재 (선택) - 이야기의 바탕이 될 내용을 적어주세요.";
+  updateStoryGenerateState();
+}
+
+function updateStoryGenerateState() {
+  const history = isHistoryMode();
+  const sourceLen = $("#storySource").value.trim().length;
+  $("#storyGenerate").disabled = history && sourceLen < 50;
+}
+
+$("#storyGenre").onchange = updateStoryModeUi;
+$("#storyTone").onchange = updateStoryModeUi;
+$("#storySource").addEventListener("input", updateStoryGenerateState);
+updateStoryModeUi();
+
+function storyBusy(on) {
+  $("#storyProgress").classList.toggle("hidden", !on);
+  $("#storyGenerate").disabled = on;
+  if (!on) updateStoryGenerateState();
+}
+
+async function requestStoryChapter(chapterIndex) {
+  const res = await fetch("/api/story/generate", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      genre: $("#storyGenre").value,
+      source: { title: $("#storyTitle").value.trim(), text: $("#storySource").value.trim() },
+      tone: $("#storyTone").value,
+      lengthMinutes: Number($("#storyLength").value),
+      chapterIndex,
+      previousChapters: storyChapters.map(ch => ({ title: ch.title, summary: ch.summary, tail: ch.tail })),
+    }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error);
+  return data;
+}
+
+$("#storyGenerate").onclick = async () => {
+  storyChapters = [];
+  storyBusy(true);
+  try {
+    storyChapters.push(await requestStoryChapter(0));
+    renderStoryResult();
+  } catch (e) { showError(e.message); }
+  finally { storyBusy(false); }
+};
+
+function storyFullText() {
+  return storyChapters.map((ch, i) => `${i + 1}장. ${ch.title}\n\n${ch.text}`).join("\n\n");
+}
+
+function renderStoryResult() {
+  const box = $("#storyResult");
+  if (!storyChapters.length) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+  const last = storyChapters[storyChapters.length - 1];
+  const history = isHistoryMode();
+  box.classList.remove("hidden");
+  box.innerHTML = `
+    <div class="output-head"><h3>이야기 (${storyChapters.length}/${last.chapterCount}장)</h3>
+      <div class="output-actions"><button type="button" class="copy" id="storyCopyAll">전체 복사</button><button type="button" class="copy" id="storySaveAll">💾 저장</button></div></div>
+    ${storyChapters.map((ch, i) => `
+      <div class="story-chapter">
+        <h4>${i + 1}장. ${escapeHtml(ch.title)}</h4>
+        <textarea rows="10" data-story-chapter="${i}">${escapeHtml(ch.text)}</textarea>
+      </div>`).join("")}
+    <div class="inline" style="margin-top:12px">
+      ${last.done ? "" : `<button type="button" class="primary" id="storyNextChapter">▶ 다음 챕터 이어쓰기 (${storyChapters.length + 1}/${last.chapterCount}장)</button>`}
+      ${history ? `<button type="button" class="secondary story-source-toggle" id="storySourceToggle">📜 참고한 소재 자료 원문 보기</button>` : ""}
+    </div>
+    ${history ? `<div id="storySourceOriginal" class="story-source-original hidden"></div>` : ""}
+    <p class="ai-note">⚠ AI가 만든 이야기예요.${history ? " 역사 이야기는 게시 전에 소재 자료 원문과 사실관계를 꼭 대조해주세요." : ""}</p>`;
+
+  $$("[data-story-chapter]").forEach(area => area.oninput = () => { storyChapters[Number(area.dataset.storyChapter)].text = area.value; });
+  $("#storyCopyAll").onclick = async (e) => { await copyText(storyFullText()); flash(e.target); };
+  $("#storySaveAll").onclick = () => downloadText(storyFullText(), "이야기보따리.txt");
+  const nextBtn = $("#storyNextChapter");
+  if (nextBtn) nextBtn.onclick = async () => {
+    nextBtn.disabled = true;
+    storyBusy(true);
+    try {
+      storyChapters.push(await requestStoryChapter(storyChapters.length));
+      renderStoryResult();
+      $("#storyResult").scrollIntoView({ behavior: "smooth", block: "end" });
+    } catch (e) { showError(e.message); nextBtn.disabled = false; }
+    finally { storyBusy(false); }
+  };
+  const srcToggle = $("#storySourceToggle");
+  if (srcToggle) srcToggle.onclick = () => {
+    const panel = $("#storySourceOriginal");
+    // 생성 후 소재란을 수정해도 "그때 참고한 원문"을 보여줘야 하지만, 단순화를 위해 현재
+    // 입력값을 보여줌 - 사실관계 재확인 용도로는 충분 (생성 직후 대조가 일반적인 흐름)
+    panel.textContent = $("#storySource").value.trim() || "(소재 자료가 비어 있어요)";
+    panel.classList.toggle("hidden");
+  };
+}
+
+// ============================================================
+// 04. 가사 쓰기 - Suno용 [Verse]/[Chorus] 가사 + 스타일 태그, 곡 길이 기본값은 숏폼(1:30~2:00)
+// ============================================================
+$("#lyricsLength").onchange = () => {
+  $("#lyricsCustomLabel").classList.toggle("hidden", $("#lyricsLength").value !== "custom");
+};
+
+$("#lyricsGenerate").onclick = async () => {
+  const theme = $("#lyricsTheme").value.trim();
+  if (!theme) return showError("어떤 이야기/주제의 노래인지 먼저 적어주세요.");
+  $("#lyricsGenerate").disabled = true;
+  $("#lyricsProgress").classList.remove("hidden");
+  try {
+    const res = await fetch("/api/lyrics/generate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        theme,
+        mood: $("#lyricsMood").value.trim(),
+        songLength: $("#lyricsLength").value,
+        customLength: $("#lyricsCustomLength").value.trim(),
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    const box = $("#lyricsResult");
+    box.classList.remove("hidden");
+    box.innerHTML = `
+      <div class="output-card lyrics-result-card">
+        <div class="output-head"><h3>${escapeHtml(data.title)}</h3>
+          <div class="output-actions"><button type="button" class="copy" id="lyricsCopy">가사 복사</button><button type="button" class="copy" id="lyricsSave">💾 저장</button></div></div>
+        <p class="muted">스타일 태그 (Suno 스타일 칸에 붙여넣기): <strong>${escapeHtml(data.styleTags)}</strong> <button type="button" class="copy" id="lyricsCopyTags">복사</button></p>
+        <textarea id="lyricsText" rows="14">${escapeHtml(data.lyrics)}</textarea>
+        <p class="ai-note">⚠ AI가 쓴 가사예요. 발표 전 내용을 확인해주세요.</p>
+      </div>`;
+    $("#lyricsCopy").onclick = async (e) => { await copyText($("#lyricsText").value); flash(e.target); };
+    $("#lyricsCopyTags").onclick = async (e) => { await copyText(data.styleTags); flash(e.target); };
+    $("#lyricsSave").onclick = () => downloadText(`${data.title}\n\n[Style Tags]\n${data.styleTags}\n\n${$("#lyricsText").value}`, "가사.txt");
+    showError("");
+  } catch (e) { showError(e.message); }
+  finally { $("#lyricsGenerate").disabled = false; $("#lyricsProgress").classList.add("hidden"); }
+};
+
+// ============================================================
+// 05. 모션그래픽 만들기 - 렌더링은 애니원 서버가 담당, 루나원은 요청/결과만 (얇은 연동)
+// ============================================================
+let motionTemplates = [];
+
+async function loadMotionTemplates() {
+  try {
+    const res = await fetch("/api/motion/templates");
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    motionTemplates = data.templates || [];
+    $("#motionTemplate").innerHTML = motionTemplates.map(t => `<option value="${t.id}">${escapeHtml(t.name)} - ${escapeHtml(t.description)}</option>`).join("");
+    $("#motionForm").classList.remove("hidden");
+    $("#motionUnavailable").classList.add("hidden");
+    renderMotionFields();
+  } catch {
+    // 애니원 서버가 꺼져 있으면 폼 대신 안내만 - 루나원의 다른 기능은 그대로 다 됨
+    $("#motionUnavailable").classList.remove("hidden");
+    $("#motionForm").classList.add("hidden");
+  }
+}
+loadMotionTemplates();
+
+function renderMotionFields() {
+  const tpl = motionTemplates.find(t => t.id === $("#motionTemplate").value) || motionTemplates[0];
+  if (!tpl) return;
+  $("#motionFields").innerHTML = tpl.fields.map(f => {
+    if (f.type === "select") {
+      return `<label>${escapeHtml(f.label)}<select data-motion-field="${f.key}">${f.options.map(o => `<option value="${o}">${o === "intro" ? "인트로" : o === "outro" ? "아웃트로" : o}</option>`).join("")}</select></label>`;
+    }
+    return `<label>${escapeHtml(f.label)}${f.required ? " *" : ""}<input data-motion-field="${f.key}" type="${f.type === "number" ? "number" : "text"}" placeholder="${f.example !== "" && f.example !== undefined ? `예: ${escapeHtml(String(f.example))}` : ""}"></label>`;
+  }).join("");
+}
+$("#motionTemplate").onchange = renderMotionFields;
+
+let motionPollTimer = null;
+function pollMotionStatus(jobId) {
+  motionPollTimer = setTimeout(async () => {
+    try {
+      const res = await fetch(`/api/motion/status/${jobId}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      if (data.status === "done") {
+        $("#motionProgress").classList.add("hidden");
+        $("#motionGenerate").disabled = false;
+        const box = $("#motionResult");
+        box.classList.remove("hidden");
+        box.innerHTML = `
+          <div class="output-card motion-result-card">
+            <div class="output-head"><h3>완성됐어요!</h3>
+              <div class="output-actions"><a class="copy" href="${data.videoUrl}" download target="_blank" rel="noopener">⬇ 다운로드</a></div></div>
+            <video src="${data.videoUrl}" controls></video>
+          </div>`;
+      } else if (data.status === "error") {
+        throw new Error(data.error || "렌더링에 실패했어요.");
+      } else {
+        pollMotionStatus(jobId);
+      }
+    } catch (e) {
+      $("#motionProgress").classList.add("hidden");
+      $("#motionGenerate").disabled = false;
+      showError(e.message);
+    }
+  }, 2000);
+}
+
+$("#motionGenerate").onclick = async () => {
+  const props = {};
+  $$("[data-motion-field]").forEach(el => { props[el.dataset.motionField] = el.value; });
+  $("#motionGenerate").disabled = true;
+  $("#motionProgress").classList.remove("hidden");
+  $("#motionResult").classList.add("hidden");
+  clearTimeout(motionPollTimer);
+  try {
+    const res = await fetch("/api/motion/render", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        template: $("#motionTemplate").value,
+        props,
+        aspect: $("#motionAspect").value,
+        durationSec: Number($("#motionDuration").value),
+        brandColor: $("#motionColor").value,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    showError("");
+    pollMotionStatus(data.jobId);
+  } catch (e) {
+    $("#motionGenerate").disabled = false;
+    $("#motionProgress").classList.add("hidden");
+    showError(e.message);
+  }
+};
